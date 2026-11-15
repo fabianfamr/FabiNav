@@ -1,0 +1,118 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root,
+  .theme-brave-dark {
+    --bn-tabstrip: #17181c;
+    --bn-toolbar: #27292e;
+    --bn-omnibox: #191a1e;
+    --bn-omnibox-focus: #121316;
+    --bn-surface: #1e2025;
+    --bn-surface-alt: #27292e;
+    --bn-hover: #32353c;
+    --bn-active: #3a3e47;
+    --bn-border: #34363e;
+    --bn-border-strong: #464954;
+    --bn-text: #d8dade;
+    --bn-text-strong: #ffffff;
+    --bn-text-muted: #9398a3;
+    --bn-accent: #fb542b;
+    --bn-accent-hover: #e0441e;
+    --bn-accent-soft: rgba(251, 84, 43, 0.14);
+    --bn-private: #7c3aed;
+    --bn-success: #22c55e;
+    --bn-warning: #eab308;
+    --bn-danger: #ef4444;
+    --bn-info: #3b82f6;
+  }
+
+  .theme-brave-midnight {
+    --bn-tabstrip: #08090b;
+    --bn-toolbar: #141519;
+    --bn-omnibox: #0c0d10;
+    --bn-omnibox-focus: #050608;
+    --bn-surface: #111216;
+    --bn-surface-alt: #1a1c22;
+    --bn-hover: #242730;
+    --bn-active: #2e323d;
+    --bn-border: #23262e;
+    --bn-border-strong: #353946;
+    --bn-text: #d8dade;
+    --bn-text-strong: #ffffff;
+    --bn-text-muted: #8b909c;
+    --bn-accent: #fb542b;
+    --bn-accent-hover: #e0441e;
+    --bn-accent-soft: rgba(251, 84, 43, 0.16);
+    --bn-private: #7c3aed;
+    --bn-success: #22c55e;
+    --bn-warning: #eab308;
+    --bn-danger: #ef4444;
+    --bn-info: #3b82f6;
+  }
+
+  .theme-brave-light {
+    --bn-tabstrip: #dee1e6;
+    --bn-toolbar: #ffffff;
+    --bn-omnibox: #f1f3f4;
+    --bn-omnibox-focus: #ffffff;
+    --bn-surface: #f8f9fa;
+    --bn-surface-alt: #ffffff;
+    --bn-hover: #e8eaed;
+    --bn-active: #dadce0;
+    --bn-border: #dadce0;
+    --bn-border-strong: #bdc1c6;
+    --bn-text: #3c4043;
+    --bn-text-strong: #202124;
+    --bn-text-muted: #5f6368;
+    --bn-accent: #fb542b;
+    --bn-accent-hover: #d93f1a;
+    --bn-accent-soft: rgba(251, 84, 43, 0.1);
+    --bn-private: #6d28d9;
+    --bn-success: #16a34a;
+    --bn-warning: #ca8a04;
+    --bn-danger: #dc2626;
+    --bn-info: #2563eb;
+  }
+
+  body {
+    background-color: var(--bn-tabstrip);
+    color: var(--bn-text);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    user-select: none;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-mono {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--bn-border-strong);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--bn-text-muted);
+  }
+}
