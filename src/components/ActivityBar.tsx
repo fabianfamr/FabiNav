@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   Bookmark,
   History,
@@ -59,13 +60,24 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               type="button"
               onClick={() => onSelectView(isActive ? null : item.id)}
               title={item.label}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
                 isActive
-                  ? 'bg-[var(--bn-accent-soft)] text-[var(--bn-accent)]'
+                  ? 'text-[var(--bn-accent)]'
                   : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]'
               }`}
             >
-              <Icon className={`w-4 h-4 ${isActive && item.color ? item.color : ''}`} />
+              {isActive && (
+                <motion.span
+                  layoutId="brave-sidebar-pill"
+                  transition={{ duration: 0.18, ease: [0, 0, 0.58, 1] }}
+                  className="absolute inset-0 rounded-lg bg-[var(--bn-accent-soft)]"
+                />
+              )}
+              <Icon
+                className={`relative z-10 w-4 h-4 ${
+                  isActive && item.color ? item.color : ''
+                }`}
+              />
             </button>
           );
         })}
@@ -75,7 +87,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         type="button"
         onClick={onOpenSettings}
         title="Configuración de la barra lateral"
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors"
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs"
       >
         <Settings className="w-4 h-4" />
       </button>

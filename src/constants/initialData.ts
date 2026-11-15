@@ -6,10 +6,10 @@ import {
   WallpaperItem,
   FabiShieldState,
   FabiNewTabCustomization,
-  BrowserProfile
+  LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -37,14 +37,10 @@ export const INITIAL_SHIELD_STATE: FabiShieldState = {
   blockFingerprinting: 'standard',
   blockCrossSiteCookies: true,
   httpsUpgradesCount: 0,
-  trackersBlockedCount: 0,
-  bandwidthSavedKb: 0
+  searchesCount: 0
 };
 
-export const INITIAL_PROFILE: BrowserProfile = {
-  name: 'Fabian',
-  email: 'fabianajjdvd@gmail.com',
-  avatarUrl: '/src/assets/images/avatar_fabian_profile_1794763339501.jpg',
+export const INITIAL_BACKUP_META: LocalBackupMeta = {
   lastExportTimestamp: null
 };
 
@@ -60,9 +56,7 @@ export const INITIAL_TOP_SITES: TopSiteItem[] = [
   { id: 'ts-2', title: 'GitHub', url: 'https://github.com' },
   { id: 'ts-3', title: 'MDN Docs', url: 'https://developer.mozilla.org/es/' },
   { id: 'ts-4', title: 'OpenStreetMap', url: 'https://www.openstreetmap.org' },
-  { id: 'ts-5', title: 'WhatsApp Web', url: 'https://web.whatsapp.com' },
-  { id: 'ts-6', title: 'Discord', url: 'https://discord.com/app' },
-  { id: 'ts-7', title: 'Archive.org', url: 'https://archive.org' }
+  { id: 'ts-5', title: 'Archive.org', url: 'https://archive.org' }
 ];
 
 export const INITIAL_TABS: WebTab[] = [

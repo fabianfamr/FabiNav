@@ -11,7 +11,7 @@ import {
   CommandItem,
   FabiShieldState,
   FabiNewTabCustomization,
-  BrowserProfile,
+  LocalBackupMeta,
   HistoryEntry,
   TopSiteItem
 } from './types';
@@ -22,7 +22,7 @@ import {
   DEFAULT_SETTINGS,
   INITIAL_SHIELD_STATE,
   INITIAL_NEWTAB_CUSTOMIZATION,
-  INITIAL_PROFILE,
+  INITIAL_BACKUP_META,
   APP_VERSION
 } from './constants/initialData';
 import { ActivityBar } from './components/ActivityBar';
@@ -37,7 +37,7 @@ import { FabiShieldModal } from './components/BraveShieldModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
 import { Plus, X, Pin, VolumeX, Columns, Lock, Globe } from 'lucide-react';
 
-const STORAGE_KEY_PREFIX = 'fabinav_v1_5_';
+const STORAGE_KEY_PREFIX = 'fabinav_v1_6_';
 
 function loadStored<T>(key: string, fallback: T): T {
   try {
@@ -73,9 +73,9 @@ export default function App() {
     loadStored('top_sites', INITIAL_TOP_SITES)
   );
 
-  // Profile, Bookmarks, History, Notes & Downloads (Real local state only)
-  const [profile, setProfile] = useState<BrowserProfile>(() =>
-    loadStored('profile', INITIAL_PROFILE)
+  // Backup metadata, Bookmarks, History, Notes & Downloads (Real local state only)
+  const [backupMeta, setBackupMeta] = useState<LocalBackupMeta>(() =>
+    loadStored('backup_meta', INITIAL_BACKUP_META)
   );
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(() =>
     loadStored('bookmarks', INITIAL_BOOKMARKS)
@@ -105,7 +105,7 @@ export default function App() {
   // Modals & Sidebar
   const [activeSidebarView, setActiveSidebarView] = useState<SidebarPanelView>(null);
   const [isShieldsModalOpen, setIsShieldsModalOpen] = useState(false);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
 
@@ -125,7 +125,7 @@ export default function App() {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}shields`, JSON.stringify(shieldState));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}newtab`, JSON.stringify(newTabCustomization));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}top_sites`, JSON.stringify(topSites));
-      localStorage.setItem(`${STORAGE_KEY_PREFIX}profile`, JSON.stringify(profile));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}backup_meta`, JSON.stringify(backupMeta));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}notes`, JSON.stringify(sessionNotes));
     } catch {
       // Ignore quota errors
@@ -139,7 +139,7 @@ export default function App() {
     shieldState,
     newTabCustomization,
     topSites,
-    profile,
+    backupMeta,
     sessionNotes
   ]);
 
@@ -211,6 +211,7 @@ export default function App() {
       if (target.includes('.') && !target.includes(' ')) {
         const useHttps = shieldState.upgradeHttps && shieldState.enabled;
         target = `${useHttps ? 'https' : 'http'}://${target}`;
+        if (useHttps) upgradedHttps = true;
       } else {
         target = `fabinav://search?q=${encodeURIComponent(target)}`;
       }
@@ -224,24 +225,29 @@ export default function App() {
 
   const recordNavigationTelemetry = (finalUrl: string, upgradedHttps: boolean) => {
     const isInternal = finalUrl.startsWith('fabinav://');
+    const isSearch = finalUrl.startsWith('fabinav://search?q=');
+
     setNetworkReqs((prev) => [
       {
         id: `req-${Date.now()}-${prev.length}`,
         url: finalUrl,
         method: 'GET',
         status: 200,
-        type: isInternal ? 'internal' : 'document',
+        type: isSearch ? 'search' : isInternal ? 'internal' : 'document',
         timestamp: new Date().toLocaleTimeString('es-ES', { hour12: false })
       },
       ...prev.slice(0, 39)
     ]);
 
-    if (upgradedHttps) {
+    if (upgradedHttps || isSearch) {
       setShieldState((prev) => ({
         ...prev,
-        httpsUpgradesCount: prev.httpsUpgradesCount + 1
+        httpsUpgradesCount: prev.httpsUpgradesCount + (upgradedHttps ? 1 : 0),
+        searchesCount: prev.searchesCount + (isSearch ? 1 : 0)
       }));
-      appendLog('info', `Conexión mejorada a HTTPS: ${finalUrl}`, 'Escudos');
+      if (upgradedHttps) {
+        appendLog('info', `Conexión mejorada a HTTPS: ${finalUrl}`, 'Escudos');
+      }
     }
   };
 
@@ -534,10 +540,10 @@ export default function App() {
   };
 
   const handleExportBackup = () => {
+    const now = Date.now();
     const payload = {
       version: APP_VERSION,
-      exportedAt: new Date().toISOString(),
-      profile,
+      exportedAt: new Date(now).toISOString(),
       settings,
       shieldState,
       newTabCustomization,
@@ -549,14 +555,14 @@ export default function App() {
     const jsonString = JSON.stringify(payload, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const filename = `fabinav-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
+    const filename = `fabinav-respaldo-${new Date(now).toISOString().slice(0, 10)}.json`;
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
 
-    setProfile((prev) => ({ ...prev, lastExportTimestamp: Date.now() }));
+    setBackupMeta({ lastExportTimestamp: now });
     handleRecordDownload(filename, `${(jsonString.length / 1024).toFixed(1)} KB`, 'fabinav://backup');
     appendLog('info', `Respaldo local exportado: ${filename}`, 'Respaldo');
   };
@@ -566,7 +572,6 @@ export default function App() {
     reader.onload = () => {
       try {
         const data = JSON.parse(String(reader.result || '{}'));
-        if (data.profile) setProfile((prev) => ({ ...prev, ...data.profile }));
         if (data.settings) setSettings((prev) => ({ ...prev, ...data.settings }));
         if (data.shieldState) setShieldState((prev) => ({ ...prev, ...data.shieldState }));
         if (data.newTabCustomization) setNewTabCustomization((prev) => ({ ...prev, ...data.newTabCustomization }));
@@ -610,7 +615,7 @@ export default function App() {
     if (normalized === 'shields') {
       appendLog(
         'log',
-        `Escudos: ${shieldState.enabled ? 'activos' : 'pausados'} · ${shieldState.httpsUpgradesCount} mejoras HTTPS.`,
+        `Escudos: ${shieldState.enabled ? 'activos' : 'pausados'} · ${shieldState.httpsUpgradesCount} mejoras HTTPS · ${shieldState.searchesCount} búsquedas.`,
         'Consola'
       );
       return;
@@ -714,11 +719,11 @@ export default function App() {
       action: () => setIsShieldsModalOpen(true)
     },
     {
-      id: 'cmd-profile-backup',
-      title: 'Perfil local y respaldo JSON',
+      id: 'cmd-local-backup',
+      title: 'Datos locales y respaldo JSON',
       subtitle: 'Exportar o importar copia de seguridad',
       category: 'Datos',
-      action: () => setIsProfileModalOpen(true)
+      action: () => setIsBackupModalOpen(true)
     },
     {
       id: 'cmd-devtools',
@@ -849,7 +854,6 @@ export default function App() {
       {/* 2. Brave Main Toolbar + Pill Omnibox */}
       <TitleBar
         currentTab={activeTab}
-        profile={profile}
         bookmarks={bookmarks}
         historyEntries={historyEntries}
         settings={settings}
@@ -872,7 +876,7 @@ export default function App() {
         }}
         onToggleShieldsModal={() => setIsShieldsModalOpen((prev) => !prev)}
         onToggleSidebar={() => handleUpdateSettings({ showSidebar: !settings.showSidebar })}
-        onOpenProfileModal={() => setIsProfileModalOpen(true)}
+        onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenElectronModal={() => setIsElectronModalOpen(true)}
         onOpenDevTools={() => {
           handleUpdateSettings({ showSidebar: true });
@@ -886,7 +890,7 @@ export default function App() {
           handleUpdateSettings({ showBookmarksBar: !settings.showBookmarksBar })
         }
         isSplitActive={!!splitTabId}
-        adBlockCount={shieldState.trackersBlockedCount + shieldState.httpsUpgradesCount}
+        shieldCount={shieldState.httpsUpgradesCount}
         isShieldActive={shieldState.enabled}
       />
 
@@ -916,7 +920,7 @@ export default function App() {
                 type="button"
                 onClick={() => handleNewTab()}
                 title="Nueva pestaña (Ctrl+T)"
-                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
+                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-colors leo-transition-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -928,7 +932,7 @@ export default function App() {
                   <div
                     key={tab.id}
                     onClick={() => handleSelectTab(tab.id)}
-                    className={`group px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                    className={`group px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors leo-transition-s ${
                       isActive
                         ? 'bg-[var(--bn-toolbar)] text-[var(--bn-text-strong)] font-medium shadow-xs'
                         : 'text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text)]'
@@ -943,7 +947,7 @@ export default function App() {
                       <span className="truncate">{tab.title || 'Nueva pestaña'}</span>
                     </div>
 
-                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100">
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity leo-transition-xs">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1016,8 +1020,6 @@ export default function App() {
             setNewTabCustomization((prev) => ({ ...prev, ...updates }))
           }
           onOpenShieldModal={() => setIsShieldsModalOpen(true)}
-          profile={profile}
-          onUpdateProfile={(updates) => setProfile((prev) => ({ ...prev, ...updates }))}
           bookmarks={bookmarks}
           onAddBookmark={handleAddBookmark}
           onRemoveBookmark={handleRemoveBookmark}
@@ -1055,12 +1057,11 @@ export default function App() {
         commands={commands}
       />
 
-      {/* Local Profile & JSON Backup Modal */}
+      {/* Local Data & JSON Backup Modal (zero fake profile/login) */}
       <GoogleSyncModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        profile={profile}
-        onUpdateProfile={(updates) => setProfile((prev) => ({ ...prev, ...updates }))}
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        backupMeta={backupMeta}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
         historyCount={historyEntries.length}

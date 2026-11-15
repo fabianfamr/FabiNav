@@ -25,7 +25,7 @@ export const BookmarksBar: React.FC<BookmarksBarProps> = ({
           type="button"
           onClick={onOpenBookmarksPage}
           title="Administrador de marcadores"
-          className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[var(--bn-text)] hover:bg-[var(--bn-hover)] text-[11px] font-medium shrink-0 transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-95 text-[11px] font-medium shrink-0 transition-all leo-transition-xs"
         >
           <FolderOpen className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
           <span>Marcadores</span>
@@ -40,7 +40,7 @@ export const BookmarksBar: React.FC<BookmarksBarProps> = ({
                 key={bm.id}
                 type="button"
                 onClick={() => onNavigate(bm.url)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[var(--bn-text)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] text-[11px] shrink-0 transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[var(--bn-text)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] active:scale-95 text-[11px] shrink-0 transition-all leo-transition-xs whitespace-nowrap"
                 title={`${bm.title} · ${bm.url}`}
               >
                 <Globe className="w-3 h-3 text-[var(--bn-text-muted)]" />
@@ -66,7 +66,7 @@ export const BookmarksBar: React.FC<BookmarksBarProps> = ({
         type="button"
         onClick={onAddBookmark}
         title="Añadir pestaña actual a marcadores"
-        className="p-1 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors shrink-0 ml-2"
+        className="p-1 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs shrink-0 ml-2"
       >
         <Plus className="w-3.5 h-3.5" />
       </button>

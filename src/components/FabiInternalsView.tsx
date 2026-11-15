@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldCheck,
   History,
@@ -19,7 +20,6 @@ import {
 } from 'lucide-react';
 import {
   FabiShieldState,
-  BrowserProfile,
   BrowserSettings,
   HistoryEntry,
   BrowserTheme,
@@ -34,8 +34,6 @@ interface FabiInternalsViewProps {
   onUpdateShieldState: (updates: Partial<FabiShieldState>) => void;
   settings: BrowserSettings;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
-  profile: BrowserProfile;
-  onUpdateProfile: (updates: Partial<BrowserProfile>) => void;
   bookmarks: Bookmark[];
   onAddBookmark: (title: string, url: string, folder?: string) => void;
   onRemoveBookmark: (id: string) => void;
@@ -60,13 +58,14 @@ type SettingsSection =
   | 'datos'
   | 'acerca';
 
+const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+
 export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   url,
   shieldState,
   onUpdateShieldState,
   settings,
   onUpdateSettings,
-  profile,
   bookmarks,
   onAddBookmark,
   onRemoveBookmark,
@@ -313,7 +312,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
           {filteredHistory.length === 0 ? (
             <div className="p-12 text-center bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl text-xs text-[var(--bn-text-muted)]">
-              Tu historial está vacío. Las páginas externas que visites aparecerán aquí.
+              Tu historial está vacío. Las páginas que visites aparecerán aquí.
             </div>
           ) : (
             <div className="divide-y divide-[var(--bn-border)] border border-[var(--bn-border)] rounded-2xl bg-[var(--bn-surface-alt)] overflow-hidden">
@@ -379,23 +378,17 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
-              <div className="text-xs text-[var(--bn-text-muted)]">Mejoras HTTPS</div>
+              <div className="text-xs text-[var(--bn-text-muted)]">Mejoras HTTPS aplicadas</div>
               <div className="text-2xl font-semibold text-[var(--bn-accent)] mt-1 tabular-nums font-mono">
                 {shieldState.httpsUpgradesCount}
               </div>
             </div>
             <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
-              <div className="text-xs text-[var(--bn-text-muted)]">Rastreadores bloqueados</div>
+              <div className="text-xs text-[var(--bn-text-muted)]">Búsquedas privadas en sesión</div>
               <div className="text-2xl font-semibold text-[var(--bn-text-strong)] mt-1 tabular-nums font-mono">
-                {shieldState.trackersBlockedCount}
-              </div>
-            </div>
-            <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
-              <div className="text-xs text-[var(--bn-text-muted)]">Datos ahorrados</div>
-              <div className="text-2xl font-semibold text-[var(--bn-success)] mt-1 tabular-nums font-mono">
-                {(shieldState.bandwidthSavedKb / 1024).toFixed(1)} MB
+                {shieldState.searchesCount}
               </div>
             </div>
           </div>
@@ -507,13 +500,16 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="flex items-center justify-between pb-5 border-b border-[var(--bn-border)]">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[var(--bn-accent)] text-white flex items-center justify-center font-bold text-lg shadow">
+              <div
+                className="w-11 h-11 rounded-2xl text-white flex items-center justify-center font-bold text-lg shadow"
+                style={{ background: 'var(--leo-gradient-brand)' }}
+              >
                 F
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">Acerca de FabiNav</h1>
                 <p className="text-xs text-[var(--bn-text-muted)] font-mono tabular-nums">
-                  Versión {APP_VERSION} · Interfaz inspirada en Brave Desktop
+                  Versión {APP_VERSION} · Diseño Brave Leo + Búsqueda Web Real
                 </p>
               </div>
             </div>
@@ -532,7 +528,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               <span>Información general</span>
             </div>
             <p className="text-xs text-[var(--bn-text-muted)] leading-relaxed">
-              FabiNav es un navegador web con interfaz inspirada en Brave: pestañas redondeadas, barra de direcciones estilo píldora, escudos de privacidad configurables, barra lateral acoplable y exportación directa a proyecto Electron de escritorio. Todos los datos mostrados corresponden únicamente a tu sesión local.
+              FabiNav utiliza la estética y tokens de movimiento del sistema de diseño Brave Leo, con búsqueda web en vivo desde el servidor, almacenamiento 100% local sin inicios de sesión simulados ni cuentas falsas, barra lateral configurable y exportación a proyecto Electron.
             </p>
           </div>
 
@@ -554,13 +550,13 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     );
   }
 
-  // 6. CONFIGURACIÓN ESTILO BRAVE (fabinav://settings)
+  // 6. CONFIGURACIÓN ESTILO BRAVE LEO (fabinav://settings)
   const navSections: Array<{
     id: SettingsSection;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }> = [
-    { id: 'primeros-pasos', label: 'Primeros pasos', icon: Settings },
+    { id: 'primeros-pasos', label: 'Inicio', icon: Settings },
     { id: 'apariencia', label: 'Apariencia', icon: Palette },
     { id: 'escudos', label: 'Escudos', icon: ShieldCheck },
     { id: 'buscador', label: 'Buscador', icon: Search },
@@ -592,9 +588,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               key={sec.id}
               type="button"
               onClick={() => setSettingsSection(sec.id)}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`relative flex items-center gap-2.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 active
-                  ? 'bg-[var(--bn-accent-soft)] text-[var(--bn-accent)]'
+                  ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
                   : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
               }`}
             >
@@ -605,366 +601,375 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
         })}
       </aside>
 
-      {/* Main Single-Column Settings Content */}
+      {/* Main Single-Column Settings Content with Brave Leo transition */}
       <div className="flex-1 overflow-y-auto p-6 sm:p-10">
-        <div className="max-w-2xl mx-auto space-y-6">
-          {settingsSection === 'primeros-pasos' && (
-            <>
-              <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Primeros pasos</h2>
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                <div className="p-4 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Perfil local activo</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                      {profile.name} · {profile.email}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={settingsSection}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+            className="max-w-2xl mx-auto space-y-6"
+          >
+            {settingsSection === 'primeros-pasos' && (
+              <>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Inicio</h2>
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
+                  <div className="p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Modo de sesión</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                        Sesión local independiente sin cuentas vinculadas ni inicio de sesión
+                      </div>
                     </div>
+                    <span className="px-2.5 py-1 rounded-full bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] text-[11px] font-medium">
+                      Local
+                    </span>
                   </div>
-                  <img
-                    src={profile.avatarUrl}
-                    alt={profile.name}
-                    referrerPolicy="no-referrer"
-                    className="w-9 h-9 rounded-full object-cover border border-[var(--bn-border-strong)]"
-                  />
-                </div>
-                <div className="p-4 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Página de inicio</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                      Dirección que se abre al pulsar el botón Inicio
+                  <div className="p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Página de inicio</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                        Dirección que se abre al pulsar el botón Inicio
+                      </div>
                     </div>
+                    <input
+                      type="text"
+                      value={settings.homepage}
+                      onChange={(e) => onUpdateSettings({ homepage: e.target.value })}
+                      className="w-48 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={settings.homepage}
-                    onChange={(e) => onUpdateSettings({ homepage: e.target.value })}
-                    className="w-48 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
-                  />
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
 
-          {settingsSection === 'apariencia' && (
-            <>
-              <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Apariencia</h2>
+            {settingsSection === 'apariencia' && (
+              <>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Apariencia</h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {themeOptions.map((t) => (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {themeOptions.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onUpdateSettings({ theme: t.id })}
+                      className={`p-4 rounded-2xl border text-left transition-colors ${
+                        settings.theme === t.id
+                          ? 'bg-[var(--bn-surface-alt)] border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
+                          : 'bg-[var(--bn-surface-alt)] border-[var(--bn-border)] text-[var(--bn-text)] hover:border-[var(--bn-border-strong)]'
+                      }`}
+                    >
+                      <div className="text-xs font-semibold flex items-center justify-between">
+                        <span>{t.label}</span>
+                        {settings.theme === t.id && <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />}
+                      </div>
+                      <p className="text-[11px] text-[var(--bn-text-muted)] mt-1">{t.desc}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Mostrar botón de Inicio</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Añade el acceso directo a la página principal en la barra superior
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.showHomeButton}
+                      onChange={(e) => onUpdateSettings({ showHomeButton: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
+
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Mostrar barra de marcadores</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Muestra tus marcadores debajo de la barra de direcciones
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.showBookmarksBar}
+                      onChange={(e) => onUpdateSettings({ showBookmarksBar: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
+
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Usar pestañas verticales</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Lista tus pestañas abiertas en una columna lateral como en Brave
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.useVerticalTabs}
+                      onChange={(e) => onUpdateSettings({ useVerticalTabs: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
+
+                  <div className="p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Zoom de página</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Escala aplicada al contenido web incrustado
+                      </div>
+                    </div>
+                    <select
+                      value={settings.zoomLevel}
+                      onChange={(e) => onUpdateSettings({ zoomLevel: Number(e.target.value) })}
+                      className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                    >
+                      {[75, 90, 100, 110, 125, 150].map((z) => (
+                        <option key={z} value={z}>
+                          {z}%
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {settingsSection === 'escudos' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Escudos</h2>
                   <button
-                    key={t.id}
                     type="button"
-                    onClick={() => onUpdateSettings({ theme: t.id })}
-                    className={`p-4 rounded-2xl border text-left transition-colors ${
-                      settings.theme === t.id
-                        ? 'bg-[var(--bn-surface-alt)] border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
-                        : 'bg-[var(--bn-surface-alt)] border-[var(--bn-border)] text-[var(--bn-text)] hover:border-[var(--bn-border-strong)]'
-                    }`}
+                    onClick={() => onNavigate('fabinav://shields')}
+                    className="text-xs text-[var(--bn-accent)] hover:underline flex items-center gap-1"
                   >
-                    <div className="text-xs font-semibold flex items-center justify-between">
-                      <span>{t.label}</span>
-                      {settings.theme === t.id && <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />}
-                    </div>
-                    <p className="text-[11px] text-[var(--bn-text-muted)] mt-1">{t.desc}</p>
+                    <span>Abrir panel completo</span>
+                    <ExternalLink className="w-3 h-3" />
                   </button>
-                ))}
-              </div>
-
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Mostrar botón de Inicio</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Añade el acceso directo a la página principal en la barra superior
+                </div>
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
+                  <div className="p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Bloqueo de rastreadores y anuncios</div>
                     </div>
+                    <select
+                      value={shieldState.blockTrackersAndAds}
+                      onChange={(e) =>
+                        onUpdateShieldState({
+                          blockTrackersAndAds: e.target.value as FabiShieldState['blockTrackersAndAds']
+                        })
+                      }
+                      className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                    >
+                      <option value="standard">Estándar</option>
+                      <option value="aggressive">Agresivo</option>
+                      <option value="disabled">Desactivado</option>
+                    </select>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.showHomeButton}
-                    onChange={(e) => onUpdateSettings({ showHomeButton: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
-                  />
-                </label>
 
-                <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <span>Actualizar conexiones a HTTPS</span>
+                    <input
+                      type="checkbox"
+                      checked={shieldState.upgradeHttps}
+                      onChange={(e) => onUpdateShieldState({ upgradeHttps: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
+
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <span>Bloquear cookies entre sitios</span>
+                    <input
+                      type="checkbox"
+                      checked={shieldState.blockCrossSiteCookies}
+                      onChange={(e) => onUpdateShieldState({ blockCrossSiteCookies: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+
+            {settingsSection === 'buscador' && (
+              <>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Buscador</h2>
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl p-4 flex items-center justify-between gap-4 text-xs">
                   <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Mostrar barra de marcadores</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Muestra tus marcadores debajo de la barra de direcciones
+                    <div className="font-medium text-[var(--bn-text-strong)]">
+                      Buscador usado en la barra de direcciones
                     </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.showBookmarksBar}
-                    onChange={(e) => onUpdateSettings({ showBookmarksBar: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
-                  />
-                </label>
-
-                <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Usar pestañas verticales</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Lista tus pestañas abiertas en una columna lateral como en Brave
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.useVerticalTabs}
-                    onChange={(e) => onUpdateSettings({ useVerticalTabs: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
-                  />
-                </label>
-
-                <div className="p-4 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Zoom de página</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Escala aplicada al contenido web incrustado
+                    <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                      También se aplica al buscador de Nueva pestaña
                     </div>
                   </div>
                   <select
-                    value={settings.zoomLevel}
-                    onChange={(e) => onUpdateSettings({ zoomLevel: Number(e.target.value) })}
-                    className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
-                  >
-                    {[75, 90, 100, 110, 125, 150].map((z) => (
-                      <option key={z} value={z}>
-                        {z}%
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </>
-          )}
-
-          {settingsSection === 'escudos' && (
-            <>
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Escudos</h2>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('fabinav://shields')}
-                  className="text-xs text-[var(--bn-accent)] hover:underline flex items-center gap-1"
-                >
-                  <span>Abrir panel completo</span>
-                  <ExternalLink className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                <div className="p-4 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Bloqueo de rastreadores y anuncios</div>
-                  </div>
-                  <select
-                    value={shieldState.blockTrackersAndAds}
-                    onChange={(e) =>
-                      onUpdateShieldState({
-                        blockTrackersAndAds: e.target.value as FabiShieldState['blockTrackersAndAds']
-                      })
-                    }
-                    className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
-                  >
-                    <option value="standard">Estándar</option>
-                    <option value="aggressive">Agresivo</option>
-                    <option value="disabled">Desactivado</option>
-                  </select>
-                </div>
-
-                <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
-                  <span>Actualizar conexiones a HTTPS</span>
-                  <input
-                    type="checkbox"
-                    checked={shieldState.upgradeHttps}
-                    onChange={(e) => onUpdateShieldState({ upgradeHttps: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
-                  />
-                </label>
-
-                <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
-                  <span>Bloquear cookies entre sitios</span>
-                  <input
-                    type="checkbox"
-                    checked={shieldState.blockCrossSiteCookies}
-                    onChange={(e) => onUpdateShieldState({ blockCrossSiteCookies: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
-                  />
-                </label>
-              </div>
-            </>
-          )}
-
-          {settingsSection === 'buscador' && (
-            <>
-              <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Buscador</h2>
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl p-4 flex items-center justify-between gap-4 text-xs">
-                <div>
-                  <div className="font-medium text-[var(--bn-text-strong)]">
-                    Buscador usado en la barra de direcciones
-                  </div>
-                  <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                    También se aplica al buscador de Nueva pestaña
-                  </div>
-                </div>
-                <select
-                  value={settings.defaultSearchEngine}
-                  onChange={(e) =>
-                    onUpdateSettings({
-                      defaultSearchEngine: e.target.value as BrowserSettings['defaultSearchEngine']
-                    })
-                  }
-                  className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
-                >
-                  <option value="brave">Brave Search</option>
-                  <option value="google">Google</option>
-                  <option value="duckduckgo">DuckDuckGo</option>
-                  <option value="bing">Bing</option>
-                  <option value="ecosia">Ecosia</option>
-                </select>
-              </div>
-            </>
-          )}
-
-          {settingsSection === 'barra-lateral' && (
-            <>
-              <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Barra lateral</h2>
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Mostrar barra lateral</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Acceso rápido a marcadores, historial, notas y mensajería
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.showSidebar}
-                    onChange={(e) => onUpdateSettings({ showSidebar: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
-                  />
-                </label>
-
-                <div className="p-4 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Posición de la barra lateral</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      En Brave puedes mostrarla a la derecha o a la izquierda
-                    </div>
-                  </div>
-                  <select
-                    value={settings.sidebarPosition}
+                    value={settings.defaultSearchEngine}
                     onChange={(e) =>
                       onUpdateSettings({
-                        sidebarPosition: e.target.value as BrowserSettings['sidebarPosition']
+                        defaultSearchEngine: e.target.value as BrowserSettings['defaultSearchEngine']
                       })
                     }
                     className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
                   >
-                    <option value="right">A la derecha</option>
-                    <option value="left">A la izquierda</option>
+                    <option value="brave">Brave Search</option>
+                    <option value="google">Google</option>
+                    <option value="duckduckgo">DuckDuckGo</option>
+                    <option value="bing">Bing</option>
+                    <option value="ecosia">Ecosia</option>
                   </select>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
 
-          {settingsSection === 'datos' && (
-            <>
-              <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Datos y respaldo</h2>
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                <div className="p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Exportar respaldo local (.json)</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Guarda tus marcadores, sitios principales, notas y configuración
+            {settingsSection === 'barra-lateral' && (
+              <>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Barra lateral</h2>
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Mostrar barra lateral</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Acceso rápido a marcadores, historial, notas y mensajería
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.showSidebar}
+                      onChange={(e) => onUpdateSettings({ showSidebar: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
+
+                  <div className="p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Posición de la barra lateral</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        En Brave puedes mostrarla a la derecha o a la izquierda
+                      </div>
+                    </div>
+                    <select
+                      value={settings.sidebarPosition}
+                      onChange={(e) =>
+                        onUpdateSettings({
+                          sidebarPosition: e.target.value as BrowserSettings['sidebarPosition']
+                        })
+                      }
+                      className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                    >
+                      <option value="right">A la derecha</option>
+                      <option value="left">A la izquierda</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {settingsSection === 'datos' && (
+              <>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Datos y respaldo</h2>
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
+                  <div className="p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Exportar respaldo local (.json)</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Guarda tus marcadores, sitios principales, notas y configuración
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onExportBackup}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium flex items-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Exportar JSON</span>
+                    </button>
+                  </div>
+
+                  <div className="p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Importar respaldo (.json)</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Restaura una copia exportada previamente
+                      </div>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/json,.json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) onImportBackup(file);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] font-medium flex items-center gap-1.5"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Importar JSON</span>
+                    </button>
+                  </div>
+
+                  <div className="p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">Proyecto de escritorio Electron</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Ver y descargar los archivos main.js y preload.js
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onOpenElectronModal}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] font-medium flex items-center gap-1.5"
+                    >
+                      <Laptop className="w-3.5 h-3.5" />
+                      <span>Abrir exportador</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {settingsSection === 'acerca' && (
+              <>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Acerca de FabiNav</h2>
+                <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl p-5 space-y-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold text-base"
+                      style={{ background: 'var(--leo-gradient-brand)' }}
+                    >
+                      F
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--bn-text-strong)]">
+                        FabiNav v{APP_VERSION}
+                      </div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Diseño Brave Leo · Búsqueda web en vivo · Almacenamiento local
+                      </div>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={onExportBackup}
-                    className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium flex items-center gap-1.5"
+                    onClick={() => onNavigate('fabinav://about')}
+                    className="text-xs text-[var(--bn-accent)] hover:underline"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Exportar JSON</span>
+                    Ver atajos de teclado y detalles
                   </button>
                 </div>
-
-                <div className="p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Importar respaldo (.json)</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Restaura una copia exportada previamente
-                    </div>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) onImportBackup(file);
-                      e.target.value = '';
-                    }}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] font-medium flex items-center gap-1.5"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Importar JSON</span>
-                  </button>
-                </div>
-
-                <div className="p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-[var(--bn-text-strong)]">Proyecto de escritorio Electron</div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Ver y descargar los archivos main.js y preload.js
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onOpenElectronModal}
-                    className="px-4 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] font-medium flex items-center gap-1.5"
-                  >
-                    <Laptop className="w-3.5 h-3.5" />
-                    <span>Abrir exportador</span>
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {settingsSection === 'acerca' && (
-            <>
-              <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Acerca de FabiNav</h2>
-              <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl p-5 space-y-3 text-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[var(--bn-accent)] text-white flex items-center justify-center font-bold text-base">
-                    F
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-[var(--bn-text-strong)]">
-                      FabiNav v{APP_VERSION}
-                    </div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">
-                      Navegador web con diseño Brave Desktop y almacenamiento 100% local
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('fabinav://about')}
-                  className="text-xs text-[var(--bn-accent)] hover:underline"
-                >
-                  Ver atajos de teclado y detalles
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );

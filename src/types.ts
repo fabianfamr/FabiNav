@@ -54,10 +54,7 @@ export interface HistoryEntry {
   timeFormatted: string;
 }
 
-export interface BrowserProfile {
-  name: string;
-  email: string;
-  avatarUrl: string;
+export interface LocalBackupMeta {
   lastExportTimestamp: number | null;
 }
 
@@ -116,8 +113,7 @@ export interface FabiShieldState {
   blockFingerprinting: 'standard' | 'strict' | 'disabled';
   blockCrossSiteCookies: boolean;
   httpsUpgradesCount: number;
-  trackersBlockedCount: number;
-  bandwidthSavedKb: number;
+  searchesCount: number;
 }
 
 export interface TopSiteItem {
@@ -137,4 +133,20 @@ export interface FabiNewTabCustomization {
   showTopSites: boolean;
   showClock: boolean;
   selectedWallpaperId: string;
+}
+
+export interface SearchResultItem {
+  title: string;
+  url: string;
+  displayUrl: string;
+  snippet: string;
+  source: 'web' | 'wikipedia';
+}
+
+export interface SearchApiResponse {
+  query: string;
+  results: SearchResultItem[];
+  wikipedia: SearchResultItem[];
+  webError: string | null;
+  fetchedAt: number;
 }

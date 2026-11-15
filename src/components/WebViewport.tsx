@@ -1,18 +1,32 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   WebTab,
   BrowserSettings,
   FabiShieldState,
   FabiNewTabCustomization,
-  BrowserProfile,
   HistoryEntry,
   Bookmark,
   DownloadItem,
-  TopSiteItem
+  TopSiteItem,
+  SearchApiResponse,
+  SearchResultItem
 } from '../types';
-import { Columns, ExternalLink, ShieldCheck, ShieldOff, Search, Globe } from 'lucide-react';
+import {
+  Columns,
+  ExternalLink,
+  ShieldCheck,
+  ShieldOff,
+  Search,
+  Globe,
+  BookOpen,
+  RotateCw,
+  AlertCircle
+} from 'lucide-react';
 import { FabiNewTabView } from './FabiNewTabView';
 import { FabiInternalsView } from './FabiInternalsView';
+
+const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 interface WebViewportProps {
   primaryTab: WebTab;
@@ -29,8 +43,6 @@ interface WebViewportProps {
   onToggleSplitTab?: (tabId: string) => void;
   onUpdateCustomization: (updates: Partial<FabiNewTabCustomization>) => void;
   onOpenShieldModal: () => void;
-  profile: BrowserProfile;
-  onUpdateProfile: (updates: Partial<BrowserProfile>) => void;
   bookmarks: Bookmark[];
   onAddBookmark: (title: string, url: string, folder?: string) => void;
   onRemoveBookmark: (id: string) => void;
@@ -60,8 +72,6 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   onToggleSplitTab,
   onUpdateCustomization,
   onOpenShieldModal,
-  profile,
-  onUpdateProfile,
   bookmarks,
   onAddBookmark,
   onRemoveBookmark,
@@ -88,8 +98,6 @@ export const WebViewport: React.FC<WebViewportProps> = ({
     onRemoveTopSite,
     onUpdateCustomization,
     onOpenShieldModal,
-    profile,
-    onUpdateProfile,
     bookmarks,
     onAddBookmark,
     onRemoveBookmark,
@@ -110,7 +118,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
       className="flex-1 bg-[var(--bn-surface)] relative overflow-hidden flex"
     >
       <div
-        className={`h-full overflow-hidden flex flex-col ${
+        className={`h-full overflow-hidden flex flex-col transition-all leo-transition-m ${
           isSplit ? 'w-1/2 border-r border-[var(--bn-border)]' : 'w-full'
         }`}
       >
@@ -124,18 +132,27 @@ export const WebViewport: React.FC<WebViewportProps> = ({
         />
       </div>
 
-      {isSplit && splitTab && (
-        <div className="w-1/2 h-full overflow-hidden flex flex-col bg-[var(--bn-surface)]">
-          <SingleTabFrame
-            tab={splitTab}
-            onNavigate={(url) => onNavigate(splitTab.id, url)}
-            onCloseSplit={() => onToggleSplitTab?.(splitTab.id)}
-            isSplit={true}
-            label="Panel derecho"
-            {...sharedProps}
-          />
-        </div>
-      )}
+      <AnimatePresence>
+        {isSplit && splitTab && (
+          <motion.div
+            key={splitTab.id}
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 16 }}
+            transition={{ duration: 0.2, ease: LEO_EASE_OUT }}
+            className="w-1/2 h-full overflow-hidden flex flex-col bg-[var(--bn-surface)]"
+          >
+            <SingleTabFrame
+              tab={splitTab}
+              onNavigate={(url) => onNavigate(splitTab.id, url)}
+              onCloseSplit={() => onToggleSplitTab?.(splitTab.id)}
+              isSplit={true}
+              label="Panel derecho"
+              {...sharedProps}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 };
@@ -156,8 +173,6 @@ interface SingleTabFrameProps {
   label?: string;
   onUpdateCustomization: (updates: Partial<FabiNewTabCustomization>) => void;
   onOpenShieldModal: () => void;
-  profile: BrowserProfile;
-  onUpdateProfile: (updates: Partial<BrowserProfile>) => void;
   bookmarks: Bookmark[];
   onAddBookmark: (title: string, url: string, folder?: string) => void;
   onRemoveBookmark: (id: string) => void;
@@ -188,8 +203,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   label,
   onUpdateCustomization,
   onOpenShieldModal,
-  profile,
-  onUpdateProfile,
   bookmarks,
   onAddBookmark,
   onRemoveBookmark,
@@ -211,55 +224,21 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     ? decodeURIComponent(tab.url.replace('fabinav://search?q=', ''))
     : '';
 
-  const searchTargets = isSearchPage
-    ? [
-        {
-          id: 'brave',
-          name: 'Brave Search',
-          desc: 'Motor de búsqueda privado predeterminado',
-          href: `https://search.brave.com/search?q=${encodeURIComponent(searchQuery)}`
-        },
-        {
-          id: 'google',
-          name: 'Google',
-          desc: 'Resultados web de Google',
-          href: `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`
-        },
-        {
-          id: 'duckduckgo',
-          name: 'DuckDuckGo',
-          desc: 'Búsqueda sin seguimiento',
-          href: `https://duckduckgo.com/?q=${encodeURIComponent(searchQuery)}`
-        },
-        {
-          id: 'bing',
-          name: 'Bing',
-          desc: 'Buscador web de Microsoft',
-          href: `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}`
-        },
-        {
-          id: 'ecosia',
-          name: 'Ecosia',
-          desc: 'Buscador ecológico',
-          href: `https://www.ecosia.org/search?q=${encodeURIComponent(searchQuery)}`
-        },
-        {
-          id: 'wikipedia',
-          name: 'Wikipedia',
-          desc: 'Enciclopedia libre (carga directa en pestaña)',
-          internalUrl: `https://es.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(searchQuery)}`
-        }
-      ]
-    : [];
-
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-[var(--bn-surface)]">
-      {/* Loading bar */}
-      {tab.isLoading && (
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-transparent z-30">
-          <div className="h-full bg-[var(--bn-accent)] w-full animate-pulse" />
-        </div>
-      )}
+      {/* Brave Leo Loading Progress Bar */}
+      <AnimatePresence>
+        {tab.isLoading && (
+          <motion.div
+            initial={{ scaleX: 0, opacity: 1 }}
+            animate={{ scaleX: 0.85, opacity: 1 }}
+            exit={{ scaleX: 1, opacity: 0 }}
+            transition={{ duration: 0.3, ease: LEO_EASE_OUT }}
+            style={{ transformOrigin: 'left' }}
+            className="absolute top-0 left-0 right-0 h-[2px] bg-[var(--bn-accent)] z-30"
+          />
+        )}
+      </AnimatePresence>
 
       {/* Split header strip */}
       {isSplit && (
@@ -274,7 +253,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
             <button
               type="button"
               onClick={onCloseSplit}
-              className="text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] px-2 py-0.5 rounded-full hover:bg-[var(--bn-hover)] whitespace-nowrap shrink-0"
+              className="text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] px-2 py-0.5 rounded-full hover:bg-[var(--bn-hover)] whitespace-nowrap shrink-0 transition-colors leo-transition-xs"
             >
               Cerrar vista dividida
             </button>
@@ -295,74 +274,11 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onOpenShieldModal={onOpenShieldModal}
         />
       ) : isSearchPage ? (
-        <div className="flex-1 overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)] p-8">
-          <div className="max-w-2xl mx-auto space-y-6">
-            <div className="pb-5 border-b border-[var(--bn-border)] flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] flex items-center justify-center shrink-0">
-                <Search className="w-5 h-5" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-[var(--bn-text-strong)]">
-                  Buscar: "{searchQuery}"
-                </h1>
-                <p className="text-xs text-[var(--bn-text-muted)]">
-                  Elige el motor donde deseas abrir los resultados de búsqueda.
-                </p>
-              </div>
-            </div>
-
-            <div className="divide-y divide-[var(--bn-border)] border border-[var(--bn-border)] rounded-2xl bg-[var(--bn-surface-alt)] overflow-hidden">
-              {searchTargets.map((target) => {
-                const isDefault = target.id === settings.defaultSearchEngine;
-                return (
-                  <div
-                    key={target.id}
-                    className="p-4 flex items-center justify-between gap-4 hover:bg-[var(--bn-hover)] transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Globe className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-[var(--bn-text-strong)] flex items-center gap-2">
-                          <span>{target.name}</span>
-                          {isDefault && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] font-medium">
-                              Predeterminado
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-[var(--bn-text-muted)]">{target.desc}</div>
-                      </div>
-                    </div>
-
-                    {target.internalUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => onNavigate(target.internalUrl!)}
-                        className="px-3.5 py-1.5 bg-[var(--bn-toolbar)] hover:bg-[var(--bn-active)] border border-[var(--bn-border-strong)] rounded-full text-xs font-medium text-[var(--bn-text-strong)] whitespace-nowrap shrink-0"
-                      >
-                        Abrir en pestaña
-                      </button>
-                    ) : (
-                      <a
-                        href={target.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`px-3.5 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
-                          isDefault
-                            ? 'bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white'
-                            : 'bg-[var(--bn-toolbar)] hover:bg-[var(--bn-active)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)]'
-                        }`}
-                      >
-                        <span>Abrir búsqueda</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <BraveSearchView
+          query={searchQuery}
+          defaultEngine={settings.defaultSearchEngine}
+          onNavigate={onNavigate}
+        />
       ) : isFabiInternal ? (
         <FabiInternalsView
           url={tab.url}
@@ -370,8 +286,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onUpdateShieldState={onUpdateShieldState}
           settings={settings}
           onUpdateSettings={onUpdateSettings}
-          profile={profile}
-          onUpdateProfile={onUpdateProfile}
           bookmarks={bookmarks}
           onAddBookmark={onAddBookmark}
           onRemoveBookmark={onRemoveBookmark}
@@ -432,6 +346,352 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+/* ============================================================================
+   Brave Search Live Results UI (powered by /api/search)
+============================================================================ */
+interface BraveSearchViewProps {
+  query: string;
+  defaultEngine: BrowserSettings['defaultSearchEngine'];
+  onNavigate: (url: string) => void;
+}
+
+const BraveSearchView: React.FC<BraveSearchViewProps> = ({
+  query,
+  defaultEngine,
+  onNavigate
+}) => {
+  const [inputVal, setInputVal] = useState(query);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'wikipedia'>('all');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [data, setData] = useState<SearchApiResponse | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+
+  useEffect(() => {
+    setInputVal(query);
+  }, [query]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setData(null);
+      setErrorMsg(null);
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+    setErrorMsg(null);
+
+    fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
+      signal: controller.signal
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return (await res.json()) as SearchApiResponse;
+      })
+      .then((json) => {
+        setData(json);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setErrorMsg('No se pudo conectar con el servicio de búsqueda.');
+        setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [query, reloadTick]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = inputVal.trim();
+    if (!cleaned) return;
+    onNavigate(`fabinav://search?q=${encodeURIComponent(cleaned)}`);
+  };
+
+  const webResults = data?.results || [];
+  const wikiResults = data?.wikipedia || [];
+  const visibleItems: SearchResultItem[] =
+    activeFilter === 'wikipedia'
+      ? wikiResults
+      : [...webResults, ...wikiResults.filter((w) => !webResults.some((r) => r.url === w.url))];
+
+  const externalEngines = [
+    {
+      id: 'brave',
+      name: 'Brave Search',
+      href: `https://search.brave.com/search?q=${encodeURIComponent(query)}`
+    },
+    {
+      id: 'google',
+      name: 'Google',
+      href: `https://www.google.com/search?q=${encodeURIComponent(query)}`
+    },
+    {
+      id: 'duckduckgo',
+      name: 'DuckDuckGo',
+      href: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
+    }
+  ];
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)]">
+      {/* Top Brave Search Header */}
+      <div className="sticky top-0 z-10 bg-[var(--bn-toolbar)]/95 backdrop-blur-md border-b border-[var(--bn-border)] px-6 pt-4 pb-0">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center gap-4">
+            {/* Brave Lion Emblem */}
+            <button
+              type="button"
+              onClick={() => onNavigate('fabinav://newtab')}
+              title="Volver a Nueva pestaña"
+              className="flex items-center gap-2 shrink-0 group"
+            >
+              <span
+                className="w-8 h-8 rounded-lg flex items-center justify-center shadow-xs transition-transform leo-transition-s group-hover:scale-105"
+                style={{ background: 'var(--leo-gradient-brand)' }}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4 text-white fill-current">
+                  <path d="M12 2L4.5 5.3v5.9c0 5.1 3.2 9.8 7.5 10.8 4.3-1 7.5-5.7 7.5-10.8V5.3L12 2zm0 3.2l4.4 2-.8 2.4-3.6-1.3-3.6 1.3-.8-2.4 4.4-2zm-3.2 6l3.2 1.2 3.2-1.2-.5 3.1-2.7 1.6-2.7-1.6-.5-3.1z" />
+                </svg>
+              </span>
+              <span className="hidden sm:inline text-sm font-bold text-[var(--bn-text-strong)] tracking-tight">
+                FabiNav Search
+              </span>
+            </button>
+
+            {/* Live Search Bar */}
+            <form onSubmit={handleSubmit} className="flex-1 max-w-2xl">
+              <div className="h-10 rounded-full bg-[var(--bn-omnibox)] border border-[var(--bn-border)] focus-within:border-[var(--bn-accent)] focus-within:bg-[var(--bn-omnibox-focus)] flex items-center px-3.5 gap-2 transition-colors leo-transition-s">
+                <Search className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
+                <input
+                  type="text"
+                  value={inputVal}
+                  onChange={(e) => setInputVal(e.target.value)}
+                  placeholder="Buscar en la web..."
+                  className="flex-1 bg-transparent outline-none text-sm text-[var(--bn-text-strong)] placeholder:text-[var(--bn-text-muted)]"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium transition-colors leo-transition-xs shrink-0"
+                >
+                  Buscar
+                </button>
+              </div>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => setReloadTick((n) => n + 1)}
+              title="Actualizar resultados"
+              className="p-2 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors leo-transition-xs shrink-0"
+            >
+              <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-5 mt-3 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setActiveFilter('all')}
+              className={`pb-2.5 border-b-2 flex items-center gap-1.5 transition-colors leo-transition-s ${
+                activeFilter === 'all'
+                  ? 'border-[var(--bn-accent)] text-[var(--bn-accent)]'
+                  : 'border-transparent text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Todo ({webResults.length + wikiResults.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveFilter('wikipedia')}
+              className={`pb-2.5 border-b-2 flex items-center gap-1.5 transition-colors leo-transition-s ${
+                activeFilter === 'wikipedia'
+                  ? 'border-[var(--bn-accent)] text-[var(--bn-accent)]'
+                  : 'border-transparent text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Wikipedia ({wikiResults.length})</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Results Container */}
+      <div className="max-w-4xl mx-auto px-6 py-6">
+        {loading ? (
+          <div className="space-y-4">
+            {[1, 2, 3, 4].map((idx) => (
+              <div
+                key={idx}
+                className="p-4 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] animate-pulse space-y-2.5"
+              >
+                <div className="h-3 w-48 rounded bg-[var(--bn-hover)]" />
+                <div className="h-4 w-80 rounded bg-[var(--bn-active)]" />
+                <div className="h-3 w-full rounded bg-[var(--bn-hover)]" />
+              </div>
+            ))}
+          </div>
+        ) : errorMsg ? (
+          <div className="p-5 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-[var(--bn-warning)] shrink-0 mt-0.5" />
+            <div className="space-y-2">
+              <div className="text-sm font-semibold text-[var(--bn-text-strong)]">{errorMsg}</div>
+              <p className="text-xs text-[var(--bn-text-muted)]">
+                Puedes reintentar o abrir la consulta directamente en un buscador externo.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setReloadTick((n) => n + 1)}
+                  className="px-3 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium"
+                >
+                  Reintentar
+                </button>
+                {externalEngines.map((eng) => (
+                  <a
+                    key={eng.id}
+                    href={eng.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-full bg-[var(--bn-toolbar)] border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-xs font-medium text-[var(--bn-text-strong)] inline-flex items-center gap-1"
+                  >
+                    <span>{eng.name}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Main Organic Results */}
+            <div className="lg:col-span-8 space-y-3.5">
+              {data?.webError && webResults.length === 0 && (
+                <div className="p-3.5 rounded-xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] text-xs text-[var(--bn-text-muted)] flex items-center justify-between gap-3">
+                  <span>
+                    La búsqueda web directa devolvió límite temporal; mostrando resultados disponibles de Wikipedia y enlaces directos.
+                  </span>
+                </div>
+              )}
+
+              {visibleItems.length === 0 ? (
+                <div className="p-6 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] text-center space-y-2">
+                  <div className="text-sm font-semibold text-[var(--bn-text-strong)]">
+                    No se encontraron resultados para "{query}"
+                  </div>
+                  <p className="text-xs text-[var(--bn-text-muted)]">
+                    Prueba con otros términos o abre la búsqueda en un motor externo.
+                  </p>
+                </div>
+              ) : (
+                visibleItems.map((item, idx) => (
+                  <motion.article
+                    key={`${item.url}-${idx}`}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.15,
+                      delay: Math.min(idx * 0.025, 0.2),
+                      ease: LEO_EASE_OUT
+                    }}
+                    className="p-4 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] hover:border-[var(--bn-border-strong)] transition-colors leo-transition-s group"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[11px] font-mono text-[var(--bn-text-muted)] truncate">
+                        {item.displayUrl}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 font-medium ${
+                          item.source === 'wikipedia'
+                            ? 'bg-blue-500/10 text-blue-400'
+                            : 'bg-[var(--bn-hover)] text-[var(--bn-text-muted)]'
+                        }`}
+                      >
+                        {item.source === 'wikipedia' ? 'Wikipedia' : 'Web'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onNavigate(item.url)}
+                        className="text-left text-base font-semibold text-[#8ab4f8] dark:text-[#8ab4f8] hover:underline group-hover:text-[var(--bn-accent)] transition-colors leo-transition-xs leading-snug"
+                      >
+                        {item.title}
+                      </button>
+
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Abrir en ventana externa"
+                        className="p-1.5 rounded-lg text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] shrink-0 transition-colors leo-transition-xs"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+
+                    {item.snippet && (
+                      <p className="mt-1.5 text-xs leading-relaxed text-[var(--bn-text)] line-clamp-3">
+                        {item.snippet}
+                      </p>
+                    )}
+                  </motion.article>
+                ))
+              )}
+            </div>
+
+            {/* Right Column: External Search Engines Fallback Card */}
+            <aside className="lg:col-span-4 space-y-4">
+              <div className="p-4 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] space-y-3">
+                <div className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                  Abrir "{query}" en motor externo
+                </div>
+                <p className="text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
+                  Algunos sitios bloquean su carga dentro de pestañas embebidas. Usa estos enlaces para abrir directamente.
+                </p>
+                <div className="space-y-1.5">
+                  {externalEngines.map((eng) => {
+                    const isDef = eng.id === defaultEngine;
+                    return (
+                      <a
+                        key={eng.id}
+                        href={eng.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors leo-transition-xs ${
+                          isDef
+                            ? 'bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white'
+                            : 'bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] text-[var(--bn-text-strong)] border border-[var(--bn-border)]'
+                        }`}
+                      >
+                        <span>
+                          {eng.name}
+                          {isDef ? ' (Predeterminado)' : ''}
+                        </span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </aside>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
