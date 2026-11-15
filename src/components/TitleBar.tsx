@@ -13,6 +13,7 @@ import {
   Columns,
   Search,
   PanelRight,
+  PanelLeft,
   Menu as MenuIcon,
   Globe,
   History,
@@ -30,7 +31,17 @@ import {
   Cookie,
   Trash2,
   X,
-  Compass
+  Compass,
+  ChevronRight,
+  Minus,
+  Maximize2,
+  Minimize2,
+  HelpCircle,
+  LogOut,
+  Wrench,
+  StickyNote,
+  ZoomIn,
+  AppWindow
 } from 'lucide-react';
 import {
   WebTab,
@@ -54,6 +65,7 @@ interface TitleBarProps {
   onGoForward: () => void;
   onReload: () => void;
   onGoHome: () => void;
+  onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   onResetZoom: () => void;
   onToggleBookmark: () => void;
   onToggleSplitMode: () => void;
@@ -62,11 +74,18 @@ interface TitleBarProps {
   onOpenBackupModal: () => void;
   onOpenElectronModal: () => void;
   onOpenDevTools: () => void;
+  onOpenNotes: () => void;
+  onOpenCommandPalette: () => void;
   onNewTab: () => void;
+  onNewWindow: () => void;
   onNewPrivateTab: () => void;
   onReopenClosedTab: () => void;
   canReopenClosedTab: boolean;
   onToggleBookmarksBar: () => void;
+  onClearBrowsingData: () => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+  onCloseWindow: () => void;
   isSplitActive: boolean;
   shieldCount: number;
   isShieldActive: boolean;
@@ -82,7 +101,8 @@ const INTERNAL_SUGGESTIONS = [
   { title: 'Acerca de FabiNav', url: 'fabinav://about', kind: 'FabiNav' }
 ];
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const ZOOM_STEPS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200];
+const EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const TitleBar: React.FC<TitleBarProps> = ({
   currentTab,
@@ -96,6 +116,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onGoForward,
   onReload,
   onGoHome,
+  onUpdateSettings,
   onResetZoom,
   onToggleBookmark,
   onToggleSplitMode,
@@ -104,18 +125,26 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenBackupModal,
   onOpenElectronModal,
   onOpenDevTools,
+  onOpenNotes,
+  onOpenCommandPalette,
   onNewTab,
+  onNewWindow,
   onNewPrivateTab,
   onReopenClosedTab,
   canReopenClosedTab,
   onToggleBookmarksBar,
+  onClearBrowsingData,
+  isFullscreen,
+  onToggleFullscreen,
+  onCloseWindow,
   isSplitActive,
   shieldCount,
   isShieldActive
 }) => {
   const [inputUrl, setInputUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const [showBraveMenu, setShowBraveMenu] = useState(false);
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [showMoreTools, setShowMoreTools] = useState(false);
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
   const [tlsInfo, setTlsInfo] = useState<TlsInspectionResult | null>(null);
   const [siteCookies, setSiteCookies] = useState<StoredCookieItem[]>([]);
@@ -140,7 +169,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowBraveMenu(false);
+        setShowMainMenu(false);
+        setShowMoreTools(false);
       }
       if (securityRef.current && !securityRef.current.contains(e.target as Node)) {
         setShowSecurityPopover(false);
@@ -148,7 +178,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowBraveMenu(false);
+        setShowMainMenu(false);
+        setShowMoreTools(false);
         setShowSecurityPopover(false);
       }
     };
@@ -207,6 +238,23 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       { method: 'DELETE' }
     );
     setSiteCookies([]);
+  };
+
+  const handleStepZoom = (direction: -1 | 1) => {
+    const currentIdx = ZOOM_STEPS.findIndex((z) => z >= settings.zoomLevel);
+    const idx = currentIdx === -1 ? ZOOM_STEPS.indexOf(100) : currentIdx;
+    const nextIdx = Math.min(ZOOM_STEPS.length - 1, Math.max(0, idx + direction));
+    onUpdateSettings({ zoomLevel: ZOOM_STEPS[nextIdx] });
+  };
+
+  const sidebarMode: 'on' | 'auto' | 'off' =
+    settings.sidebarMode || (settings.showSidebar ? 'on' : 'off');
+
+  const setSidebarMode = (mode: 'on' | 'auto' | 'off') => {
+    onUpdateSettings({
+      sidebarMode: mode,
+      showSidebar: mode !== 'off'
+    });
   };
 
   const trimmedInput = inputUrl.trim();
@@ -292,7 +340,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       id="fabinav-toolbar"
       className="h-11 bg-[var(--bn-toolbar)] border-b border-[var(--bn-border)] flex items-center justify-between px-2.5 gap-2 select-none z-40 shrink-0 text-xs relative"
     >
-      {/* Left: Classic Chromium/Brave Navigation Buttons */}
+      {/* Left: Navigation & Bookmark Actions */}
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
@@ -334,15 +382,31 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <Home className="w-4 h-4" />
           </button>
         )}
+        <button
+          type="button"
+          onClick={onToggleBookmark}
+          title={
+            currentTab?.isBookmarked
+              ? 'Quitar de marcadores'
+              : 'Añadir esta pestaña a marcadores'
+          }
+          className={`w-8 h-8 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs ${
+            currentTab?.isBookmarked
+              ? 'text-[var(--bn-accent)]'
+              : 'text-[var(--bn-text)] hover:text-[var(--bn-text-strong)]'
+          }`}
+        >
+          <BookmarkIcon className={`w-4 h-4 ${currentTab?.isBookmarked ? 'fill-current' : ''}`} />
+        </button>
       </div>
 
-      {/* Center: Brave Signature Full-Pill Omnibox + TLS Padlock Inspector */}
+      {/* Center: FabiNav Omnibox with Integrated Shield & TLS Inspector */}
       <div className="flex-1 max-w-4xl mx-auto flex items-center relative" ref={securityRef}>
         <form
           onSubmit={handleSubmit}
-          className={`flex-1 flex items-center h-8 px-2.5 rounded-full border transition-all leo-transition-s ${
+          className={`flex-1 flex items-center h-[34px] pl-2 pr-1.5 rounded-full border transition-all leo-transition-s ${
             isFocused
-              ? 'bg-[var(--bn-omnibox-focus)] border-[var(--bn-accent)] ring-2 ring-[var(--bn-accent)]/25 shadow-sm'
+              ? 'bg-[var(--bn-omnibox-focus)] border-[var(--bn-interactive)] ring-2 ring-[var(--bn-interactive)]/30 shadow-sm'
               : 'bg-[var(--bn-omnibox)] border-transparent hover:border-[var(--bn-border-strong)]'
           }`}
         >
@@ -402,7 +466,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             aria-label="Barra de direcciones y búsqueda"
           />
 
-          <div className="flex items-center gap-1 shrink-0 ml-2">
+          <div className="flex items-center gap-1 shrink-0 ml-1.5">
             {isFocused && inputUrl.length > 0 && (
               <button
                 type="button"
@@ -428,67 +492,50 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               </button>
             )}
 
-            <button
+            {/* FabiNav Shield Button Inside Omnibox Right Edge */}
+            <motion.button
               type="button"
-              onClick={onToggleBookmark}
-              title={
-                currentTab?.isBookmarked
-                  ? 'Quitar de marcadores'
-                  : 'Añadir esta pestaña a marcadores'
-              }
-              className={`p-1 rounded-full hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs ${
-                currentTab?.isBookmarked
-                  ? 'text-[var(--bn-accent)]'
-                  : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
-              }`}
+              whileTap={{ scale: 0.9 }}
+              onClick={onToggleShieldsModal}
+              title={`Escudos de FabiNav: ${isShieldActive ? 'Activos' : 'Desactivados'}`}
+              className="relative w-7 h-7 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] transition-colors shrink-0"
             >
-              <Star className={`w-3.5 h-3.5 ${currentTab?.isBookmarked ? 'fill-current' : ''}`} />
-            </button>
+              {isShieldActive ? (
+                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="fabiShieldGrad" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#FA7250" />
+                      <stop offset="100%" stopColor="#FB542B" />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    fill="url(#fabiShieldGrad)"
+                    d="M12 2L4 5.2v5.9c0 5.1 3.4 9.7 8 10.9 4.6-1.2 8-5.8 8-10.9V5.2L12 2z"
+                  />
+                  <path
+                    fill="#ffffff"
+                    fillOpacity="0.95"
+                    d="M9.5 7.5h6v2h-3.8v1.8h3v2h-3v3.5h-2.2V7.5z"
+                  />
+                </svg>
+              ) : (
+                <ShieldOff className="w-4 h-4 text-[var(--bn-text-muted)]" />
+              )}
+
+              {isShieldActive && shieldCount > 0 && (
+                <motion.span
+                  key={shieldCount}
+                  initial={{ scale: 1.3 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.2, ease: EASE_OUT }}
+                  className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-[var(--bn-accent)] text-white text-[9px] font-semibold flex items-center justify-center tabular-nums shadow"
+                >
+                  {shieldCount}
+                </motion.span>
+              )}
+            </motion.button>
           </div>
         </form>
-
-        {/* Brave Shields Lion Emblem Attached Right Next to Omnibox */}
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.9 }}
-          onClick={onToggleShieldsModal}
-          title={`Escudos de FabiNav: ${isShieldActive ? 'Activos' : 'Desactivados'}`}
-          className="ml-1.5 relative w-8 h-8 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] transition-colors shrink-0"
-        >
-          {isShieldActive ? (
-            <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" aria-hidden="true">
-              <defs>
-                <linearGradient id="braveShieldGrad" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#FA7250" />
-                  <stop offset="100%" stopColor="#FB542B" />
-                </linearGradient>
-              </defs>
-              <path
-                fill="url(#braveShieldGrad)"
-                d="M12 2L4 5.2v5.9c0 5.1 3.4 9.7 8 10.9 4.6-1.2 8-5.8 8-10.9V5.2L12 2z"
-              />
-              <path
-                fill="#ffffff"
-                fillOpacity="0.92"
-                d="M12 6.4l3.6 1.8-.9 3.6 1.1 2-3.8 3-3.8-3 1.1-2-.9-3.6L12 6.4z"
-              />
-            </svg>
-          ) : (
-            <ShieldOff className="w-4.5 h-4.5 text-[var(--bn-text-muted)]" />
-          )}
-
-          {isShieldActive && shieldCount > 0 && (
-            <motion.span
-              key={shieldCount}
-              initial={{ scale: 1.3 }}
-              animate={{ scale: 1 }}
-              transition={{ duration: 0.2, ease: LEO_EASE_OUT }}
-              className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--bn-accent)] text-white text-[9px] font-semibold flex items-center justify-center tabular-nums shadow"
-            >
-              {shieldCount}
-            </motion.span>
-          )}
-        </motion.button>
 
         {/* Site TLS Certificate & Cookies Popover */}
         <AnimatePresence>
@@ -497,7 +544,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               initial={{ opacity: 0, y: -6, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.96 }}
-              transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+              transition={{ duration: 0.14, ease: EASE_OUT }}
               className="absolute left-0 top-10 w-80 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden text-xs"
             >
               {!isExternalUrl ? (
@@ -636,8 +683,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               initial={{ opacity: 0, y: -4, scale: 0.99 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.99 }}
-              transition={{ duration: 0.12, ease: LEO_EASE_OUT }}
-              className="absolute left-0 right-10 top-10 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden py-1.5"
+              transition={{ duration: 0.12, ease: EASE_OUT }}
+              className="absolute left-0 right-0 top-10 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden py-1.5"
             >
               {matchedSuggestions.map((item, idx) => (
                 <button
@@ -671,7 +718,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Right: Brave Toolbar Actions, Real Google Avatar & Menu */}
+      {/* Right: FabiNav Toolbar Actions, Google Avatar & Desktop Menu Panel */}
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
@@ -699,7 +746,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <PanelRight className="w-4 h-4" />
         </button>
 
-        {/* Real Google Profile Avatar (only when authenticated) or Neutral Sign-In Icon */}
         <button
           type="button"
           onClick={onOpenBackupModal}
@@ -726,14 +772,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           )}
         </button>
 
-        {/* Brave Main Hamburger Menu */}
+        {/* FabiNav Main Desktop Menu Panel */}
         <div className="relative" ref={menuRef}>
           <button
             type="button"
-            onClick={() => setShowBraveMenu(!showBraveMenu)}
+            onClick={() => {
+              setShowMainMenu((v) => !v);
+              setShowMoreTools(false);
+            }}
             title="Personaliza y controla FabiNav"
             className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
-              showBraveMenu
+              showMainMenu
                 ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
                 : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
             }`}
@@ -742,41 +791,58 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </button>
 
           <AnimatePresence>
-            {showBraveMenu && (
+            {showMainMenu && (
               <motion.div
                 initial={{ opacity: 0, y: -6, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
-                transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
-                className="absolute right-0 top-10 w-64 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-xs py-1.5 text-[var(--bn-text)] rounded-2xl origin-top-right"
+                transition={{ duration: 0.14, ease: EASE_OUT }}
+                className="absolute right-0 top-10 w-[320px] max-h-[calc(100vh-76px)] overflow-y-auto bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[12px] py-1.5 text-[var(--bn-text)] rounded-xl origin-top-right"
               >
+                {/* Section 1: Tabs & Windows */}
                 <button
                   type="button"
                   onClick={() => {
                     onNewTab();
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Plus className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-3">
+                    <Plus className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Nueva pestaña</span>
                   </span>
-                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)]">Ctrl+T</span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+T</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNewWindow();
+                    setShowMainMenu(false);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <AppWindow className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Nueva ventana</span>
+                  </span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+N</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     onNewPrivateTab();
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
+                  <span className="flex items-center gap-3">
                     <EyeOff className="w-3.5 h-3.5 text-[var(--bn-private-text)]" />
-                    <span>Nueva pestaña privada</span>
+                    <span>Nueva ventana privada</span>
                   </span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+N</span>
                 </button>
 
                 {canReopenClosedTab && (
@@ -784,149 +850,353 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     type="button"
                     onClick={() => {
                       onReopenClosedTab();
-                      setShowBraveMenu(false);
+                      setShowMainMenu(false);
                     }}
                     className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                   >
-                    <span className="flex items-center gap-2.5">
-                      <RotateCcw className="w-3.5 h-3.5" />
+                    <span className="flex items-center gap-3">
+                      <RotateCcw className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                       <span>Reabrir pestaña cerrada</span>
                     </span>
-                    <span className="text-[10px] font-mono text-[var(--bn-text-muted)]">Ctrl+Shift+T</span>
+                    <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+T</span>
                   </button>
                 )}
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
+                {/* Section 2: Segmented Sidebar Control (Activada | Auto | Desactivada) */}
+                <div className="px-3.5 py-1.5 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2.5 text-[var(--bn-text)] shrink-0">
+                    <PanelLeft className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Barra lateral</span>
+                  </span>
+
+                  <div className="inline-flex items-center rounded-md border border-[var(--bn-border-strong)] overflow-hidden bg-[var(--bn-surface-alt)] text-[11px]">
+                    {(
+                      [
+                        { id: 'on', label: 'Activada' },
+                        { id: 'auto', label: 'Auto' },
+                        { id: 'off', label: 'Desactivada' }
+                      ] as const
+                    ).map((opt, idx) => {
+                      const active = sidebarMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setSidebarMode(opt.id)}
+                          className={`px-2 py-1 transition-colors whitespace-nowrap ${
+                            idx > 0 ? 'border-l border-[var(--bn-border-strong)]' : ''
+                          } ${
+                            active
+                              ? 'bg-[var(--bn-interactive)] text-white font-medium'
+                              : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                {/* Section 3: Privacy, History, Bookmarks, Downloads */}
                 <button
                   type="button"
                   onClick={() => {
                     onNavigate('fabinav://shields');
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
+                  <span className="flex items-center gap-3">
                     <Cookie className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-                    <span>Cookies, TLS y Escudos</span>
+                    <span>Escudos, Cookies y TLS</span>
                   </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNavigate('fabinav://bookmarks');
-                    setShowBraveMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <BookmarkIcon className="w-3.5 h-3.5" />
-                    <span>Marcadores</span>
-                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     onNavigate('fabinav://history');
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <History className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-3">
+                    <History className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Historial</span>
                   </span>
-                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)]">Ctrl+H</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNavigate('fabinav://bookmarks');
+                    setShowMainMenu(false);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <BookmarkIcon className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Favoritos y listas</span>
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     onNavigate('fabinav://downloads');
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Download className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-3">
+                    <Download className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Descargas</span>
                   </span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+J</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     onToggleBookmarksBar();
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span>Mostrar barra de marcadores</span>
+                  <span className="flex items-center gap-3">
+                    <Star className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Barra de marcadores</span>
+                  </span>
                   <span className="text-[11px] font-medium text-[var(--bn-text-muted)]">
-                    {settings.showBookmarksBar ? 'Sí' : 'No'}
+                    {settings.showBookmarksBar ? 'Visible' : 'Oculta'}
                   </span>
                 </button>
-
-                <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
                 <button
                   type="button"
                   onClick={() => {
-                    setShowBraveMenu(false);
+                    onClearBrowsingData();
+                    setShowMainMenu(false);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <Trash2 className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Borrar datos de navegación...</span>
+                  </span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+Supr</span>
+                </button>
+
+                <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                {/* Section 4: Zoom [ - 100% + ] | Fullscreen */}
+                <div className="px-3.5 py-1.5 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-3 text-[var(--bn-text)]">
+                    <ZoomIn className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Zoom</span>
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleStepZoom(-1)}
+                      disabled={settings.zoomLevel <= ZOOM_STEPS[0]}
+                      title="Alejar"
+                      className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] disabled:opacity-35 text-[var(--bn-text)] transition-colors"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onResetZoom}
+                      title="Restablecer al 100%"
+                      className="min-w-[44px] text-center text-[12px] font-medium text-[var(--bn-text-strong)] tabular-nums hover:bg-[var(--bn-hover)] rounded-md py-1 px-1.5 transition-colors"
+                    >
+                      {settings.zoomLevel}%
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStepZoom(1)}
+                      disabled={settings.zoomLevel >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                      title="Acercar"
+                      className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] disabled:opacity-35 text-[var(--bn-text)] transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <span className="h-4 w-[1px] bg-[var(--bn-border-strong)] mx-0.5" />
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onToggleFullscreen();
+                        setShowMainMenu(false);
+                      }}
+                      title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                      className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-[var(--bn-hover)] text-[var(--bn-text)] transition-colors"
+                    >
+                      {isFullscreen ? (
+                        <Minimize2 className="w-3.5 h-3.5" />
+                      ) : (
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                {/* Section 5: Print, Command Search, Split View, More Tools */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMainMenu(false);
                     window.print();
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Printer className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-3">
+                    <Printer className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Imprimir...</span>
                   </span>
-                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)]">Ctrl+P</span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+P</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
-                    onOpenDevTools();
-                    setShowBraveMenu(false);
+                    onOpenCommandPalette();
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>Herramientas para desarrolladores</span>
+                  <span className="flex items-center gap-3">
+                    <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Buscar y comandos</span>
                   </span>
-                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)]">F12</span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+K</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
-                    onOpenElectronModal();
-                    setShowBraveMenu(false);
+                    onToggleSplitMode();
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Laptop className="w-3.5 h-3.5" />
-                    <span>Exportar proyecto Electron</span>
+                  <span className="flex items-center gap-3">
+                    <Columns className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>{isSplitActive ? 'Cerrar vista dividida' : 'Vista dividida'}</span>
                   </span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+\</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMoreTools((v) => !v)}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <Wrench className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Más herramientas</span>
+                  </span>
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 text-[var(--bn-text-muted)] transition-transform ${
+                      showMoreTools ? 'rotate-90' : ''
+                    }`}
+                  />
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {showMoreTools && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.14, ease: EASE_OUT }}
+                      className="overflow-hidden bg-[var(--bn-surface-alt)]/70 border-y border-[var(--bn-border)]/70"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenDevTools();
+                          setShowMainMenu(false);
+                        }}
+                        className="w-full text-left pl-9 pr-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Terminal className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Herramientas de desarrollo</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">F12</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenElectronModal();
+                          setShowMainMenu(false);
+                        }}
+                        className="w-full text-left pl-9 pr-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <Laptop className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                        <span>Exportar proyecto Electron</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenNotes();
+                          setShowMainMenu(false);
+                        }}
+                        className="w-full text-left pl-9 pr-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <StickyNote className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                        <span>Notas de sesión</span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                {/* Section 6: Help, Settings, Exit */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNavigate('fabinav://about');
+                    setShowMainMenu(false);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <HelpCircle className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>Ayuda</span>
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     onNavigate('fabinav://settings');
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Settings className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-3">
+                    <Settings className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Configuración</span>
                   </span>
                 </button>
@@ -934,14 +1204,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onNavigate('fabinav://about');
-                    setShowBraveMenu(false);
+                    setShowMainMenu(false);
+                    onCloseWindow();
                   }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-danger-text)] flex items-center justify-between transition-colors"
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Info className="w-3.5 h-3.5" />
-                    <span>Acerca de FabiNav</span>
+                  <span className="flex items-center gap-3">
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Salir</span>
                   </span>
                 </button>
               </motion.div>

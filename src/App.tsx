@@ -37,17 +37,21 @@ import { CommandPalette } from './components/CommandPalette';
 import { ElectronExportModal } from './components/ElectronExportModal';
 import { FabiShieldModal } from './components/BraveShieldModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
-import { Plus, X, Pin, VolumeX, Columns, Lock, Globe, Check } from 'lucide-react';
+import { Plus, X, Pin, VolumeX, Columns, Lock, Globe, Check, Compass, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-const STORAGE_KEY_PREFIX = 'fabinav_v1_8_';
-const LEGACY_STORAGE_PREFIX = 'fabinav_v1_7_';
+const STORAGE_KEY_PREFIX = 'fabinav_v1_9_';
+const LEGACY_STORAGE_PREFIXES = ['fabinav_v1_8_', 'fabinav_v1_7_'];
 
 function loadStored<T>(key: string, fallback: T): T {
   try {
-    const raw =
-      localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`) ??
-      localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${key}`);
+    let raw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`);
+    if (!raw) {
+      for (const prefix of LEGACY_STORAGE_PREFIXES) {
+        raw = localStorage.getItem(`${prefix}${key}`);
+        if (raw) break;
+      }
+    }
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -113,12 +117,15 @@ export default function App() {
   ]);
   const [networkReqs, setNetworkReqs] = useState<DevToolNetworkReq[]>([]);
 
-  // Modals, Toast & Sidebar
+  // Modals, Toast, Window Controls & Sidebar
   const [activeSidebarView, setActiveSidebarView] = useState<SidebarPanelView>(null);
+  const [isSidebarAutoHovered, setIsSidebarAutoHovered] = useState(false);
   const [isShieldsModalOpen, setIsShieldsModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
+  const [windowMode, setWindowMode] = useState<'maximized' | 'restored' | 'minimized' | 'closed'>('maximized');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const omniboxRef = useRef<HTMLInputElement | null>(null);
@@ -210,7 +217,7 @@ export default function App() {
     sessionNotes
   ]);
 
-  // Apply Brave theme class
+  // Apply FabiNav theme class
   useEffect(() => {
     document.body.className = `theme-${settings.theme}`;
     if (settings.theme === 'brave-light') {
@@ -219,6 +226,15 @@ export default function App() {
       document.documentElement.classList.add('dark');
     }
   }, [settings.theme]);
+
+  // Sync browser Fullscreen state
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   // Capture real browser runtime errors into DevTools Console
   useEffect(() => {
@@ -736,6 +752,39 @@ export default function App() {
     setSettings((prev) => ({ ...prev, ...newSettings }));
   };
 
+  const handleToggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      setWindowMode((prev) => (prev === 'maximized' ? 'restored' : 'maximized'));
+    }
+  };
+
+  const handleClearBrowsingData = async () => {
+    setHistoryEntries([]);
+    setClosedTabs([]);
+    try {
+      await Promise.all([
+        fetch('/api/cookies?partition=normal', { method: 'DELETE' }),
+        fetch('/api/cookies?partition=private', { method: 'DELETE' })
+      ]);
+    } catch {
+      // Ignore offline errors
+    }
+    appendLog('info', 'Historial y cookies eliminados por el usuario.', 'Privacidad');
+    showToast('Historial y cookies borrados');
+  };
+
+  const handleNewWindow = () => {
+    setWindowMode('maximized');
+    handleNewTab('fabinav://newtab');
+    showToast('Nueva sesión lista en FabiNav');
+  };
+
   // Safe DevTools Console Evaluator
   const handleRunConsoleCommand = (cmd: string) => {
     const normalized = cmd.trim().toLowerCase();
@@ -783,9 +832,21 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 't') {
         e.preventDefault();
         handleReopenClosedTab();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleNewTab('fabinav://newtab', 'private');
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Delete') {
+        e.preventDefault();
+        handleClearBrowsingData();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
         e.preventDefault();
         handleNewTab();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        handleNewWindow();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        handleNavigate(activeTab.id, 'fabinav://downloads');
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') {
         e.preventDefault();
         if (activeTab) handleCloseTab(activeTab.id);
@@ -798,7 +859,8 @@ export default function App() {
         setIsCommandPaletteOpen((prev) => !prev);
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        handleUpdateSettings({ showSidebar: !settings.showSidebar });
+        const nextShow = !settings.showSidebar;
+        handleUpdateSettings({ showSidebar: nextShow, sidebarMode: nextShow ? 'on' : 'off' });
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
         e.preventDefault();
         handleNavigate(activeTab.id, 'fabinav://history');
@@ -812,7 +874,7 @@ export default function App() {
         }
       } else if (e.key === 'F12' || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'i')) {
         e.preventDefault();
-        handleUpdateSettings({ showSidebar: true });
+        handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
         setActiveSidebarView('devtools');
       }
     };
@@ -841,7 +903,7 @@ export default function App() {
     {
       id: 'cmd-vertical-tabs',
       title: settings.useVerticalTabs ? 'Cambiar a pestañas horizontales' : 'Activar pestañas verticales',
-      subtitle: 'Alternar disposición clásica o lateral estilo Brave',
+      subtitle: 'Alternar disposición horizontal o columna lateral',
       category: 'Pestañas',
       action: () => handleUpdateSettings({ useVerticalTabs: !settings.useVerticalTabs })
     },
@@ -881,7 +943,7 @@ export default function App() {
       shortcut: 'F12',
       category: 'Herramientas',
       action: () => {
-        handleUpdateSettings({ showSidebar: true });
+        handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
         setActiveSidebarView('devtools');
       }
     },
@@ -901,7 +963,7 @@ export default function App() {
     },
     {
       id: 'cmd-theme-dark',
-      title: 'Tema: Brave Oscuro',
+      title: 'Tema: FabiNav Oscuro',
       category: 'Apariencia',
       action: () => handleUpdateSettings({ theme: 'brave-dark' })
     },
@@ -913,21 +975,31 @@ export default function App() {
     },
     {
       id: 'cmd-theme-light',
-      title: 'Tema: Brave Claro',
+      title: 'Tema: FabiNav Claro',
       category: 'Apariencia',
       action: () => handleUpdateSettings({ theme: 'brave-light' })
     }
   ];
 
   const renderSidebarStripAndPanel = () => {
-    if (!settings.showSidebar) return null;
+    const mode = settings.sidebarMode || (settings.showSidebar ? 'on' : 'off');
+    if (mode === 'off') return null;
 
-    const strip = (
+    const stripVisible = mode === 'on' || isSidebarAutoHovered || activeSidebarView !== null;
+
+    const strip = stripVisible ? (
       <ActivityBar
         activeView={activeSidebarView}
         onSelectView={setActiveSidebarView}
         onOpenSettings={() => handleNavigate(activeTab.id, 'fabinav://settings')}
         position={settings.sidebarPosition}
+      />
+    ) : (
+      <div
+        className={`w-1.5 h-full bg-transparent hover:bg-[var(--bn-accent)]/30 transition-colors shrink-0 ${
+          settings.sidebarPosition === 'right' ? 'border-l' : 'border-r'
+        } border-transparent hover:border-[var(--bn-accent)]/40`}
+        title="Pasa el ratón para mostrar la barra lateral"
       />
     );
 
@@ -959,35 +1031,112 @@ export default function App() {
       />
     );
 
-    if (settings.sidebarPosition === 'left') {
-      return (
+    const content =
+      settings.sidebarPosition === 'left' ? (
         <>
           {strip}
           {panel}
         </>
+      ) : (
+        <>
+          {panel}
+          {strip}
+        </>
+      );
+
+    if (mode === 'auto') {
+      return (
+        <div
+          className="flex h-full shrink-0"
+          onMouseEnter={() => setIsSidebarAutoHovered(true)}
+          onMouseLeave={() => setIsSidebarAutoHovered(false)}
+        >
+          {content}
+        </div>
       );
     }
 
-    return (
-      <>
-        {panel}
-        {strip}
-      </>
-    );
+    return content;
   };
+
+  if (windowMode === 'minimized') {
+    return (
+      <div className="h-screen w-screen bg-[#0c0d10] flex items-end justify-center pb-8 px-4 select-none">
+        <button
+          type="button"
+          onClick={() => setWindowMode('maximized')}
+          className="px-5 py-3 rounded-2xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl flex items-center gap-3 hover:bg-[var(--bn-hover)] transition-colors text-xs text-[var(--bn-text-strong)]"
+        >
+          <span
+            className="w-7 h-7 rounded-xl flex items-center justify-center text-white"
+            style={{ background: 'var(--leo-gradient-brand)' }}
+          >
+            <Compass className="w-4 h-4" />
+          </span>
+          <div className="text-left">
+            <div className="font-semibold">FabiNav minimizado</div>
+            <div className="text-[11px] text-[var(--bn-text-muted)]">
+              {tabs.length} pestaña(s) abierta(s) · Clic para restaurar ventana
+            </div>
+          </div>
+        </button>
+      </div>
+    );
+  }
+
+  if (windowMode === 'closed') {
+    return (
+      <div className="h-screen w-screen bg-[#0c0d10] flex items-center justify-center p-6 select-none">
+        <div className="max-w-sm w-full p-6 rounded-2xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-center space-y-4">
+          <div
+            className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center text-white shadow"
+            style={{ background: 'var(--leo-gradient-brand)' }}
+          >
+            <Compass className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-[var(--bn-text-strong)]">
+              Ventana de FabiNav cerrada
+            </h1>
+            <p className="text-xs text-[var(--bn-text-muted)] mt-1">
+              Tus pestañas y configuración permanecen guardadas localmente.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWindowMode('maximized')}
+            className="w-full py-2 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center justify-center gap-2 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Abrir FabiNav</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
-      id="fabinav-root-app"
-      className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--bn-tabstrip)] text-[var(--bn-text)]"
+      className={`h-screen w-screen overflow-hidden flex items-center justify-center ${
+        windowMode === 'restored' ? 'bg-[#0b0c10] p-3 sm:p-5' : 'bg-[var(--bn-tabstrip)]'
+      }`}
     >
-      {/* 1. Brave Top Tab Strip */}
+      <div
+        id="fabinav-root-app"
+        className={`flex flex-col overflow-hidden bg-[var(--bn-tabstrip)] text-[var(--bn-text)] transition-all duration-200 ${
+          windowMode === 'restored'
+            ? 'w-full h-full max-w-[1440px] rounded-xl border border-[var(--bn-border-strong)] shadow-2xl'
+            : 'w-full h-full'
+        }`}
+      >
+      {/* 1. FabiNav Top Tab Strip + Desktop Window Controls */}
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}
         splitTabId={splitTabId}
         closedTabs={closedTabs}
         useVerticalTabs={settings.useVerticalTabs}
+        isMaximized={windowMode === 'maximized'}
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
         onCloseOtherTabs={handleCloseOtherTabs}
@@ -1001,9 +1150,14 @@ export default function App() {
         onToggleVerticalTabs={() =>
           handleUpdateSettings({ useVerticalTabs: !settings.useVerticalTabs })
         }
+        onMinimizeWindow={() => setWindowMode('minimized')}
+        onToggleMaximizeWindow={() =>
+          setWindowMode((prev) => (prev === 'maximized' ? 'restored' : 'maximized'))
+        }
+        onCloseWindow={() => setWindowMode('closed')}
       />
 
-      {/* 2. Brave Main Toolbar + Pill Omnibox */}
+      {/* 2. FabiNav Main Toolbar + Omnibox + Menu Panel */}
       <TitleBar
         currentTab={activeTab}
         googleUser={googleUser}
@@ -1016,6 +1170,7 @@ export default function App() {
         onGoForward={handleGoForward}
         onReload={handleReload}
         onGoHome={handleGoHome}
+        onUpdateSettings={handleUpdateSettings}
         onResetZoom={() => {
           handleUpdateSettings({ zoomLevel: 100 });
           showToast('Zoom restablecido al 100%');
@@ -1032,20 +1187,33 @@ export default function App() {
           }
         }}
         onToggleShieldsModal={() => setIsShieldsModalOpen((prev) => !prev)}
-        onToggleSidebar={() => handleUpdateSettings({ showSidebar: !settings.showSidebar })}
+        onToggleSidebar={() => {
+          const nextShow = !settings.showSidebar;
+          handleUpdateSettings({ showSidebar: nextShow, sidebarMode: nextShow ? 'on' : 'off' });
+        }}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenElectronModal={() => setIsElectronModalOpen(true)}
         onOpenDevTools={() => {
-          handleUpdateSettings({ showSidebar: true });
+          handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
           setActiveSidebarView('devtools');
         }}
+        onOpenNotes={() => {
+          handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
+          setActiveSidebarView('notes');
+        }}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onNewTab={() => handleNewTab()}
+        onNewWindow={handleNewWindow}
         onNewPrivateTab={() => handleNewTab('fabinav://newtab', 'private')}
         onReopenClosedTab={() => handleReopenClosedTab()}
         canReopenClosedTab={closedTabs.length > 0}
         onToggleBookmarksBar={() =>
           handleUpdateSettings({ showBookmarksBar: !settings.showBookmarksBar })
         }
+        onClearBrowsingData={handleClearBrowsingData}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
+        onCloseWindow={() => setWindowMode('closed')}
         isSplitActive={!!splitTabId}
         shieldCount={
           shieldState.trackersBlockedCount +
@@ -1055,7 +1223,7 @@ export default function App() {
         isShieldActive={shieldState.enabled}
       />
 
-      {/* 3. Brave Bookmarks Bar */}
+      {/* 3. FabiNav Bookmarks Bar */}
       {settings.showBookmarksBar && (
         <BookmarksBar
           bookmarks={bookmarks}
@@ -1067,10 +1235,10 @@ export default function App() {
 
       {/* 4. Main Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Brave Sidebar if configured on left */}
+        {/* Left FabiNav Sidebar if configured on left */}
         {settings.sidebarPosition === 'left' && renderSidebarStripAndPanel()}
 
-        {/* Optional Brave Vertical Tabs Rail */}
+        {/* Optional FabiNav Vertical Tabs Rail */}
         {settings.useVerticalTabs && (
           <aside className="w-56 bg-[var(--bn-tabstrip)] border-r border-[var(--bn-border)] flex flex-col shrink-0 select-none text-xs">
             <div className="h-10 px-3 border-b border-[var(--bn-border)] flex items-center justify-between">
@@ -1201,7 +1369,7 @@ export default function App() {
           onGoogleSignOut={handleGoogleSignOut}
         />
 
-        {/* Right Brave Sidebar (default in Brave) */}
+        {/* Right FabiNav Sidebar */}
         {settings.sidebarPosition === 'right' && renderSidebarStripAndPanel()}
 
         {/* Shields Popover */}
@@ -1247,7 +1415,7 @@ export default function App() {
         onRecordDownload={handleRecordDownload}
       />
 
-      {/* Non-intrusive Leo Toast Feedback */}
+      {/* Non-intrusive Toast Feedback */}
       <AnimatePresence>
         {toastMsg && (
           <motion.div
@@ -1262,6 +1430,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "FabiNav",
-  "description": "Navegador web de escritorio inspirado en la interfaz de Brave, con escudos de privacidad FabiShields, barra lateral de mensajería y herramientas, gestión de marcadores e historial local y exportación a Electron.",
+  "description": "Navegador web de escritorio FabiNav con escudos de privacidad FabiShields, barra lateral de mensajería y herramientas, gestión de marcadores e historial local y exportación a Electron.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

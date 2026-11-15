@@ -9,7 +9,7 @@ import {
   LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.8.0';
+export const APP_VERSION = '1.9.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -163,10 +163,11 @@ export const INITIAL_BOOKMARKS: Bookmark[] = [
 ];
 
 export const DEFAULT_SETTINGS: BrowserSettings = {
-  defaultSearchEngine: 'brave',
+  defaultSearchEngine: 'fabinav',
   homepage: 'fabinav://newtab',
   theme: 'brave-dark',
   showSidebar: true,
+  sidebarMode: 'on',
   sidebarPosition: 'right',
   showBookmarksBar: true,
   useVerticalTabs: false,

@@ -352,7 +352,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onOpenShieldModal={onOpenShieldModal}
         />
       ) : isSearchPage ? (
-        <BraveSearchView
+        <FabiSearchView
           query={searchQuery}
           defaultEngine={settings.defaultSearchEngine}
           onNavigate={onNavigate}
@@ -405,9 +405,9 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
 };
 
 /* ============================================================================
-   Brave Search Live Results UI (powered by /api/search + Wikipedia Summary)
+   FabiNav Search Live Results UI (powered by /api/search + Wikipedia Summary)
 ============================================================================ */
-interface BraveSearchViewProps {
+interface FabiSearchViewProps {
   query: string;
   defaultEngine: BrowserSettings['defaultSearchEngine'];
   onNavigate: (url: string) => void;
@@ -453,7 +453,7 @@ function getDomainVisuals(rawUrl: string): { host: string; breadcrumb: string; c
   }
 }
 
-const BraveSearchView: React.FC<BraveSearchViewProps> = ({
+const FabiSearchView: React.FC<FabiSearchViewProps> = ({
   query,
   defaultEngine,
   onNavigate
@@ -530,11 +530,6 @@ const BraveSearchView: React.FC<BraveSearchViewProps> = ({
 
   const externalEngines = [
     {
-      id: 'brave',
-      name: 'Brave Search',
-      href: `https://search.brave.com/search?q=${encodeURIComponent(query)}`
-    },
-    {
       id: 'google',
       name: 'Google',
       href: `https://www.google.com/search?q=${encodeURIComponent(query)}`
@@ -548,12 +543,17 @@ const BraveSearchView: React.FC<BraveSearchViewProps> = ({
       id: 'bing',
       name: 'Bing',
       href: `https://www.bing.com/search?q=${encodeURIComponent(query)}`
+    },
+    {
+      id: 'ecosia',
+      name: 'Ecosia',
+      href: `https://www.ecosia.org/search?q=${encodeURIComponent(query)}`
     }
   ];
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)]">
-      {/* Top Brave Search Header */}
+      {/* Top FabiNav Search Header */}
       <header className="sticky top-0 z-10 bg-[var(--bn-toolbar)]/95 backdrop-blur-md border-b border-[var(--bn-border)] px-5 sm:px-8 pt-3.5 pb-0">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-3 sm:gap-5">
@@ -720,7 +720,7 @@ const BraveSearchView: React.FC<BraveSearchViewProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left / Main Column: Clean Brave Organic Results */}
+            {/* Left / Main Column: Clean FabiNav Organic Results */}
             <div className="lg:col-span-8">
               {data?.webError && webResults.length === 0 && (
                 <div className="mb-5 p-3.5 rounded-xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] text-xs text-[var(--bn-text-muted)]">
@@ -808,7 +808,7 @@ const BraveSearchView: React.FC<BraveSearchViewProps> = ({
               )}
             </div>
 
-            {/* Right Column: Brave Knowledge Panel + External Engine Launcher */}
+            {/* Right Column: FabiNav Knowledge Panel + External Engine Launcher */}
             <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-28">
               {knowledge && (
                 <div className="rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] overflow-hidden">

@@ -74,7 +74,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
           transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
           className="fixed top-20 right-4 sm:right-16 w-[360px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[var(--bn-text)] select-none text-xs rounded-2xl overflow-hidden origin-top-right"
         >
-          {/* Brave Shields Header */}
+          {/* FabiNav Shields Header */}
           <div className="bg-[var(--bn-toolbar)] px-4 py-3 border-b border-[var(--bn-border)] flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <div
@@ -116,7 +116,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
             </button>
           </div>
 
-          {/* Main Brave-style Toggle */}
+          {/* Main FabiNav Shield Toggle */}
           <div className="p-4 flex items-center justify-between border-b border-[var(--bn-border)] bg-[var(--bn-surface-alt)]">
             <div className="flex flex-col pr-3">
               <span className="text-[13px] font-semibold text-[var(--bn-text-strong)]">
@@ -168,7 +168,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
             </div>
           </div>
 
-          {/* Collapsible Brave Advanced Controls */}
+          {/* Collapsible FabiNav Advanced Controls */}
           <div className="border-b border-[var(--bn-border)]">
             <button
               type="button"

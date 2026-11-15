@@ -15,7 +15,8 @@ import {
   RotateCcw,
   Search,
   Copy,
-  Columns
+  Columns,
+  Compass
 } from 'lucide-react';
 import { WebTab, ClosedTabRecord } from '../types';
 
@@ -25,6 +26,7 @@ interface TabBarProps {
   splitTabId: string | null;
   closedTabs: ClosedTabRecord[];
   useVerticalTabs: boolean;
+  isMaximized: boolean;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onCloseOtherTabs: (tabId: string) => void;
@@ -36,9 +38,12 @@ interface TabBarProps {
   onToggleMuteTab: (tabId: string) => void;
   onToggleSplitTab: (tabId: string) => void;
   onToggleVerticalTabs: () => void;
+  onMinimizeWindow: () => void;
+  onToggleMaximizeWindow: () => void;
+  onCloseWindow: () => void;
 }
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const TabBar: React.FC<TabBarProps> = ({
   tabs,
@@ -46,6 +51,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   splitTabId,
   closedTabs,
   useVerticalTabs,
+  isMaximized,
   onSelectTab,
   onCloseTab,
   onCloseOtherTabs,
@@ -56,7 +62,10 @@ export const TabBar: React.FC<TabBarProps> = ({
   onTogglePinTab,
   onToggleMuteTab,
   onToggleSplitTab,
-  onToggleVerticalTabs
+  onToggleVerticalTabs,
+  onMinimizeWindow,
+  onToggleMaximizeWindow,
+  onCloseWindow
 }) => {
   const [showTabSearch, setShowTabSearch] = useState(false);
   const [tabQuery, setTabQuery] = useState('');
@@ -105,12 +114,11 @@ export const TabBar: React.FC<TabBarProps> = ({
     }
     if (tab.url === 'fabinav://newtab' || !tab.url) {
       return (
-        <span
-          className="w-3.5 h-3.5 rounded-full text-white flex items-center justify-center text-[8px] font-bold shadow-xs"
-          style={{ background: 'var(--leo-gradient-brand)' }}
-        >
-          F
-        </span>
+        <Compass
+          className={`w-3.5 h-3.5 ${
+            isActive ? 'text-[var(--bn-text-strong)]' : 'text-[var(--bn-text-muted)]'
+          }`}
+        />
       );
     }
     if (tab.url.startsWith('fabinav://search')) {
@@ -137,122 +145,16 @@ export const TabBar: React.FC<TabBarProps> = ({
   return (
     <div
       id="fabinav-tabstrip"
-      className="h-10 bg-[var(--bn-tabstrip)] flex items-end px-2 pt-1.5 gap-1 select-none z-40 shrink-0 relative"
+      onDoubleClick={(e) => {
+        if (e.target === e.currentTarget) onToggleMaximizeWindow();
+      }}
+      className="h-[38px] bg-[var(--bn-tabstrip)] flex items-center pl-2 pr-0 gap-1 select-none z-40 shrink-0 relative"
       role="tablist"
-      aria-label="Pestañas del navegador"
+      aria-label="Pestañas de FabiNav"
     >
-      {/* Brave Tab Search Button */}
-      <div className="relative mb-1.5 mr-1 shrink-0" ref={searchRef}>
-        <button
-          type="button"
-          onClick={() => {
-            setShowTabSearch(!showTabSearch);
-            setTabQuery('');
-          }}
-          title="Buscar pestañas y cerradas recientemente"
-          className="w-7 h-7 rounded-full flex items-center justify-center bg-[var(--bn-surface-alt)]/75 hover:bg-[var(--bn-hover)] active:scale-95 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all leo-transition-s"
-        >
-          <ChevronDown
-            className={`w-3.5 h-3.5 transition-transform duration-150 ${
-              showTabSearch ? 'rotate-180 text-[var(--bn-text-strong)]' : ''
-            }`}
-          />
-        </button>
-
-        <AnimatePresence>
-          {showTabSearch && (
-            <motion.div
-              initial={{ opacity: 0, y: -6, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.97 }}
-              transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
-              className="absolute left-0 top-9 w-80 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden text-xs origin-top-left"
-            >
-              <div className="p-2.5 border-b border-[var(--bn-border)] flex items-center gap-2 bg-[var(--bn-toolbar)]">
-                <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
-                <input
-                  type="text"
-                  autoFocus
-                  value={tabQuery}
-                  onChange={(e) => setTabQuery(e.target.value)}
-                  placeholder="Buscar pestañas abiertas..."
-                  className="w-full bg-transparent text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none text-xs"
-                />
-              </div>
-
-              <div className="max-h-72 overflow-y-auto p-1.5 space-y-1">
-                <div className="px-2 py-1 text-[11px] font-medium text-[var(--bn-text-muted)] tabular-nums">
-                  Pestañas abiertas ({filteredOpenTabs.length})
-                </div>
-                {filteredOpenTabs.map((t) => (
-                  <div
-                    key={t.id}
-                    onClick={() => {
-                      onSelectTab(t.id);
-                      setShowTabSearch(false);
-                    }}
-                    className={`px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors leo-transition-xs ${
-                      t.id === activeTabId
-                        ? 'bg-[var(--bn-active)] text-[var(--bn-text-strong)]'
-                        : 'hover:bg-[var(--bn-hover)] text-[var(--bn-text)]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {renderFavicon(t, t.id === activeTabId)}
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{t.title}</div>
-                        <div className="truncate text-[10px] text-[var(--bn-text-muted)]">{t.url}</div>
-                      </div>
-                    </div>
-                    {tabs.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCloseTab(t.id);
-                        }}
-                        title="Cerrar pestaña"
-                        className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] rounded-full"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-
-                {closedTabs.length > 0 && (
-                  <>
-                    <div className="px-2 pt-2 pb-1 text-[11px] font-medium text-[var(--bn-text-muted)] border-t border-[var(--bn-border)] mt-1">
-                      Cerradas recientemente
-                    </div>
-                    {closedTabs.slice(0, 4).map((ct) => (
-                      <button
-                        key={ct.id}
-                        type="button"
-                        onClick={() => {
-                          onReopenClosedTab(ct.id);
-                          setShowTabSearch(false);
-                        }}
-                        className="w-full px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 hover:bg-[var(--bn-hover)] text-left transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-[var(--bn-text)] font-medium">{ct.title}</div>
-                          <div className="truncate text-[10px] text-[var(--bn-text-muted)]">{ct.url}</div>
-                        </div>
-                        <RotateCcw className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Horizontal Chromium/Brave Tabs with Leo motion & context menu */}
+      {/* Floating Rounded Tabs */}
       {!useVerticalTabs ? (
-        <div className="flex items-end gap-0.5 overflow-x-auto no-scrollbar flex-1 max-w-full">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 max-w-full py-1">
           <AnimatePresence initial={false}>
             {tabs.map((tab, index) => {
               const isActive = tab.id === activeTabId;
@@ -263,10 +165,10 @@ export const TabBar: React.FC<TabBarProps> = ({
                 <motion.div
                   key={tab.id}
                   layout="position"
-                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.92 }}
-                  transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+                  transition={{ duration: 0.14, ease: EASE_OUT }}
                   role="tab"
                   aria-selected={isActive}
                   onClick={() => onSelectTab(tab.id)}
@@ -284,18 +186,22 @@ export const TabBar: React.FC<TabBarProps> = ({
                       onCloseTab(tab.id);
                     }
                   }}
-                  className={`group relative flex items-center h-[34px] px-3 text-xs cursor-pointer transition-colors leo-transition-s shrink-0 ${
+                  className={`group relative flex items-center h-[30px] px-2.5 text-xs cursor-pointer transition-colors leo-transition-s shrink-0 rounded-[8px] ${
                     isActive
-                      ? 'bg-[var(--bn-toolbar)] text-[var(--bn-text-strong)] font-medium rounded-t-[10px] shadow-sm'
+                      ? 'bg-[var(--bn-tab-active)] text-[var(--bn-text-strong)] font-medium shadow-xs'
                       : isSplit
-                      ? 'bg-[var(--bn-surface-alt)]/75 text-[var(--bn-text-strong)] rounded-t-[8px]'
-                      : 'bg-transparent text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)]/65 hover:text-[var(--bn-text)] rounded-t-[8px]'
-                  } ${tab.isPinned ? 'min-w-[42px] max-w-[42px] justify-center px-1.5' : 'min-w-[125px] max-w-[230px] flex-1'}`}
+                      ? 'bg-[var(--bn-surface-alt)]/75 text-[var(--bn-text-strong)]'
+                      : 'bg-transparent text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)]/65 hover:text-[var(--bn-text)]'
+                  } ${
+                    tab.isPinned
+                      ? 'min-w-[38px] max-w-[38px] justify-center px-1.5'
+                      : 'min-w-[135px] max-w-[230px] flex-1'
+                  }`}
                   title={`${tab.title} (clic derecho para opciones)`}
                 >
-                  {/* Divider between inactive tabs */}
+                  {/* Subtle divider between consecutive inactive tabs */}
                   {!isActive && index > 0 && tabs[index - 1].id !== activeTabId && (
-                    <span className="absolute left-0 top-2 bottom-2 w-[1px] bg-[var(--bn-border)] opacity-60" />
+                    <span className="absolute -left-[2px] top-2 bottom-2 w-[1px] bg-[var(--bn-border)] opacity-50 pointer-events-none" />
                   )}
 
                   <div className="flex items-center justify-center shrink-0 mr-2">
@@ -358,13 +264,13 @@ export const TabBar: React.FC<TabBarProps> = ({
             })}
           </AnimatePresence>
 
-          {/* New Tab '+' Button right next to tabs */}
+          {/* '+' New Tab button right next to tabs */}
           <button
             id="btn-new-tab"
             type="button"
             onClick={onNewTab}
             title="Nueva pestaña (Ctrl+T)"
-            className="mb-1 ml-1 p-1.5 h-7 w-7 flex items-center justify-center rounded-full hover:bg-[var(--bn-hover)] active:scale-90 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all leo-transition-s shrink-0"
+            className="ml-0.5 h-7 w-7 flex items-center justify-center rounded-[8px] hover:bg-[var(--bn-hover)] active:scale-90 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all leo-transition-s shrink-0"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -377,19 +283,20 @@ export const TabBar: React.FC<TabBarProps> = ({
         </div>
       )}
 
-      {/* Right Frame Controls: Private Indicator + Vertical Tabs Toggle */}
-      <div className="flex items-center gap-1.5 mb-1.5 shrink-0 pl-2">
+      {/* Right Frame Controls: Private Badge, Vertical Tabs Toggle, Tab Search (v), Minimize (—), Maximize (❐), Close (×) */}
+      <div className="flex items-center h-full shrink-0 pl-2">
         {isPrivateWindow && (
-          <span className="px-2.5 py-0.5 rounded-full bg-[var(--bn-private)]/20 text-[var(--bn-private-text)] text-[11px] font-medium flex items-center gap-1 whitespace-nowrap">
+          <span className="mr-1.5 px-2.5 py-0.5 rounded-full bg-[var(--bn-private)]/20 text-[var(--bn-private-text)] text-[11px] font-medium flex items-center gap-1 whitespace-nowrap">
             <Lock className="w-3 h-3" />
             <span>Privado</span>
           </span>
         )}
+
         <button
           type="button"
           onClick={onToggleVerticalTabs}
           title={useVerticalTabs ? 'Cambiar a pestañas horizontales' : 'Cambiar a pestañas verticales'}
-          className={`p-1.5 rounded-full active:scale-90 transition-all leo-transition-s ${
+          className={`w-7 h-7 rounded-[7px] flex items-center justify-center active:scale-90 transition-all leo-transition-s mr-0.5 ${
             useVerticalTabs
               ? 'bg-[var(--bn-hover)] text-[var(--bn-accent)]'
               : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]'
@@ -397,9 +304,165 @@ export const TabBar: React.FC<TabBarProps> = ({
         >
           <PanelLeft className="w-3.5 h-3.5" />
         </button>
+
+        {/* Tab Search Chevron Dropdown (right side before window buttons) */}
+        <div className="relative flex items-center mr-1" ref={searchRef}>
+          <button
+            type="button"
+            onClick={() => {
+              setShowTabSearch(!showTabSearch);
+              setTabQuery('');
+            }}
+            title="Buscar pestañas y cerradas recientemente"
+            className="w-7 h-7 rounded-[7px] flex items-center justify-center hover:bg-[var(--bn-hover)] active:scale-95 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all leo-transition-s"
+          >
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                showTabSearch ? 'rotate-180 text-[var(--bn-text-strong)]' : ''
+              }`}
+            />
+          </button>
+
+          <AnimatePresence>
+            {showTabSearch && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                transition={{ duration: 0.16, ease: EASE_OUT }}
+                className="absolute right-0 top-9 w-80 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden text-xs origin-top-right"
+              >
+                <div className="p-2.5 border-b border-[var(--bn-border)] flex items-center gap-2 bg-[var(--bn-toolbar)]">
+                  <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={tabQuery}
+                    onChange={(e) => setTabQuery(e.target.value)}
+                    placeholder="Buscar pestañas abiertas..."
+                    className="w-full bg-transparent text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none text-xs"
+                  />
+                </div>
+
+                <div className="max-h-72 overflow-y-auto p-1.5 space-y-1">
+                  <div className="px-2 py-1 text-[11px] font-medium text-[var(--bn-text-muted)] tabular-nums">
+                    Pestañas abiertas ({filteredOpenTabs.length})
+                  </div>
+                  {filteredOpenTabs.map((t) => (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        onSelectTab(t.id);
+                        setShowTabSearch(false);
+                      }}
+                      className={`px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors leo-transition-xs ${
+                        t.id === activeTabId
+                          ? 'bg-[var(--bn-active)] text-[var(--bn-text-strong)]'
+                          : 'hover:bg-[var(--bn-hover)] text-[var(--bn-text)]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {renderFavicon(t, t.id === activeTabId)}
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{t.title}</div>
+                          <div className="truncate text-[10px] text-[var(--bn-text-muted)]">{t.url}</div>
+                        </div>
+                      </div>
+                      {tabs.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCloseTab(t.id);
+                          }}
+                          title="Cerrar pestaña"
+                          className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] rounded-full"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {closedTabs.length > 0 && (
+                    <>
+                      <div className="px-2 pt-2 pb-1 text-[11px] font-medium text-[var(--bn-text-muted)] border-t border-[var(--bn-border)] mt-1">
+                        Cerradas recientemente
+                      </div>
+                      {closedTabs.slice(0, 4).map((ct) => (
+                        <button
+                          key={ct.id}
+                          type="button"
+                          onClick={() => {
+                            onReopenClosedTab(ct.id);
+                            setShowTabSearch(false);
+                          }}
+                          className="w-full px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 hover:bg-[var(--bn-hover)] text-left transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-[var(--bn-text)] font-medium">{ct.title}</div>
+                            <div className="truncate text-[10px] text-[var(--bn-text-muted)]">{ct.url}</div>
+                          </div>
+                          <RotateCcw className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Desktop Window Controls: Minimize (—), Maximize/Restore (❐), Close (×) */}
+        <div className="flex items-center h-full">
+          <button
+            type="button"
+            onClick={onMinimizeWindow}
+            title="Minimizar ventana"
+            aria-label="Minimizar ventana"
+            className="w-11 h-full flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" strokeWidth="1.15" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleMaximizeWindow}
+            title={isMaximized ? 'Restaurar tamaño' : 'Maximizar ventana'}
+            aria-label={isMaximized ? 'Restaurar tamaño' : 'Maximizar ventana'}
+            className="w-11 h-full flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors"
+          >
+            {isMaximized ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <rect x="1.2" y="2.8" width="6" height="6" stroke="currentColor" strokeWidth="1.1" />
+                <path d="M3 2.8V1.2H8.8V7H7.2" stroke="currentColor" strokeWidth="1.1" />
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <rect x="1.2" y="1.2" width="7.6" height="7.6" stroke="currentColor" strokeWidth="1.1" />
+              </svg>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={onCloseWindow}
+            title="Cerrar ventana"
+            aria-label="Cerrar ventana"
+            className="w-11 h-full flex items-center justify-center text-[var(--bn-text-muted)] hover:bg-[#c42b1c] hover:text-white transition-colors"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" strokeWidth="1.15" />
+              <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" strokeWidth="1.15" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Brave Tab Context Menu (Right Click) */}
+      {/* Tab Context Menu (Right Click) */}
       <AnimatePresence>
         {contextMenu && contextTab && (
           <motion.div
@@ -407,7 +470,7 @@ export const TabBar: React.FC<TabBarProps> = ({
             initial={{ opacity: 0, scale: 0.96, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.12, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.12, ease: EASE_OUT }}
             style={{ left: contextMenu.x, top: contextMenu.y }}
             className="fixed w-52 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 py-1.5 text-xs text-[var(--bn-text)]"
           >

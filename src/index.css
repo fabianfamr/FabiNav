@@ -2,7 +2,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
-  /* Official Brave Leo Motion & Design Tokens */
+  /* FabiNav Design & Motion Tokens */
   :root {
     --leo-duration-xs: 50ms;
     --leo-duration-s: 100ms;
@@ -22,6 +22,7 @@
   :root,
   .theme-brave-dark {
     --bn-tabstrip: #17181c;
+    --bn-tab-active: #34363d;
     --bn-toolbar: #27292e;
     --bn-omnibox: #191a1e;
     --bn-omnibox-focus: #111216;
@@ -54,6 +55,7 @@
 
   .theme-brave-midnight {
     --bn-tabstrip: #08090b;
+    --bn-tab-active: #1f222a;
     --bn-toolbar: #131418;
     --bn-omnibox: #0b0c0f;
     --bn-omnibox-focus: #050608;
@@ -86,6 +88,7 @@
 
   .theme-brave-light {
     --bn-tabstrip: #dee1e6;
+    --bn-tab-active: #ffffff;
     --bn-toolbar: #ffffff;
     --bn-omnibox: #f1f3f4;
     --bn-omnibox-focus: #ffffff;

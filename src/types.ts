@@ -125,10 +125,11 @@ export interface DevToolNetworkReq {
 }
 
 export interface BrowserSettings {
-  defaultSearchEngine: 'brave' | 'google' | 'duckduckgo' | 'bing' | 'ecosia';
+  defaultSearchEngine: 'fabinav' | 'google' | 'duckduckgo' | 'bing' | 'ecosia' | 'brave';
   homepage: string;
   theme: BrowserTheme;
   showSidebar: boolean;
+  sidebarMode?: 'on' | 'auto' | 'off';
   sidebarPosition: 'left' | 'right';
   showBookmarksBar: boolean;
   useVerticalTabs: boolean;

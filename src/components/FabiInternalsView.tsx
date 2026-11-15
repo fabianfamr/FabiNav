@@ -806,7 +806,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Acerca de FabiNav
                 </h1>
                 <p className="text-xs text-[var(--bn-text-muted)] font-mono tabular-nums">
-                  Versión {APP_VERSION} · Diseño Brave Leo + TLS 1.2/1.3 + Búsqueda en vivo
+                  Versión {APP_VERSION} · Escudos FabiNav + TLS 1.2/1.3 + Búsqueda en vivo
                 </p>
               </div>
             </div>
@@ -825,7 +825,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               <span>Información general</span>
             </div>
             <p className="text-xs text-[var(--bn-text-muted)] leading-relaxed">
-              FabiNav sigue los lineamientos de Brave Leo, con búsqueda web en vivo y paneles de conocimiento, proxy seguro del lado del servidor con cookies particionadas e inspección TLS 1.2/1.3, perfil real conectado con Google, barra lateral configurable y exportación a proyecto Electron.
+              FabiNav es un navegador web moderno con búsqueda en vivo y paneles de conocimiento, proxy seguro del lado del servidor con cookies particionadas e inspección TLS 1.2/1.3, perfil conectado con Google, barra lateral configurable y exportación a proyecto Electron.
             </p>
           </div>
 
@@ -847,7 +847,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     );
   }
 
-  // 6. CONFIGURACIÓN ESTILO BRAVE LEO (fabinav://settings)
+  // 6. CONFIGURACIÓN DE FABINAV (fabinav://settings)
   const navSections: Array<{
     id: SettingsSection;
     label: string;
@@ -863,14 +863,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   ];
 
   const themeOptions: Array<{ id: BrowserTheme; label: string; desc: string }> = [
-    { id: 'brave-dark', label: 'Brave Oscuro', desc: 'Gris grafito clásico de Brave Desktop' },
+    { id: 'brave-dark', label: 'FabiNav Oscuro', desc: 'Gris grafito clásico de escritorio' },
     { id: 'brave-midnight', label: 'Noche Profunda', desc: 'Contraste oscuro intenso para baja luz' },
-    { id: 'brave-light', label: 'Brave Claro', desc: 'Superficie clara luminosa para uso diurno' }
+    { id: 'brave-light', label: 'FabiNav Claro', desc: 'Superficie clara luminosa para uso diurno' }
   ];
 
   return (
     <div className="w-full h-full overflow-hidden bg-[var(--bn-surface)] text-[var(--bn-text)] flex flex-col md:flex-row">
-      {/* Left Brave Settings Rail */}
+      {/* Left Settings Rail */}
       <aside className="w-full md:w-64 bg-[var(--bn-toolbar)] border-b md:border-b-0 md:border-r border-[var(--bn-border)] p-4 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto shrink-0">
         <div className="hidden md:flex items-center gap-2.5 px-3 pb-4 mb-2 border-b border-[var(--bn-border)]">
           <Settings className="w-4 h-4 text-[var(--bn-accent)]" />
@@ -1057,7 +1057,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         Usar pestañas verticales
                       </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
-                        Lista tus pestañas abiertas en una columna lateral como en Brave
+                        Lista tus pestañas abiertas en una columna lateral
                       </div>
                     </div>
                     <LeoSwitch
@@ -1172,7 +1172,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     </div>
                   </div>
                   <select
-                    value={settings.defaultSearchEngine}
+                    value={settings.defaultSearchEngine === 'brave' ? 'fabinav' : settings.defaultSearchEngine}
                     onChange={(e) =>
                       onUpdateSettings({
                         defaultSearchEngine: e.target.value as BrowserSettings['defaultSearchEngine']
@@ -1180,7 +1180,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     }
                     className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
                   >
-                    <option value="brave">Brave Search</option>
+                    <option value="fabinav">FabiNav Search</option>
                     <option value="google">Google</option>
                     <option value="duckduckgo">DuckDuckGo</option>
                     <option value="bing">Bing</option>
@@ -1206,7 +1206,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     <LeoSwitch
                       size="md"
                       checked={settings.showSidebar}
-                      onChange={(v) => onUpdateSettings({ showSidebar: v })}
+                      onChange={(v) =>
+                        onUpdateSettings({ showSidebar: v, sidebarMode: v ? 'on' : 'off' })
+                      }
                       ariaLabel="Mostrar barra lateral"
                     />
                   </div>
@@ -1217,7 +1219,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         Posición de la barra lateral
                       </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
-                        En Brave puedes mostrarla a la derecha o a la izquierda
+                        Muestra la barra lateral a la derecha o a la izquierda en FabiNav
                       </div>
                     </div>
                     <select
@@ -1332,7 +1334,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         FabiNav v{APP_VERSION}
                       </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
-                        Diseño Brave Leo · TLS 1.2/1.3 · Búsqueda web en vivo
+                        FabiNav Engine · TLS 1.2/1.3 · Búsqueda web en vivo
                       </div>
                     </div>
                   </div>

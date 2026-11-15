@@ -44,11 +44,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
   return (
     <aside
-      id="fabinav-brave-sidebar-strip"
+      id="fabinav-sidebar-strip"
       className={`w-11 bg-[var(--bn-toolbar)] ${
         position === 'right' ? 'border-l' : 'border-r'
       } border-[var(--bn-border)] flex flex-col justify-between items-center py-2 select-none z-30 shrink-0`}
-      aria-label="Barra lateral de Brave"
+      aria-label="Barra lateral de FabiNav"
     >
       <div className="flex flex-col items-center gap-1.5 w-full px-1">
         {items.map((item) => {
@@ -68,7 +68,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
             >
               {isActive && (
                 <motion.span
-                  layoutId="brave-sidebar-pill"
+                  layoutId="fabinav-sidebar-pill"
                   transition={{ duration: 0.18, ease: [0, 0, 0.58, 1] }}
                   className="absolute inset-0 rounded-lg bg-[var(--bn-accent-soft)]"
                 />

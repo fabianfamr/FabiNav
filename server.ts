@@ -368,7 +368,7 @@ async function fetchWikipediaSummary(articleTitle: string): Promise<WikiKnowledg
     const endpoint = `https://es.wikipedia.org/api/rest_v1/page/summary/${slug}`;
     const response = await fetch(endpoint, {
       headers: {
-        'User-Agent': 'FabiNav/1.8.0 (Web Browser UI)',
+        'User-Agent': 'FabiNav/1.9.0 (Web Browser UI)',
         Accept: 'application/json'
       },
       signal: AbortSignal.timeout(3500)
@@ -404,7 +404,7 @@ async function fetchWikipediaResults(
 
   const response = await fetch(endpoint, {
     headers: {
-      'User-Agent': 'FabiNav/1.8.0 (Web Browser UI)'
+      'User-Agent': 'FabiNav/1.9.0 (Web Browser UI)'
     },
     signal: AbortSignal.timeout(5000)
   });
@@ -1030,7 +1030,7 @@ async function startServer() {
     });
   });
 
-  // 4. Brave-Style Secure Web Proxy (strips X-Frame-Options/frame-ancestors, enforces TLS & Shields)
+  // 4. FabiNav Secure Web Proxy (strips X-Frame-Options/frame-ancestors, enforces TLS & Shields)
   app.get('/api/proxy', async (req, res) => {
     const targetUrl = String(req.query.url || '').trim();
     if (!targetUrl) {

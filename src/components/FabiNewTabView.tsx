@@ -37,7 +37,7 @@ const SEARCH_ENGINES: Array<{
   id: BrowserSettings['defaultSearchEngine'];
   label: string;
 }> = [
-  { id: 'brave', label: 'Brave Search' },
+  { id: 'fabinav', label: 'FabiNav Search' },
   { id: 'google', label: 'Google' },
   { id: 'duckduckgo', label: 'DuckDuckGo' },
   { id: 'bing', label: 'Bing' },
@@ -118,8 +118,10 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
     setImgError(false);
   }, [currentWallpaper.url]);
 
+  const normalizedEngine =
+    settings.defaultSearchEngine === 'brave' ? 'fabinav' : settings.defaultSearchEngine;
   const currentEngineLabel =
-    SEARCH_ENGINES.find((e) => e.id === settings.defaultSearchEngine)?.label || 'Brave Search';
+    SEARCH_ENGINES.find((e) => e.id === normalizedEngine)?.label || 'FabiNav Search';
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +162,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
       id="fabinav-new-tab-page"
       className="relative w-full h-full flex flex-col justify-between p-6 sm:p-9 select-none overflow-y-auto no-scrollbar bg-[#111318] text-white"
     >
-      {/* Background Wallpaper with Smooth Brave Crossfade */}
+      {/* Background Wallpaper with Smooth Crossfade */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 bg-gradient-to-br from-[#17181c] via-[#121318] to-[#0b0c0f]">
         <AnimatePresence mode="wait">
           {!imgError && (
@@ -247,7 +249,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
         )}
       </div>
 
-      {/* Center: Brave Search Pill + Engine Selector + Top Sites Grid */}
+      {/* Center: FabiNav Search Pill + Engine Selector + Top Sites Grid */}
       <div className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl mx-auto my-8 z-20">
         <motion.form
           onSubmit={handleSearchSubmit}
@@ -318,13 +320,13 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                       setShowEngineMenu(false);
                     }}
                     className={`w-full text-left px-3.5 py-2 flex items-center justify-between hover:bg-[var(--bn-hover)] transition-colors ${
-                      settings.defaultSearchEngine === eng.id
+                      normalizedEngine === eng.id
                         ? 'text-[var(--bn-accent)] font-semibold'
                         : 'text-[var(--bn-text)]'
                     }`}
                   >
                     <span>{eng.label}</span>
-                    {settings.defaultSearchEngine === eng.id && (
+                    {normalizedEngine === eng.id && (
                       <ChevronRight className="w-3.5 h-3.5" />
                     )}
                   </button>
@@ -334,7 +336,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           </AnimatePresence>
         </motion.form>
 
-        {/* Brave Top Sites Grid */}
+        {/* FabiNav Top Sites Grid */}
         {customization.showTopSites && (
           <div className="w-full flex flex-wrap items-start justify-center gap-3.5 sm:gap-5">
             {topSites.map((site, idx) => (
