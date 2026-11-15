@@ -13,6 +13,46 @@ export type SidebarPanelView =
 
 export type TabMode = 'normal' | 'private';
 
+export interface GoogleUserProfile {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoUrl: string | null;
+}
+
+export interface StoredCookieItem {
+  id: string;
+  partition: TabMode;
+  domain: string;
+  path: string;
+  name: string;
+  value: string;
+  secure: boolean;
+  httpOnly: boolean;
+  sameSite: string;
+  expiresAt: number | null;
+  createdAt: number;
+  isThirdParty: boolean;
+}
+
+export interface TlsInspectionResult {
+  host: string;
+  port: number;
+  authorized: boolean;
+  authorizationError: string | null;
+  protocol: string | null;
+  cipher: string | null;
+  alpnProtocol: string | null;
+  subjectCN: string | null;
+  issuerCN: string | null;
+  issuerO: string | null;
+  validFrom: string | null;
+  validTo: string | null;
+  fingerprint256: string | null;
+  checkedAt: number;
+  error?: string;
+}
+
 export interface WebTab {
   id: string;
   title: string;
@@ -109,10 +149,13 @@ export interface FabiShieldState {
   enabled: boolean;
   blockTrackersAndAds: 'standard' | 'aggressive' | 'disabled';
   upgradeHttps: boolean;
+  strictTls: boolean;
   blockScripts: boolean;
   blockFingerprinting: 'standard' | 'strict' | 'disabled';
   blockCrossSiteCookies: boolean;
   httpsUpgradesCount: number;
+  trackersBlockedCount: number;
+  cookiesBlockedCount: number;
   searchesCount: number;
 }
 

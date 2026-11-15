@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   WebTab,
@@ -10,13 +10,12 @@ import {
   DownloadItem,
   TopSiteItem,
   SearchApiResponse,
-  SearchResultItem
+  SearchResultItem,
+  GoogleUserProfile
 } from '../types';
 import {
   Columns,
   ExternalLink,
-  ShieldCheck,
-  ShieldOff,
   Search,
   Globe,
   BookOpen,
@@ -27,6 +26,14 @@ import { FabiNewTabView } from './FabiNewTabView';
 import { FabiInternalsView } from './FabiInternalsView';
 
 const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+
+export interface PageSecurityReport {
+  title?: string;
+  url?: string;
+  blockedTrackers?: number;
+  blockedCookies?: number;
+  upgradedHttps?: boolean;
+}
 
 interface WebViewportProps {
   primaryTab: WebTab;
@@ -40,6 +47,7 @@ interface WebViewportProps {
   onAddTopSite: (title: string, url: string) => void;
   onRemoveTopSite: (id: string) => void;
   onNavigate: (tabId: string, url: string) => void;
+  onPageSecurityReport?: (tabId: string, report: PageSecurityReport) => void;
   onToggleSplitTab?: (tabId: string) => void;
   onUpdateCustomization: (updates: Partial<FabiNewTabCustomization>) => void;
   onOpenShieldModal: () => void;
@@ -55,6 +63,9 @@ interface WebViewportProps {
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
   onOpenElectronModal: () => void;
+  googleUser?: GoogleUserProfile | null;
+  onGoogleSignIn?: () => void;
+  onGoogleSignOut?: () => void;
 }
 
 export const WebViewport: React.FC<WebViewportProps> = ({
@@ -69,6 +80,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   onAddTopSite,
   onRemoveTopSite,
   onNavigate,
+  onPageSecurityReport,
   onToggleSplitTab,
   onUpdateCustomization,
   onOpenShieldModal,
@@ -83,7 +95,10 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   onClearDownloads,
   onExportBackup,
   onImportBackup,
-  onOpenElectronModal
+  onOpenElectronModal,
+  googleUser,
+  onGoogleSignIn,
+  onGoogleSignOut
 }) => {
   const isSplit = !!splitTab;
 
@@ -109,7 +124,10 @@ export const WebViewport: React.FC<WebViewportProps> = ({
     onClearDownloads,
     onExportBackup,
     onImportBackup,
-    onOpenElectronModal
+    onOpenElectronModal,
+    googleUser,
+    onGoogleSignIn,
+    onGoogleSignOut
   };
 
   return (
@@ -125,6 +143,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
         <SingleTabFrame
           tab={primaryTab}
           onNavigate={(url) => onNavigate(primaryTab.id, url)}
+          onPageSecurityReport={(report) => onPageSecurityReport?.(primaryTab.id, report)}
           onCloseSplit={isSplit && splitTab ? () => onToggleSplitTab?.(splitTab.id) : undefined}
           isSplit={isSplit}
           label="Panel izquierdo"
@@ -145,6 +164,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
             <SingleTabFrame
               tab={splitTab}
               onNavigate={(url) => onNavigate(splitTab.id, url)}
+              onPageSecurityReport={(report) => onPageSecurityReport?.(splitTab.id, report)}
               onCloseSplit={() => onToggleSplitTab?.(splitTab.id)}
               isSplit={true}
               label="Panel derecho"
@@ -168,6 +188,7 @@ interface SingleTabFrameProps {
   onAddTopSite: (title: string, url: string) => void;
   onRemoveTopSite: (id: string) => void;
   onNavigate: (url: string) => void;
+  onPageSecurityReport?: (report: PageSecurityReport) => void;
   onCloseSplit?: () => void;
   isSplit?: boolean;
   label?: string;
@@ -185,6 +206,9 @@ interface SingleTabFrameProps {
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
   onOpenElectronModal: () => void;
+  googleUser?: GoogleUserProfile | null;
+  onGoogleSignIn?: () => void;
+  onGoogleSignOut?: () => void;
 }
 
 const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
@@ -198,6 +222,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   onAddTopSite,
   onRemoveTopSite,
   onNavigate,
+  onPageSecurityReport,
   onCloseSplit,
   isSplit,
   label,
@@ -214,8 +239,12 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   onClearDownloads,
   onExportBackup,
   onImportBackup,
-  onOpenElectronModal
+  onOpenElectronModal,
+  googleUser,
+  onGoogleSignIn,
+  onGoogleSignOut
 }) => {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const isNewTab = tab.url === 'fabinav://newtab' || !tab.url;
   const isSearchPage = tab.url.startsWith('fabinav://search?q=');
   const isFabiInternal = tab.url.startsWith('fabinav://') && !isNewTab && !isSearchPage;
@@ -223,6 +252,51 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   const searchQuery = isSearchPage
     ? decodeURIComponent(tab.url.replace('fabinav://search?q=', ''))
     : '';
+
+  useEffect(() => {
+    if (isNewTab || isSearchPage || isFabiInternal) return;
+
+    const handleMessage = (ev: MessageEvent) => {
+      if (!iframeRef.current || ev.source !== iframeRef.current.contentWindow) return;
+      const payload = ev.data as {
+        type?: string;
+        url?: string;
+        title?: string;
+        blockedTrackers?: number;
+        blockedCookies?: number;
+        upgradedHttps?: boolean;
+      };
+      if (!payload || typeof payload !== 'object') return;
+
+      if (payload.type === 'fabinav:navigate' && typeof payload.url === 'string') {
+        onNavigate(payload.url);
+      } else if (payload.type === 'fabinav:page-info') {
+        onPageSecurityReport?.({
+          title: payload.title,
+          url: payload.url,
+          blockedTrackers: payload.blockedTrackers,
+          blockedCookies: payload.blockedCookies,
+          upgradedHttps: payload.upgradedHttps
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [isNewTab, isSearchPage, isFabiInternal, onNavigate, onPageSecurityReport]);
+
+  const proxySrc =
+    !isNewTab && !isSearchPage && !isFabiInternal
+      ? `/api/proxy?url=${encodeURIComponent(tab.url)}&partition=${
+          tab.tabMode === 'private' ? 'private' : 'normal'
+        }&shields=${shieldState.enabled ? '1' : '0'}&blockTrackers=${
+          shieldState.blockTrackersAndAds
+        }&blockScripts=${shieldState.blockScripts ? '1' : '0'}&blockCookies=${
+          shieldState.blockCrossSiteCookies ? '1' : '0'
+        }&upgradeHttps=${shieldState.upgradeHttps ? '1' : '0'}&strictTls=${
+          shieldState.strictTls ? '1' : '0'
+        }`
+      : '';
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-[var(--bn-surface)]">
@@ -282,6 +356,9 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       ) : isFabiInternal ? (
         <FabiInternalsView
           url={tab.url}
+          googleUser={googleUser}
+          onGoogleSignIn={onGoogleSignIn}
+          onGoogleSignOut={onGoogleSignOut}
           shieldState={shieldState}
           onUpdateShieldState={onUpdateShieldState}
           settings={settings}
@@ -309,40 +386,13 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
             }}
           >
             <iframe
-              src={tab.url}
+              ref={iframeRef}
+              key={`${tab.id}-${proxySrc}`}
+              src={proxySrc}
               title={tab.title}
               className="w-full h-full border-none bg-white"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+              sandbox="allow-scripts allow-forms allow-popups allow-downloads"
             />
-          </div>
-
-          {/* Unobtrusive Footer Context Strip */}
-          <div className="h-8 px-3.5 bg-[var(--bn-toolbar)] border-t border-[var(--bn-border)] flex items-center justify-between text-[11px] text-[var(--bn-text-muted)] shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              {shieldState.enabled ? (
-                <span className="text-[var(--bn-success)] flex items-center gap-1 font-medium shrink-0">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Escudos activos</span>
-                </span>
-              ) : (
-                <span className="text-[var(--bn-text-muted)] flex items-center gap-1 shrink-0">
-                  <ShieldOff className="w-3.5 h-3.5" />
-                  <span>Escudos pausados</span>
-                </span>
-              )}
-              <span aria-hidden="true">·</span>
-              <span className="truncate font-mono">{tab.url}</span>
-            </div>
-
-            <a
-              href={tab.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--bn-accent)] hover:underline flex items-center gap-1 whitespace-nowrap shrink-0 font-medium"
-            >
-              <span>Abrir en pestaña externa</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
           </div>
         </div>
       )}
@@ -628,7 +678,7 @@ const BraveSearchView: React.FC<BraveSearchViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onNavigate(item.url)}
-                        className="text-left text-base font-semibold text-[#8ab4f8] dark:text-[#8ab4f8] hover:underline group-hover:text-[var(--bn-accent)] transition-colors leo-transition-xs leading-snug"
+                        className="text-left text-base font-semibold text-[#8ab4f8] hover:underline group-hover:text-[var(--bn-accent)] transition-colors leo-transition-xs leading-snug"
                       >
                         {item.title}
                       </button>
@@ -661,7 +711,7 @@ const BraveSearchView: React.FC<BraveSearchViewProps> = ({
                   Abrir "{query}" en motor externo
                 </div>
                 <p className="text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
-                  Algunos sitios bloquean su carga dentro de pestañas embebidas. Usa estos enlaces para abrir directamente.
+                  Si necesitas abrir la consulta directamente fuera de FabiNav, elige un buscador:
                 </p>
                 <div className="space-y-1.5">
                   {externalEngines.map((eng) => {

@@ -9,7 +9,7 @@ import {
   LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.7.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -26,6 +26,56 @@ export const FABI_WALLPAPERS: WallpaperItem[] = [
     id: 'nordic-fjord',
     name: 'Fiordo Nórdico',
     url: '/src/assets/images/wallpaper_nordic_fjord_1794763339286.jpg'
+  },
+  {
+    id: 'aurora-iceland',
+    name: 'Aurora Boreal en Islandia',
+    url: '/src/assets/images/wallpaper_aurora_iceland_1794766516425.jpg'
+  },
+  {
+    id: 'redwood-mist',
+    name: 'Bosque de Secuoyas',
+    url: '/src/assets/images/wallpaper_redwood_mist_1794766516630.jpg'
+  },
+  {
+    id: 'patagonia-peaks',
+    name: 'Cumbres de la Patagonia',
+    url: '/src/assets/images/wallpaper_patagonia_peaks_1794766517969.jpg'
+  },
+  {
+    id: 'sahara-dunes',
+    name: 'Dunas al Crepúsculo',
+    url: '/src/assets/images/wallpaper_sahara_dunes_1794766518257.jpg'
+  },
+  {
+    id: 'basalt-ocean',
+    name: 'Acantilados de Basalto',
+    url: '/src/assets/images/wallpaper_basalt_ocean_1794766517480.jpg'
+  },
+  {
+    id: 'kyoto-bamboo',
+    name: 'Jardín de Bambú en Kioto',
+    url: '/src/assets/images/wallpaper_kyoto_bamboo_1794766517951.jpg'
+  },
+  {
+    id: 'antelope-canyon',
+    name: 'Cañón de Arenisca',
+    url: '/src/assets/images/wallpaper_antelope_canyon_1794766518992.jpg'
+  },
+  {
+    id: 'arctic-glacier',
+    name: 'Glaciar Ártico',
+    url: '/src/assets/images/wallpaper_arctic_glacier_1794766518369.jpg'
+  },
+  {
+    id: 'mediterranean-cove',
+    name: 'Cala del Mediterráneo',
+    url: '/src/assets/images/wallpaper_mediterranean_cove_1794766519597.jpg'
+  },
+  {
+    id: 'minimal-pavilion',
+    name: 'Pabellón Minimalista',
+    url: '/src/assets/images/wallpaper_minimal_pavilion_1794766520100.jpg'
   }
 ];
 
@@ -33,10 +83,13 @@ export const INITIAL_SHIELD_STATE: FabiShieldState = {
   enabled: true,
   blockTrackersAndAds: 'standard',
   upgradeHttps: true,
+  strictTls: true,
   blockScripts: false,
   blockFingerprinting: 'standard',
   blockCrossSiteCookies: true,
   httpsUpgradesCount: 0,
+  trackersBlockedCount: 0,
+  cookiesBlockedCount: 0,
   searchesCount: 0
 };
 
@@ -121,69 +174,71 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   zoomLevel: 100
 };
 
-export const ELECTRON_BOILERPLATE = {
-  mainJs: `// main.js - FabiNav Desktop Runtime v${APP_VERSION}
-const { app, BrowserWindow, session } = require('electron');
+export const ELECTRON_MAIN_JS = `const { app, BrowserWindow, session } = require('electron');
 const path = require('path');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 680,
-    titleBarStyle: 'hidden',
+    width: 1360,
+    height: 860,
+    minWidth: 960,
+    minHeight: 620,
+    titleBarStyle: 'hiddenInset',
     backgroundColor: '#17181c',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      nodeIntegration: false,
       webviewTag: true
     }
   });
 
-  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-    const blocked = ['doubleclick.net', 'google-analytics.com', 'criteo.net'];
-    const shouldBlock = blocked.some((domain) => details.url.includes(domain));
-    callback({ cancel: shouldBlock });
+  // Forzar TLS moderno y cabecera DNT en Chromium
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    details.requestHeaders['DNT'] = '1';
+    callback({ requestHeaders: details.requestHeaders });
   });
 
-  win.loadURL('http://localhost:3000');
+  win.loadURL(process.env.FABINAV_URL || 'http://localhost:3000');
 }
 
 app.whenReady().then(createWindow);
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-`,
-  preloadJs: `// preload.js - FabiNav Context Bridge v${APP_VERSION}
-const { contextBridge, ipcRenderer } = require('electron');
+`;
 
-contextBridge.exposeInMainWorld('fabinavNative', {
-  appVersion: '${APP_VERSION}',
+export const ELECTRON_PRELOAD_JS = `const { contextBridge } = require('electron');
+
+contextBridge.exposeInMainWorld('fabinavDesktop', {
   platform: process.platform,
-  sendDevCommand: (cmd) => ipcRenderer.send('dev-command', cmd)
-});
-`,
-  packageJson: `{
-  "name": "fabinav-desktop",
-  "version": "${APP_VERSION}",
-  "description": "FabiNav — Navegador web de escritorio con interfaz estilo Brave.",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux"
-  },
-  "dependencies": {
-    "electron-store": "^8.1.0"
-  },
-  "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+  versions: {
+    chrome: process.versions.chrome,
+    electron: process.versions.electron
   }
-}`
+});
+`;
+
+export const ELECTRON_BOILERPLATE = {
+  mainJs: ELECTRON_MAIN_JS,
+  preloadJs: ELECTRON_PRELOAD_JS,
+  packageJson: JSON.stringify(
+    {
+      name: 'fabinav-desktop',
+      version: APP_VERSION,
+      main: 'main.js',
+      scripts: {
+        start: 'electron .',
+        'build:win': 'electron-builder --win',
+        'build:mac': 'electron-builder --mac',
+        'build:linux': 'electron-builder --linux'
+      },
+      devDependencies: {
+        electron: '^31.0.0',
+        'electron-builder': '^24.13.3'
+      }
+    },
+    null,
+    2
+  )
 };

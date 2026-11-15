@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   WebTab,
   ClosedTabRecord,
@@ -13,7 +13,8 @@ import {
   FabiNewTabCustomization,
   LocalBackupMeta,
   HistoryEntry,
-  TopSiteItem
+  TopSiteItem,
+  GoogleUserProfile
 } from './types';
 import {
   INITIAL_TABS,
@@ -25,19 +26,20 @@ import {
   INITIAL_BACKUP_META,
   APP_VERSION
 } from './constants/initialData';
+import { initGoogleAuth, signInWithGoogle, signOutGoogle } from './services/googleAuth';
 import { ActivityBar } from './components/ActivityBar';
 import { SidebarPanel } from './components/SidebarPanel';
 import { TitleBar } from './components/TitleBar';
 import { TabBar } from './components/TabBar';
 import { BookmarksBar } from './components/BookmarksBar';
-import { WebViewport } from './components/WebViewport';
+import { WebViewport, PageSecurityReport } from './components/WebViewport';
 import { CommandPalette } from './components/CommandPalette';
 import { ElectronExportModal } from './components/ElectronExportModal';
 import { FabiShieldModal } from './components/BraveShieldModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
 import { Plus, X, Pin, VolumeX, Columns, Lock, Globe } from 'lucide-react';
 
-const STORAGE_KEY_PREFIX = 'fabinav_v1_6_';
+const STORAGE_KEY_PREFIX = 'fabinav_v1_7_';
 
 function loadStored<T>(key: string, fallback: T): T {
   try {
@@ -50,6 +52,11 @@ function loadStored<T>(key: string, fallback: T): T {
 }
 
 export default function App() {
+  // Google Auth State (obtained strictly from real Google OAuth / People API)
+  const [googleUser, setGoogleUser] = useState<GoogleUserProfile | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   // Tabs & Navigation
   const [tabs, setTabs] = useState<WebTab[]>(() => loadStored('tabs', INITIAL_TABS));
   const [activeTabId, setActiveTabId] = useState<string>(() => {
@@ -95,7 +102,7 @@ export default function App() {
     {
       id: `log-init-${Date.now()}`,
       type: 'info',
-      message: `FabiNav v${APP_VERSION} listo.`,
+      message: `FabiNav v${APP_VERSION} listo (TLS 1.2/1.3 + Cookies particionadas).`,
       source: 'Sistema',
       timestamp: new Date().toLocaleTimeString('es-ES', { hour12: false })
     }
@@ -110,11 +117,53 @@ export default function App() {
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
 
   const omniboxRef = useRef<HTMLInputElement | null>(null);
+  const reportedPageKeysRef = useRef<Set<string>>(new Set());
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const splitTab = splitTabId ? tabs.find((t) => t.id === splitTabId) : null;
 
-  // Persist workspace state to localStorage
+  // Listen to Firebase/Google Auth state
+  useEffect(() => {
+    const unsubscribe = initGoogleAuth(
+      (profile) => {
+        setGoogleUser(profile);
+        setAuthError(null);
+      },
+      () => {
+        setGoogleUser(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const profile = await signInWithGoogle();
+      setGoogleUser(profile);
+      appendLog('info', `Sesión de Google conectada: ${profile.email || profile.displayName}`, 'Google');
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'No se pudo completar el inicio de sesión con Google';
+      setAuthError(msg);
+      appendLog('error', msg, 'Google');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    try {
+      await signOutGoogle();
+      setGoogleUser(null);
+      appendLog('info', 'Sesión de Google desconectada', 'Google');
+    } catch {
+      // Ignore sign out errors
+    }
+  };
+
+  // Persist workspace state to localStorage (never persisting OAuth tokens)
   useEffect(() => {
     try {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}tabs`, JSON.stringify(tabs));
@@ -180,7 +229,7 @@ export default function App() {
     if (targetUrl === 'fabinav://bookmarks') return 'Marcadores';
     if (targetUrl === 'fabinav://history') return 'Historial';
     if (targetUrl === 'fabinav://downloads') return 'Descargas';
-    if (targetUrl === 'fabinav://shields') return 'Escudos de FabiNav';
+    if (targetUrl === 'fabinav://shields') return 'Escudos, Cookies y TLS';
     if (targetUrl === 'fabinav://settings') return 'Configuración';
     if (targetUrl === 'fabinav://about') return 'Acerca de FabiNav';
     if (targetUrl.startsWith('fabinav://search?q=')) {
@@ -246,10 +295,51 @@ export default function App() {
         searchesCount: prev.searchesCount + (isSearch ? 1 : 0)
       }));
       if (upgradedHttps) {
-        appendLog('info', `Conexión mejorada a HTTPS: ${finalUrl}`, 'Escudos');
+        appendLog('info', `Conexión mejorada a HTTPS/TLS: ${finalUrl}`, 'Escudos');
       }
     }
   };
+
+  const handlePageSecurityReport = useCallback((tabId: string, report: PageSecurityReport) => {
+    if (report.title) {
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                title: report.title || t.title,
+                isLoading: false
+              }
+            : t
+        )
+      );
+    }
+
+    const dedupeKey = `${tabId}:${report.url || ''}`;
+    if (reportedPageKeysRef.current.has(dedupeKey)) return;
+    reportedPageKeysRef.current.add(dedupeKey);
+    if (reportedPageKeysRef.current.size > 120) {
+      reportedPageKeysRef.current.clear();
+    }
+
+    const trackers = report.blockedTrackers || 0;
+    const cookies = report.blockedCookies || 0;
+    const httpsUp = report.upgradedHttps ? 1 : 0;
+
+    if (trackers > 0 || cookies > 0 || httpsUp > 0) {
+      setShieldState((prev) => ({
+        ...prev,
+        trackersBlockedCount: prev.trackersBlockedCount + trackers,
+        cookiesBlockedCount: prev.cookiesBlockedCount + cookies,
+        httpsUpgradesCount: prev.httpsUpgradesCount + httpsUp
+      }));
+      appendLog(
+        'info',
+        `Escudos en ${report.url || 'página'}: ${trackers} rastreadores y ${cookies} cookies bloqueadas.`,
+        'Escudos'
+      );
+    }
+  }, []);
 
   const handleSelectTab = (tabId: string) => {
     setActiveTabId(tabId);
@@ -301,7 +391,7 @@ export default function App() {
     if (!isInternal) {
       setTimeout(() => {
         setTabs((prev) => prev.map((t) => (t.id === newId ? { ...t, isLoading: false } : t)));
-      }, 350);
+      }, 650);
     }
   };
 
@@ -330,6 +420,11 @@ export default function App() {
     const newTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(newTabs);
 
+    // Si se cierra la última pestaña privada, limpiar partición privada de cookies
+    if (target?.tabMode === 'private' && !newTabs.some((t) => t.tabMode === 'private')) {
+      fetch('/api/cookies?partition=private', { method: 'DELETE' }).catch(() => {});
+    }
+
     if (activeTabId === tabId) {
       const nextIndex = Math.max(0, tabIndex - 1);
       setActiveTabId(newTabs[nextIndex].id);
@@ -349,6 +444,8 @@ export default function App() {
     const parsedTitle = resolveInternalTitle(finalUrl);
     const isInternal = finalUrl.startsWith('fabinav://');
     const currentTab = tabs.find((t) => t.id === tabId);
+
+    reportedPageKeysRef.current.delete(`${tabId}:${finalUrl}`);
 
     setTabs((prev) =>
       prev.map((t) => {
@@ -390,7 +487,7 @@ export default function App() {
     if (!isInternal) {
       setTimeout(() => {
         setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, isLoading: false } : t)));
-      }, 350);
+      }, 650);
     }
   };
 
@@ -444,10 +541,12 @@ export default function App() {
 
   const handleReload = () => {
     if (!activeTab) return;
+    const targetUrl = activeTab.url;
+    reportedPageKeysRef.current.delete(`${activeTab.id}:${targetUrl}`);
     setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, isLoading: true } : t)));
     setTimeout(() => {
       setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, isLoading: false } : t)));
-    }, 350);
+    }, 450);
   };
 
   const handleGoHome = () => {
@@ -615,7 +714,11 @@ export default function App() {
     if (normalized === 'shields') {
       appendLog(
         'log',
-        `Escudos: ${shieldState.enabled ? 'activos' : 'pausados'} · ${shieldState.httpsUpgradesCount} mejoras HTTPS · ${shieldState.searchesCount} búsquedas.`,
+        `Escudos: ${shieldState.enabled ? 'activos' : 'pausados'} · TLS estricto: ${
+          shieldState.strictTls ? 'sí' : 'no'
+        } · ${shieldState.trackersBlockedCount} rastreadores · ${shieldState.cookiesBlockedCount} cookies · ${
+          shieldState.httpsUpgradesCount
+        } mejoras HTTPS.`,
         'Consola'
       );
       return;
@@ -685,7 +788,7 @@ export default function App() {
     {
       id: 'cmd-private-tab',
       title: 'Nueva pestaña privada',
-      subtitle: 'No guarda entradas en el historial local',
+      subtitle: 'No guarda entradas en el historial ni cookies al cerrar',
       category: 'Pestañas',
       action: () => handleNewTab('fabinav://newtab', 'private')
     },
@@ -712,16 +815,16 @@ export default function App() {
       action: () => handleNavigate(activeTab.id, 'fabinav://history')
     },
     {
-      id: 'cmd-shields',
-      title: 'Escudos de privacidad',
-      subtitle: 'Configurar HTTPS automático y reglas de filtrado',
+      id: 'cmd-cookies-tls',
+      title: 'Escudos, Cookies y TLS',
+      subtitle: 'Gestionar cookies por partición, certificados y protección',
       category: 'Privacidad',
-      action: () => setIsShieldsModalOpen(true)
+      action: () => handleNavigate(activeTab.id, 'fabinav://shields')
     },
     {
-      id: 'cmd-local-backup',
-      title: 'Datos locales y respaldo JSON',
-      subtitle: 'Exportar o importar copia de seguridad',
+      id: 'cmd-google-account',
+      title: 'Cuenta de Google y respaldo JSON',
+      subtitle: 'Obtener avatar real desde Google o exportar datos locales',
       category: 'Datos',
       action: () => setIsBackupModalOpen(true)
     },
@@ -854,6 +957,7 @@ export default function App() {
       {/* 2. Brave Main Toolbar + Pill Omnibox */}
       <TitleBar
         currentTab={activeTab}
+        googleUser={googleUser}
         bookmarks={bookmarks}
         historyEntries={historyEntries}
         settings={settings}
@@ -890,7 +994,11 @@ export default function App() {
           handleUpdateSettings({ showBookmarksBar: !settings.showBookmarksBar })
         }
         isSplitActive={!!splitTabId}
-        shieldCount={shieldState.httpsUpgradesCount}
+        shieldCount={
+          shieldState.trackersBlockedCount +
+          shieldState.cookiesBlockedCount +
+          shieldState.httpsUpgradesCount
+        }
         isShieldActive={shieldState.enabled}
       />
 
@@ -1015,6 +1123,7 @@ export default function App() {
           onAddTopSite={handleAddTopSite}
           onRemoveTopSite={handleRemoveTopSite}
           onNavigate={handleNavigate}
+          onPageSecurityReport={handlePageSecurityReport}
           onToggleSplitTab={handleToggleSplitTab}
           onUpdateCustomization={(updates) =>
             setNewTabCustomization((prev) => ({ ...prev, ...updates }))
@@ -1034,6 +1143,9 @@ export default function App() {
           onExportBackup={handleExportBackup}
           onImportBackup={handleImportBackup}
           onOpenElectronModal={() => setIsElectronModalOpen(true)}
+          googleUser={googleUser}
+          onGoogleSignIn={handleGoogleSignIn}
+          onGoogleSignOut={handleGoogleSignOut}
         />
 
         {/* Right Brave Sidebar (default in Brave) */}
@@ -1057,10 +1169,15 @@ export default function App() {
         commands={commands}
       />
 
-      {/* Local Data & JSON Backup Modal (zero fake profile/login) */}
+      {/* Google Account & Local JSON Backup Modal */}
       <GoogleSyncModal
         isOpen={isBackupModalOpen}
         onClose={() => setIsBackupModalOpen(false)}
+        googleUser={googleUser}
+        isAuthLoading={isAuthLoading}
+        authError={authError}
+        onGoogleSignIn={handleGoogleSignIn}
+        onGoogleSignOut={handleGoogleSignOut}
         backupMeta={backupMeta}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}

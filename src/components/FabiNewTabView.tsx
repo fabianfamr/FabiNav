@@ -144,10 +144,10 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           >
             <div>
               <div className="text-2xl sm:text-3xl font-semibold text-[#ff6f4c] tabular-nums leading-none">
-                {shieldState.httpsUpgradesCount}
+                {shieldState.trackersBlockedCount + shieldState.cookiesBlockedCount}
               </div>
-              <div className="text-[11px] text-white/75 mt-1.5 max-w-[105px] leading-tight">
-                Conexiones mejoradas a HTTPS
+              <div className="text-[11px] text-white/75 mt-1.5 max-w-[115px] leading-tight">
+                Rastreadores y cookies bloqueados
               </div>
             </div>
 
@@ -155,10 +155,10 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
 
             <div>
               <div className="text-2xl sm:text-3xl font-semibold text-white tabular-nums leading-none">
-                {shieldState.searchesCount}
+                {shieldState.httpsUpgradesCount}
               </div>
               <div className="text-[11px] text-white/75 mt-1.5 max-w-[100px] leading-tight">
-                Búsquedas privadas en sesión
+                Conexiones HTTPS/TLS
               </div>
             </div>
 
@@ -173,7 +173,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 {shieldState.enabled ? 'Activos' : 'En pausa'}
               </div>
               <div className="text-[11px] text-white/75 mt-1.5 leading-tight">
-                Estado de Escudos
+                Escudos y TLS
               </div>
             </div>
           </motion.button>
@@ -458,10 +458,12 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 </label>
 
                 <div className="pt-2 border-t border-[var(--bn-border)]">
-                  <div className="text-xs font-medium text-[var(--bn-text-strong)] mb-2">
-                    Imagen de fondo
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-[var(--bn-text-strong)]">
+                      Imagen de fondo ({FABI_WALLPAPERS.length} disponibles)
+                    </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
                     {FABI_WALLPAPERS.map((wp) => (
                       <button
                         key={wp.id}

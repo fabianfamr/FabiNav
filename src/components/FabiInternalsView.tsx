@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldCheck,
@@ -16,7 +16,11 @@ import {
   Laptop,
   Plus,
   Upload,
-  ExternalLink
+  ExternalLink,
+  Cookie,
+  Lock,
+  RotateCw,
+  LogOut
 } from 'lucide-react';
 import {
   FabiShieldState,
@@ -24,12 +28,17 @@ import {
   HistoryEntry,
   BrowserTheme,
   Bookmark,
-  DownloadItem
+  DownloadItem,
+  StoredCookieItem,
+  GoogleUserProfile
 } from '../types';
 import { APP_VERSION } from '../constants/initialData';
 
 interface FabiInternalsViewProps {
   url: string;
+  googleUser?: GoogleUserProfile | null;
+  onGoogleSignIn?: () => void;
+  onGoogleSignOut?: () => void;
   shieldState: FabiShieldState;
   onUpdateShieldState: (updates: Partial<FabiShieldState>) => void;
   settings: BrowserSettings;
@@ -62,6 +71,9 @@ const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   url,
+  googleUser,
+  onGoogleSignIn,
+  onGoogleSignOut,
   shieldState,
   onUpdateShieldState,
   settings,
@@ -85,9 +97,45 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [newBmTitle, setNewBmTitle] = useState('');
   const [newBmUrl, setNewBmUrl] = useState('');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('apariencia');
+  const [cookiePartition, setCookiePartition] = useState<'normal' | 'private'>('normal');
+  const [cookies, setCookies] = useState<StoredCookieItem[]>([]);
+  const [loadingCookies, setLoadingCookies] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const cleanUrl = url.toLowerCase().trim();
+
+  const fetchCookies = useCallback(async (partition: 'normal' | 'private') => {
+    setLoadingCookies(true);
+    try {
+      const res = await fetch(`/api/cookies?partition=${partition}`);
+      if (res.ok) {
+        const data = (await res.json()) as { cookies?: StoredCookieItem[] };
+        setCookies(data.cookies || []);
+      }
+    } catch {
+      // Ignore network errors
+    } finally {
+      setLoadingCookies(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (cleanUrl.includes('shields')) {
+      fetchCookies(cookiePartition);
+    }
+  }, [cleanUrl, cookiePartition, fetchCookies]);
+
+  const handleDeleteCookie = async (id: string) => {
+    await fetch(`/api/cookies?partition=${cookiePartition}&id=${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    setCookies((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const handleClearCookies = async () => {
+    await fetch(`/api/cookies?partition=${cookiePartition}`, { method: 'DELETE' });
+    setCookies([]);
+  };
 
   // 1. MARCADORES (fabinav://bookmarks)
   if (cleanUrl.includes('bookmarks')) {
@@ -348,7 +396,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     );
   }
 
-  // 4. ESCUDOS GLOBALES (fabinav://shields)
+  // 4. ESCUDOS, COOKIES Y PROTECCIÓN TLS (fabinav://shields)
   if (cleanUrl.includes('shields')) {
     return (
       <div className="w-full h-full overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)] p-6 sm:p-10">
@@ -359,9 +407,11 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">Escudos</h1>
+                <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">
+                  Escudos, Cookies y TLS
+                </h1>
                 <p className="text-xs text-[var(--bn-text-muted)]">
-                  Valores predeterminados de privacidad para todas tus pestañas
+                  Protección contra rastreadores, verificación TLS 1.2/1.3 y almacén real de cookies
                 </p>
               </div>
             </div>
@@ -374,20 +424,32 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   : 'bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[var(--bn-text-muted)]'
               }`}
             >
-              {shieldState.enabled ? 'Escudos activados' : 'Escudos pausados'}
+              {shieldState.enabled ? 'Protección activada' : 'Protección pausada'}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
-              <div className="text-xs text-[var(--bn-text-muted)]">Mejoras HTTPS aplicadas</div>
-              <div className="text-2xl font-semibold text-[var(--bn-accent)] mt-1 tabular-nums font-mono">
+              <div className="text-[11px] text-[var(--bn-text-muted)]">Rastreadores bloq.</div>
+              <div className="text-xl font-semibold text-[var(--bn-accent)] mt-1 tabular-nums font-mono">
+                {shieldState.trackersBlockedCount}
+              </div>
+            </div>
+            <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
+              <div className="text-[11px] text-[var(--bn-text-muted)]">Cookies bloqueadas</div>
+              <div className="text-xl font-semibold text-[var(--bn-text-strong)] mt-1 tabular-nums font-mono">
+                {shieldState.cookiesBlockedCount}
+              </div>
+            </div>
+            <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
+              <div className="text-[11px] text-[var(--bn-text-muted)]">Mejoras HTTPS/TLS</div>
+              <div className="text-xl font-semibold text-[var(--bn-success)] mt-1 tabular-nums font-mono">
                 {shieldState.httpsUpgradesCount}
               </div>
             </div>
             <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
-              <div className="text-xs text-[var(--bn-text-muted)]">Búsquedas privadas en sesión</div>
-              <div className="text-2xl font-semibold text-[var(--bn-text-strong)] mt-1 tabular-nums font-mono">
+              <div className="text-[11px] text-[var(--bn-text-muted)]">Búsquedas privadas</div>
+              <div className="text-xl font-semibold text-[var(--bn-text-strong)] mt-1 tabular-nums font-mono">
                 {shieldState.searchesCount}
               </div>
             </div>
@@ -400,7 +462,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Bloqueo de rastreadores y anuncios
                 </div>
                 <div className="text-[11px] text-[var(--bn-text-muted)]">
-                  Nivel de filtrado aplicado en el motor del navegador
+                  Filtra scripts y píxeles de seguimiento antes de renderizar cada página
                 </div>
               </div>
               <select
@@ -417,6 +479,24 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 <option value="disabled">Desactivado</option>
               </select>
             </div>
+
+            <label className="flex items-center justify-between p-4 gap-4 cursor-pointer">
+              <div>
+                <div className="text-xs font-medium text-[var(--bn-text-strong)] flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+                  <span>Verificación estricta TLS 1.2 / 1.3</span>
+                </div>
+                <div className="text-[11px] text-[var(--bn-text-muted)]">
+                  Rechaza certificados inválidos o cifrados obsoletos al abrir páginas HTTPS
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={shieldState.strictTls}
+                onChange={(e) => onUpdateShieldState({ strictTls: e.target.checked })}
+                className="accent-[var(--bn-accent)] w-4 h-4"
+              />
+            </label>
 
             <label className="flex items-center justify-between p-4 gap-4 cursor-pointer">
               <div>
@@ -438,10 +518,10 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             <label className="flex items-center justify-between p-4 gap-4 cursor-pointer">
               <div>
                 <div className="text-xs font-medium text-[var(--bn-text-strong)]">
-                  Bloquear cookies entre sitios
+                  Bloquear cookies entre sitios y de rastreo
                 </div>
                 <div className="text-[11px] text-[var(--bn-text-muted)]">
-                  Evita que sitios externos rastreen tu sesión entre pestañas
+                  Impide que cookies de terceros o analíticas se guarden en tu sesión
                 </div>
               </div>
               <input
@@ -451,30 +531,112 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 className="accent-[var(--bn-accent)] w-4 h-4"
               />
             </label>
+          </div>
 
-            <div className="flex items-center justify-between p-4 gap-4">
-              <div>
-                <div className="text-xs font-medium text-[var(--bn-text-strong)]">
-                  Bloquear huella digital
-                </div>
-                <div className="text-[11px] text-[var(--bn-text-muted)]">
-                  Protección contra identificación del navegador por hardware o fuentes
-                </div>
+          {/* Real Partitioned Cookie Jar Manager */}
+          <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl overflow-hidden">
+            <div className="p-4 border-b border-[var(--bn-border)] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Cookie className="w-4 h-4 text-[var(--bn-accent)]" />
+                <span className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                  Almacén de Cookies ({cookies.length})
+                </span>
               </div>
-              <select
-                value={shieldState.blockFingerprinting}
-                onChange={(e) =>
-                  onUpdateShieldState({
-                    blockFingerprinting: e.target.value as FabiShieldState['blockFingerprinting']
-                  })
-                }
-                className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
-              >
-                <option value="standard">Estándar</option>
-                <option value="strict">Estricto</option>
-                <option value="disabled">Desactivado</option>
-              </select>
+
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-full bg-[var(--bn-omnibox)] p-0.5 border border-[var(--bn-border)] text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setCookiePartition('normal')}
+                    className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                      cookiePartition === 'normal'
+                        ? 'bg-[var(--bn-accent)] text-white'
+                        : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    Sesión normal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCookiePartition('private')}
+                    className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                      cookiePartition === 'private'
+                        ? 'bg-[#7c3aed] text-white'
+                        : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    Privada
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchCookies(cookiePartition)}
+                  title="Actualizar cookies"
+                  className="p-1.5 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${loadingCookies ? 'animate-spin' : ''}`} />
+                </button>
+
+                {cookies.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearCookies}
+                    className="px-3 py-1 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-danger)] font-medium"
+                  >
+                    Borrar todas
+                  </button>
+                )}
+              </div>
             </div>
+
+            {cookies.length === 0 ? (
+              <div className="p-8 text-center text-xs text-[var(--bn-text-muted)]">
+                No hay cookies almacenadas en la partición {cookiePartition === 'private' ? 'privada' : 'normal'}.
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--bn-border)] max-h-80 overflow-y-auto">
+                {cookies.map((cookie) => (
+                  <div
+                    key={cookie.id}
+                    className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs hover:bg-[var(--bn-hover)]/50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[var(--bn-text-strong)] truncate">
+                          {cookie.domain}
+                        </span>
+                        <span className="font-mono text-[11px] text-[var(--bn-accent)] truncate">
+                          {cookie.name}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] text-[var(--bn-text-muted)] font-mono">
+                        <span>Path: {cookie.path}</span>
+                        {cookie.secure && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400">
+                            Secure
+                          </span>
+                        )}
+                        {cookie.httpOnly && (
+                          <span className="px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-400">
+                            HttpOnly
+                          </span>
+                        )}
+                        <span>SameSite={cookie.sameSite}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCookie(cookie.id)}
+                      title="Eliminar cookie"
+                      className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -617,15 +779,62 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Inicio</h2>
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
                   <div className="p-4 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Modo de sesión</div>
-                      <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                        Sesión local independiente sin cuentas vinculadas ni inicio de sesión
-                      </div>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] text-[11px] font-medium">
-                      Local
-                    </span>
+                    {googleUser ? (
+                      <>
+                        <div className="flex items-center gap-3 min-w-0">
+                          {googleUser.photoUrl ? (
+                            <img
+                              src={googleUser.photoUrl}
+                              alt={googleUser.displayName}
+                              referrerPolicy="no-referrer"
+                              className="w-10 h-10 rounded-full object-cover border border-[var(--bn-border-strong)] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-[var(--bn-accent)] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                              {googleUser.displayName[0]?.toUpperCase() || 'G'}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-semibold text-[var(--bn-text-strong)] truncate">
+                              {googleUser.displayName}
+                            </div>
+                            <div className="text-[11px] text-[var(--bn-text-muted)] truncate">
+                              {googleUser.email}
+                            </div>
+                          </div>
+                        </div>
+                        {onGoogleSignOut && (
+                          <button
+                            type="button"
+                            onClick={onGoogleSignOut}
+                            className="px-3 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-xs font-medium text-[var(--bn-text-strong)] flex items-center gap-1.5 shrink-0"
+                          >
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Desconectar</span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <div className="font-medium text-[var(--bn-text-strong)]">
+                            Cuenta de Google
+                          </div>
+                          <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                            Inicia sesión para mostrar tu foto oficial de Google en el navegador
+                          </div>
+                        </div>
+                        {onGoogleSignIn && (
+                          <button
+                            type="button"
+                            onClick={onGoogleSignIn}
+                            className="px-3.5 py-1.5 rounded-full bg-white text-[#1f1f1f] hover:bg-[#f1f3f4] font-medium text-xs shrink-0"
+                          >
+                            Sign in with Google
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="p-4 flex items-center justify-between gap-4">
                     <div>
@@ -742,13 +951,15 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             {settingsSection === 'escudos' && (
               <>
                 <div className="flex items-center justify-between">
-                  <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Escudos</h2>
+                  <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">
+                    Escudos, Cookies y TLS
+                  </h2>
                   <button
                     type="button"
                     onClick={() => onNavigate('fabinav://shields')}
                     className="text-xs text-[var(--bn-accent)] hover:underline flex items-center gap-1"
                   >
-                    <span>Abrir panel completo</span>
+                    <span>Administrar cookies y TLS</span>
                     <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
@@ -771,6 +982,16 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                       <option value="disabled">Desactivado</option>
                     </select>
                   </div>
+
+                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                    <span>Verificación estricta TLS 1.2 / 1.3</span>
+                    <input
+                      type="checkbox"
+                      checked={shieldState.strictTls}
+                      onChange={(e) => onUpdateShieldState({ strictTls: e.target.checked })}
+                      className="accent-[var(--bn-accent)] w-4 h-4"
+                    />
+                  </label>
 
                   <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
                     <span>Actualizar conexiones a HTTPS</span>

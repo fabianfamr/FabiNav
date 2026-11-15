@@ -10,14 +10,20 @@ import {
   Files,
   Globe,
   ShieldCheck,
-  HardDrive
+  LogOut,
+  AlertCircle
 } from 'lucide-react';
-import { LocalBackupMeta } from '../types';
+import { GoogleUserProfile, LocalBackupMeta } from '../types';
 import { INITIAL_BACKUP_META } from '../constants/initialData';
 
 interface GoogleSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
+  googleUser: GoogleUserProfile | null;
+  isAuthLoading: boolean;
+  authError: string | null;
+  onGoogleSignIn: () => void;
+  onGoogleSignOut: () => void;
   backupMeta?: LocalBackupMeta;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
@@ -32,6 +38,11 @@ const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   isOpen,
   onClose,
+  googleUser,
+  isAuthLoading,
+  authError,
+  onGoogleSignIn,
+  onGoogleSignOut,
   backupMeta,
   onExportBackup,
   onImportBackup,
@@ -74,7 +85,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
           onClick={onClose}
         >
           <motion.div
-            id="local-backup-modal"
+            id="google-account-backup-modal"
             initial={{ opacity: 0, y: 10, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.96 }}
@@ -85,15 +96,26 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             {/* Header */}
             <div className="px-6 py-4 bg-[var(--bn-toolbar)] border-b border-[var(--bn-border)] flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] flex items-center justify-center shrink-0">
-                  <HardDrive className="w-4.5 h-4.5" />
-                </div>
+                {googleUser?.photoUrl ? (
+                  <img
+                    src={googleUser.photoUrl}
+                    alt={googleUser.displayName}
+                    referrerPolicy="no-referrer"
+                    className="w-9 h-9 rounded-full object-cover border border-[var(--bn-border-strong)] shrink-0"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] flex items-center justify-center font-semibold text-sm shrink-0">
+                    {googleUser ? googleUser.displayName[0]?.toUpperCase() || 'G' : 'G'}
+                  </div>
+                )}
                 <div>
                   <h3 className="text-sm font-semibold text-[var(--bn-text-strong)]">
-                    Datos locales y respaldo
+                    Cuenta de Google y respaldo local
                   </h3>
                   <p className="text-[11px] text-[var(--bn-text-muted)]">
-                    Navegación sin cuentas ni inicio de sesión · Guardado local en tu equipo
+                    {googleUser
+                      ? `Conectado como ${googleUser.email || googleUser.displayName}`
+                      : 'Conecta tu cuenta de Google para obtener tu foto de perfil real'}
                   </p>
                 </div>
               </div>
@@ -115,10 +137,96 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                 </div>
               )}
 
+              {authError && (
+                <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-danger)]/40 text-[var(--bn-danger)] rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {/* Real Google Account Sign-In Card */}
+              <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
+                {googleUser ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {googleUser.photoUrl ? (
+                        <img
+                          src={googleUser.photoUrl}
+                          alt={googleUser.displayName}
+                          referrerPolicy="no-referrer"
+                          className="w-11 h-11 rounded-full object-cover border border-[var(--bn-border-strong)] shrink-0"
+                        />
+                      ) : (
+                        <div className="w-11 h-11 rounded-full bg-[var(--bn-accent)] text-white flex items-center justify-center font-bold text-base shrink-0">
+                          {googleUser.displayName[0]?.toUpperCase() || 'G'}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--bn-text-strong)] truncate">
+                          {googleUser.displayName}
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] truncate">
+                          {googleUser.email}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={onGoogleSignOut}
+                      className="px-3.5 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-xs font-medium text-[var(--bn-text-strong)] flex items-center gap-1.5 shrink-0"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Cerrar sesión</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                        Foto y perfil desde Google
+                      </h4>
+                      <p className="text-[11px] text-[var(--bn-text-muted)] mt-0.5 leading-relaxed">
+                        Inicia sesión con tu cuenta real de Google para mostrar tu foto oficial en la barra del navegador.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isAuthLoading}
+                      onClick={onGoogleSignIn}
+                      className="gsi-material-button shrink-0 disabled:opacity-60 inline-flex items-center justify-center gap-2.5 px-4 py-2 rounded-full bg-white text-[#1f1f1f] hover:bg-[#f1f3f4] active:scale-95 border border-[#747775]/40 font-medium text-xs shadow-sm transition-all"
+                    >
+                      <span className="w-4 h-4 shrink-0">
+                        <svg viewBox="0 0 48 48" className="w-full h-full block">
+                          <path
+                            fill="#EA4335"
+                            d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                          />
+                          <path
+                            fill="#4285F4"
+                            d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                          />
+                          <path
+                            fill="#FBBC05"
+                            d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                          />
+                          <path
+                            fill="#34A853"
+                            d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                          />
+                        </svg>
+                      </span>
+                      <span>{isAuthLoading ? 'Conectando...' : 'Sign in with Google'}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Local Data Summary */}
               <div>
                 <h4 className="text-[11px] font-semibold text-[var(--bn-text-muted)] mb-2.5 uppercase tracking-wider">
-                  Datos reales guardados en este dispositivo
+                  Datos guardados en este dispositivo
                 </h4>
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl flex items-center gap-2.5">
@@ -207,7 +315,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             <div className="px-6 py-3 bg-[var(--bn-toolbar)] border-t border-[var(--bn-border)] flex items-center justify-between text-[11px] text-[var(--bn-text-muted)]">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-success)]" />
-                <span>Sin cuentas externas ni inicio de sesión simulado</span>
+                <span>Autenticación oficial de Google y respaldo local</span>
               </span>
               <button
                 type="button"

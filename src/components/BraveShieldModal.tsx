@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ExternalLink, Lock, Search, ChevronDown } from 'lucide-react';
+import { X, ExternalLink, Lock, Shield, Cookie, ChevronDown } from 'lucide-react';
 import { FabiShieldState } from '../types';
 import { APP_VERSION } from '../constants/initialData';
 
@@ -46,7 +46,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.96 }}
           transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
-          className="fixed top-20 right-4 sm:right-16 w-[350px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[var(--bn-text)] select-none text-xs rounded-2xl overflow-hidden origin-top-right"
+          className="fixed top-20 right-4 sm:right-16 w-[360px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[var(--bn-text)] select-none text-xs rounded-2xl overflow-hidden origin-top-right"
         >
           {/* Brave Shields Header */}
           <div className="bg-[var(--bn-toolbar)] px-4 py-3 border-b border-[var(--bn-border)] flex items-center justify-between">
@@ -68,7 +68,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
               </div>
               <div className="min-w-0">
                 <h4 className="text-xs font-semibold text-[var(--bn-text-strong)] flex items-center gap-1.5">
-                  <span>Escudos de FabiNav</span>
+                  <span>Escudos y TLS</span>
                   <span className="text-[10px] font-mono text-[var(--bn-text-muted)] tabular-nums">
                     v{APP_VERSION}
                   </span>
@@ -92,12 +92,12 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
           <div className="p-4 flex items-center justify-between border-b border-[var(--bn-border)] bg-[var(--bn-surface-alt)]">
             <div className="flex flex-col pr-3">
               <span className="text-[13px] font-semibold text-[var(--bn-text-strong)]">
-                {shieldState.enabled ? 'Los escudos están activos' : 'Los escudos están desactivados'}
+                {shieldState.enabled ? 'Protección activa' : 'Protección en pausa'}
               </span>
               <span className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
                 {shieldState.enabled
-                  ? 'Actualización automática a HTTPS y reglas de privacidad locales'
-                  : 'La protección está en pausa para la sesión actual'}
+                  ? 'Bloqueo de rastreadores, cookies entre sitios y verificación TLS'
+                  : 'Las reglas de filtrado están pausadas en esta sesión'}
               </span>
             </div>
 
@@ -120,24 +120,33 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
             </button>
           </div>
 
-          {/* Real Session Counters */}
-          <div className="p-3.5 bg-[var(--bn-surface)] border-b border-[var(--bn-border)] grid grid-cols-2 gap-2.5 text-center">
-            <div className="p-2.5 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
-              <div className="text-lg font-semibold text-[var(--bn-accent)] leading-none tabular-nums font-mono">
-                {shieldState.httpsUpgradesCount}
+          {/* Real Counters (from real proxy responses) */}
+          <div className="p-3.5 bg-[var(--bn-surface)] border-b border-[var(--bn-border)] grid grid-cols-3 gap-2 text-center">
+            <div className="p-2 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
+              <div className="text-base font-semibold text-[var(--bn-accent)] leading-none tabular-nums font-mono">
+                {shieldState.trackersBlockedCount}
               </div>
-              <div className="text-[11px] text-[var(--bn-text-muted)] mt-1.5 flex items-center justify-center gap-1">
-                <Lock className="w-3 h-3" />
-                <span>Mejoras HTTPS</span>
+              <div className="text-[10px] text-[var(--bn-text-muted)] mt-1.5 flex items-center justify-center gap-1">
+                <Shield className="w-3 h-3" />
+                <span>Rastreadores</span>
               </div>
             </div>
-            <div className="p-2.5 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
-              <div className="text-lg font-semibold text-[var(--bn-text-strong)] leading-none tabular-nums font-mono">
-                {shieldState.searchesCount}
+            <div className="p-2 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
+              <div className="text-base font-semibold text-[var(--bn-text-strong)] leading-none tabular-nums font-mono">
+                {shieldState.cookiesBlockedCount}
               </div>
-              <div className="text-[11px] text-[var(--bn-text-muted)] mt-1.5 flex items-center justify-center gap-1">
-                <Search className="w-3 h-3" />
-                <span>Búsquedas privadas</span>
+              <div className="text-[10px] text-[var(--bn-text-muted)] mt-1.5 flex items-center justify-center gap-1">
+                <Cookie className="w-3 h-3" />
+                <span>Cookies bloq.</span>
+              </div>
+            </div>
+            <div className="p-2 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
+              <div className="text-base font-semibold text-[var(--bn-success)] leading-none tabular-nums font-mono">
+                {shieldState.httpsUpgradesCount}
+              </div>
+              <div className="text-[10px] text-[var(--bn-text-muted)] mt-1.5 flex items-center justify-center gap-1">
+                <Lock className="w-3 h-3" />
+                <span>HTTPS/TLS</span>
               </div>
             </div>
           </div>
@@ -149,7 +158,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
               onClick={() => setShowAdvanced((v) => !v)}
               className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-medium text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors"
             >
-              <span>Controles avanzados</span>
+              <span>Controles avanzados y TLS</span>
               <ChevronDown
                 className={`w-4 h-4 text-[var(--bn-text-muted)] transition-transform duration-200 ${
                   showAdvanced ? 'rotate-180' : ''
@@ -195,11 +204,11 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                     </label>
 
                     <label className="flex items-center justify-between text-xs cursor-pointer">
-                      <span className="text-[var(--bn-text)]">Bloquear scripts de terceros</span>
+                      <span className="text-[var(--bn-text)]">Verificación TLS 1.2/1.3 estricta</span>
                       <input
                         type="checkbox"
-                        checked={shieldState.blockScripts}
-                        onChange={(e) => onUpdateShieldState({ blockScripts: e.target.checked })}
+                        checked={shieldState.strictTls}
+                        onChange={(e) => onUpdateShieldState({ strictTls: e.target.checked })}
                         className="accent-[var(--bn-accent)] w-4 h-4 rounded"
                       />
                     </label>
@@ -216,8 +225,18 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                       />
                     </label>
 
+                    <label className="flex items-center justify-between text-xs cursor-pointer">
+                      <span className="text-[var(--bn-text)]">Bloquear scripts en páginas</span>
+                      <input
+                        type="checkbox"
+                        checked={shieldState.blockScripts}
+                        onChange={(e) => onUpdateShieldState({ blockScripts: e.target.checked })}
+                        className="accent-[var(--bn-accent)] w-4 h-4 rounded"
+                      />
+                    </label>
+
                     <div className="flex items-center justify-between text-xs gap-2">
-                      <span className="text-[var(--bn-text)]">Bloqueo de huella digital</span>
+                      <span className="text-[var(--bn-text)]">Huella digital (Fingerprinting)</span>
                       <select
                         value={shieldState.blockFingerprinting}
                         onChange={(e) =>
@@ -248,7 +267,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
               }}
               className="text-[var(--bn-accent)] hover:underline flex items-center gap-1 font-medium"
             >
-              <span>Ajustes globales de escudos</span>
+              <span>Ver cookies y protección TLS</span>
               <ExternalLink className="w-3 h-3" />
             </button>
             <span>Brave Leo UI</span>

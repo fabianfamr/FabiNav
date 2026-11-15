@@ -7,6 +7,8 @@ import {
   Home,
   Lock,
   ShieldOff,
+  ShieldCheck,
+  ShieldAlert,
   Star,
   Columns,
   Search,
@@ -24,12 +26,23 @@ import {
   Laptop,
   Plus,
   Printer,
-  HardDrive
+  User,
+  Cookie,
+  Trash2
 } from 'lucide-react';
-import { WebTab, Bookmark, HistoryEntry, BrowserSettings } from '../types';
+import {
+  WebTab,
+  Bookmark,
+  HistoryEntry,
+  BrowserSettings,
+  GoogleUserProfile,
+  TlsInspectionResult,
+  StoredCookieItem
+} from '../types';
 
 interface TitleBarProps {
   currentTab?: WebTab;
+  googleUser: GoogleUserProfile | null;
   bookmarks: Bookmark[];
   historyEntries: HistoryEntry[];
   settings: BrowserSettings;
@@ -58,7 +71,7 @@ interface TitleBarProps {
 
 const INTERNAL_SUGGESTIONS = [
   { title: 'Nueva pestaña', url: 'fabinav://newtab', kind: 'FabiNav' },
-  { title: 'Escudos de privacidad', url: 'fabinav://shields', kind: 'FabiNav' },
+  { title: 'Escudos, Cookies y TLS', url: 'fabinav://shields', kind: 'FabiNav' },
   { title: 'Historial de navegación', url: 'fabinav://history', kind: 'FabiNav' },
   { title: 'Administrador de marcadores', url: 'fabinav://bookmarks', kind: 'FabiNav' },
   { title: 'Descargas', url: 'fabinav://downloads', kind: 'FabiNav' },
@@ -70,6 +83,7 @@ const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const TitleBar: React.FC<TitleBarProps> = ({
   currentTab,
+  googleUser,
   bookmarks,
   historyEntries,
   settings,
@@ -98,8 +112,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [inputUrl, setInputUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showBraveMenu, setShowBraveMenu] = useState(false);
+  const [showSecurityPopover, setShowSecurityPopover] = useState(false);
+  const [tlsInfo, setTlsInfo] = useState<TlsInspectionResult | null>(null);
+  const [siteCookies, setSiteCookies] = useState<StoredCookieItem[]>([]);
+  const [loadingSecurity, setLoadingSecurity] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const menuRef = useRef<HTMLDivElement>(null);
+  const securityRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (currentTab) {
@@ -111,6 +130,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         setInputUrl(currentTab.displayUrl || currentTab.url);
       }
     }
+    setShowSecurityPopover(false);
   }, [currentTab?.id, currentTab?.url, currentTab?.displayUrl]);
 
   useEffect(() => {
@@ -118,10 +138,64 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowBraveMenu(false);
       }
+      if (securityRef.current && !securityRef.current.contains(e.target as Node)) {
+        setShowSecurityPopover(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const isExternalUrl =
+    !!currentTab?.url &&
+    (currentTab.url.startsWith('https://') || currentTab.url.startsWith('http://'));
+
+  const currentHost = (() => {
+    if (!isExternalUrl || !currentTab?.url) return '';
+    try {
+      return new URL(currentTab.url).hostname;
+    } catch {
+      return '';
+    }
+  })();
+
+  const partition = currentTab?.tabMode === 'private' ? 'private' : 'normal';
+
+  const openSecurityInspector = async () => {
+    const next = !showSecurityPopover;
+    setShowSecurityPopover(next);
+    if (!next || !isExternalUrl || !currentTab?.url) return;
+
+    setLoadingSecurity(true);
+    try {
+      const [tlsRes, cookiesRes] = await Promise.all([
+        fetch(`/api/tls?url=${encodeURIComponent(currentTab.url)}`),
+        fetch(
+          `/api/cookies?partition=${partition}&domain=${encodeURIComponent(currentHost)}`
+        )
+      ]);
+      if (tlsRes.ok) {
+        setTlsInfo((await tlsRes.json()) as TlsInspectionResult);
+      }
+      if (cookiesRes.ok) {
+        const cData = (await cookiesRes.json()) as { cookies?: StoredCookieItem[] };
+        setSiteCookies(cData.cookies || []);
+      }
+    } catch {
+      // Ignore transient network errors
+    } finally {
+      setLoadingSecurity(false);
+    }
+  };
+
+  const handleClearSiteCookies = async () => {
+    if (!currentHost) return;
+    await fetch(
+      `/api/cookies?partition=${partition}&domain=${encodeURIComponent(currentHost)}`,
+      { method: 'DELETE' }
+    );
+    setSiteCookies([]);
+  };
 
   const query = inputUrl.trim().toLowerCase();
   const suggestions =
@@ -223,25 +297,32 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         )}
       </div>
 
-      {/* Center: Brave Signature Full-Pill Omnibox */}
-      <div className="flex-1 max-w-4xl mx-auto flex items-center relative">
+      {/* Center: Brave Signature Full-Pill Omnibox + TLS Padlock Inspector */}
+      <div className="flex-1 max-w-4xl mx-auto flex items-center relative" ref={securityRef}>
         <form
           onSubmit={handleSubmit}
-          className={`flex-1 flex items-center h-8 px-3 rounded-full border transition-all leo-transition-s ${
+          className={`flex-1 flex items-center h-8 px-2.5 rounded-full border transition-all leo-transition-s ${
             isFocused
               ? 'bg-[var(--bn-omnibox-focus)] border-[var(--bn-accent)] ring-2 ring-[var(--bn-accent)]/25 shadow-sm'
               : 'bg-[var(--bn-omnibox)] border-transparent hover:border-[var(--bn-border-strong)]'
           }`}
         >
-          <div className="mr-2.5 shrink-0 flex items-center">
+          <button
+            type="button"
+            onClick={openSecurityInspector}
+            title="Ver información TLS, certificado y cookies del sitio"
+            className="mr-2 p-1 rounded-full hover:bg-[var(--bn-hover)] transition-colors shrink-0 flex items-center justify-center"
+          >
             {currentTab?.tabMode === 'private' ? (
               <EyeOff className="w-3.5 h-3.5 text-[#a78bfa]" />
             ) : currentTab?.url.startsWith('https://') ? (
-              <Lock className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+              <Lock className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+            ) : currentTab?.url.startsWith('http://') ? (
+              <ShieldAlert className="w-3.5 h-3.5 text-[var(--bn-warning)]" />
             ) : (
               <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
             )}
-          </div>
+          </button>
 
           <input
             ref={omniboxRef}
@@ -350,6 +431,135 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           )}
         </motion.button>
 
+        {/* Site TLS Certificate & Cookies Popover */}
+        <AnimatePresence>
+          {showSecurityPopover && (
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.96 }}
+              transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+              className="absolute left-0 top-10 w-80 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden text-xs"
+            >
+              {!isExternalUrl ? (
+                <div className="p-4 space-y-1.5">
+                  <div className="flex items-center gap-2 text-[var(--bn-text-strong)] font-semibold">
+                    <ShieldCheck className="w-4 h-4 text-[var(--bn-accent)]" />
+                    <span>Página interna de FabiNav</span>
+                  </div>
+                  <p className="text-[11px] text-[var(--bn-text-muted)]">
+                    Esta vista se ejecuta de forma local dentro del navegador sin conexiones externas.
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[var(--bn-border)]">
+                  <div className="p-3.5 bg-[var(--bn-toolbar)]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-[var(--bn-text-strong)] truncate">
+                        {currentHost}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                          currentTab?.url.startsWith('https://')
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : 'bg-amber-500/15 text-amber-400'
+                        }`}
+                      >
+                        {currentTab?.url.startsWith('https://') ? 'HTTPS / TLS' : 'HTTP sin TLS'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Real TLS Inspection Details */}
+                  <div className="p-3.5 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-medium text-[var(--bn-text-strong)]">
+                      <Lock className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+                      <span>Certificado y cifrado TLS</span>
+                    </div>
+
+                    {loadingSecurity ? (
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Inspeccionando conexión TLS...
+                      </div>
+                    ) : tlsInfo ? (
+                      <div className="space-y-1 text-[11px] text-[var(--bn-text-muted)]">
+                        <div>
+                          Protocolo:{' '}
+                          <span className="text-[var(--bn-text-strong)] font-mono">
+                            {tlsInfo.protocol || 'No cifrado'}
+                          </span>
+                          {tlsInfo.cipher ? ` · ${tlsInfo.cipher}` : ''}
+                        </div>
+                        {tlsInfo.issuerO || tlsInfo.issuerCN ? (
+                          <div className="truncate">
+                            Emisor:{' '}
+                            <span className="text-[var(--bn-text-strong)]">
+                              {tlsInfo.issuerO || tlsInfo.issuerCN}
+                            </span>
+                          </div>
+                        ) : null}
+                        {tlsInfo.validTo ? (
+                          <div>
+                            Expira:{' '}
+                            <span className="text-[var(--bn-text-strong)]">
+                              {new Date(tlsInfo.validTo).toLocaleDateString('es-ES')}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div
+                          className={
+                            tlsInfo.authorized ? 'text-emerald-400' : 'text-amber-400'
+                          }
+                        >
+                          {tlsInfo.authorized
+                            ? 'Certificado verificado correctamente'
+                            : tlsInfo.authorizationError || 'Certificado no verificado'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Sin detalles TLS disponibles.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Real Site Cookies */}
+                  <div className="p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-medium text-[var(--bn-text-strong)]">
+                        <Cookie className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        <span>Cookies del sitio ({siteCookies.length})</span>
+                      </span>
+                      {siteCookies.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearSiteCookies}
+                          className="text-[11px] text-[var(--bn-danger)] hover:underline flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Limpiar</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSecurityPopover(false);
+                          onNavigate('fabinav://shields');
+                        }}
+                        className="text-[var(--bn-accent)] hover:underline font-medium"
+                      >
+                        Administrar todas las cookies y TLS
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Omnibox Autocomplete */}
         <AnimatePresence>
           {suggestions.length > 0 && (
@@ -388,7 +598,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Right: Brave Toolbar Actions & Menu (NO fake profile avatar) */}
+      {/* Right: Brave Toolbar Actions, Real Google Avatar & Menu */}
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
@@ -416,14 +626,31 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <PanelRight className="w-4 h-4" />
         </button>
 
-        {/* Neutral Local Backup Button (replaces fake login/profile avatar) */}
+        {/* Real Google Profile Avatar (only when authenticated) or Neutral Sign-In Icon */}
         <button
           type="button"
           onClick={onOpenBackupModal}
-          title="Respaldo de datos locales (.json)"
+          title={
+            googleUser
+              ? `${googleUser.displayName} (${googleUser.email})`
+              : 'Iniciar sesión con Google o respaldo local'
+          }
           className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs"
         >
-          <HardDrive className="w-4 h-4" />
+          {googleUser?.photoUrl ? (
+            <img
+              src={googleUser.photoUrl}
+              alt={googleUser.displayName}
+              referrerPolicy="no-referrer"
+              className="w-6.5 h-6.5 rounded-full object-cover border border-[var(--bn-border-strong)]"
+            />
+          ) : googleUser ? (
+            <span className="w-6.5 h-6.5 rounded-full bg-[var(--bn-accent)] text-white text-[11px] font-semibold flex items-center justify-center">
+              {googleUser.displayName[0]?.toUpperCase() || 'G'}
+            </span>
+          ) : (
+            <User className="w-4 h-4" />
+          )}
         </button>
 
         {/* Brave Main Hamburger Menu */}
@@ -497,6 +724,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 )}
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNavigate('fabinav://shields');
+                    setShowBraveMenu(false);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Cookie className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                    <span>Cookies, TLS y Escudos</span>
+                  </span>
+                </button>
 
                 <button
                   type="button"
