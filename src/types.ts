@@ -186,10 +186,20 @@ export interface SearchResultItem {
   source: 'web' | 'wikipedia';
 }
 
+export interface WikiKnowledgeCard {
+  title: string;
+  description: string | null;
+  extract: string;
+  thumbnailUrl: string | null;
+  url: string;
+}
+
 export interface SearchApiResponse {
   query: string;
   results: SearchResultItem[];
   wikipedia: SearchResultItem[];
+  knowledge?: WikiKnowledgeCard | null;
+  durationMs?: number;
   webError: string | null;
   fetchedAt: number;
 }

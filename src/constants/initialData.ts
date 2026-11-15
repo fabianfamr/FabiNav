@@ -9,7 +9,7 @@ import {
   LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.8.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {

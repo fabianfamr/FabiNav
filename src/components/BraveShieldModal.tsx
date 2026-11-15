@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ExternalLink, Lock, Shield, Cookie, ChevronDown } from 'lucide-react';
-import { FabiShieldState } from '../types';
+import { FabiShieldState, TlsInspectionResult } from '../types';
 import { APP_VERSION } from '../constants/initialData';
+import { LeoSwitch } from './LeoSwitch';
 
 interface FabiShieldModalProps {
   isOpen: boolean;
@@ -24,18 +25,43 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
   onNavigate
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(true);
+  const [tlsSummary, setTlsSummary] = useState<TlsInspectionResult | null>(null);
 
+  const isExternal = currentUrl.startsWith('http://') || currentUrl.startsWith('https://');
   let domain = 'Nueva pestaña';
   try {
-    if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
-      const urlObj = new URL(currentUrl);
-      domain = urlObj.hostname;
+    if (isExternal) {
+      domain = new URL(currentUrl).hostname;
     } else if (currentUrl.startsWith('fabinav://')) {
       domain = 'Página interna de FabiNav';
     }
   } catch {
     domain = currentUrl;
   }
+
+  useEffect(() => {
+    if (!isOpen || !isExternal) {
+      setTlsSummary(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    fetch(`/api/tls?url=${encodeURIComponent(currentUrl)}`, { signal: ctrl.signal })
+      .then((res) => (res.ok ? (res.json() as Promise<TlsInspectionResult>) : null))
+      .then((data) => {
+        if (data) setTlsSummary(data);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [isOpen, isExternal, currentUrl]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   return (
     <AnimatePresence>
@@ -69,12 +95,13 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
               <div className="min-w-0">
                 <h4 className="text-xs font-semibold text-[var(--bn-text-strong)] flex items-center gap-1.5">
                   <span>Escudos y TLS</span>
-                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)] tabular-nums">
-                    v{APP_VERSION}
+                  <span className="text-[11px] text-[var(--bn-text-muted)] font-normal tabular-nums">
+                    · v{APP_VERSION}
                   </span>
                 </h4>
-                <p className="text-[11px] text-[var(--bn-text-muted)] truncate font-mono" title={domain}>
+                <p className="text-[11px] text-[var(--bn-text-muted)] truncate" title={domain}>
                   {domain}
+                  {tlsSummary?.protocol ? ` · ${tlsSummary.protocol}` : ''}
                 </p>
               </div>
             </div>
@@ -82,6 +109,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Cerrar escudos"
               className="text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] p-1.5 rounded-full hover:bg-[var(--bn-hover)] transition-colors"
             >
               <X className="w-4 h-4" />
@@ -94,35 +122,24 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
               <span className="text-[13px] font-semibold text-[var(--bn-text-strong)]">
                 {shieldState.enabled ? 'Protección activa' : 'Protección en pausa'}
               </span>
-              <span className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+              <span className="text-[11px] text-[var(--bn-text-muted)] mt-0.5 leading-snug">
                 {shieldState.enabled
                   ? 'Bloqueo de rastreadores, cookies entre sitios y verificación TLS'
                   : 'Las reglas de filtrado están pausadas en esta sesión'}
               </span>
             </div>
 
-            <button
-              type="button"
-              role="switch"
-              aria-checked={shieldState.enabled}
-              onClick={() => onUpdateShieldState({ enabled: !shieldState.enabled })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-150 shrink-0 ${
-                shieldState.enabled ? 'bg-[var(--bn-accent)]' : 'bg-[var(--bn-active)]'
-              }`}
-            >
-              <motion.span
-                layout
-                transition={{ type: 'spring', stiffness: 520, damping: 32 }}
-                className={`inline-block h-4 w-4 rounded-full bg-white shadow ${
-                  shieldState.enabled ? 'ml-6' : 'ml-1'
-                }`}
-              />
-            </button>
+            <LeoSwitch
+              size="md"
+              checked={shieldState.enabled}
+              onChange={(v) => onUpdateShieldState({ enabled: v })}
+              ariaLabel="Activar o pausar escudos"
+            />
           </div>
 
-          {/* Real Counters (from real proxy responses) */}
+          {/* Real Counters */}
           <div className="p-3.5 bg-[var(--bn-surface)] border-b border-[var(--bn-border)] grid grid-cols-3 gap-2 text-center">
-            <div className="p-2 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
+            <div className="p-2.5 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
               <div className="text-base font-semibold text-[var(--bn-accent)] leading-none tabular-nums font-mono">
                 {shieldState.trackersBlockedCount}
               </div>
@@ -131,7 +148,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                 <span>Rastreadores</span>
               </div>
             </div>
-            <div className="p-2 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
+            <div className="p-2.5 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
               <div className="text-base font-semibold text-[var(--bn-text-strong)] leading-none tabular-nums font-mono">
                 {shieldState.cookiesBlockedCount}
               </div>
@@ -140,8 +157,8 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                 <span>Cookies bloq.</span>
               </div>
             </div>
-            <div className="p-2 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
-              <div className="text-base font-semibold text-[var(--bn-success)] leading-none tabular-nums font-mono">
+            <div className="p-2.5 bg-[var(--bn-surface-alt)] rounded-xl border border-[var(--bn-border)]">
+              <div className="text-base font-semibold text-[var(--bn-success-text)] leading-none tabular-nums font-mono">
                 {shieldState.httpsUpgradesCount}
               </div>
               <div className="text-[10px] text-[var(--bn-text-muted)] mt-1.5 flex items-center justify-center gap-1">
@@ -193,47 +210,41 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                       </select>
                     </div>
 
-                    <label className="flex items-center justify-between text-xs cursor-pointer">
+                    <div className="flex items-center justify-between text-xs">
                       <span className="text-[var(--bn-text)]">Actualizar conexiones a HTTPS</span>
-                      <input
-                        type="checkbox"
+                      <LeoSwitch
                         checked={shieldState.upgradeHttps}
-                        onChange={(e) => onUpdateShieldState({ upgradeHttps: e.target.checked })}
-                        className="accent-[var(--bn-accent)] w-4 h-4 rounded"
+                        onChange={(v) => onUpdateShieldState({ upgradeHttps: v })}
+                        ariaLabel="Actualizar conexiones a HTTPS"
                       />
-                    </label>
+                    </div>
 
-                    <label className="flex items-center justify-between text-xs cursor-pointer">
+                    <div className="flex items-center justify-between text-xs">
                       <span className="text-[var(--bn-text)]">Verificación TLS 1.2/1.3 estricta</span>
-                      <input
-                        type="checkbox"
+                      <LeoSwitch
                         checked={shieldState.strictTls}
-                        onChange={(e) => onUpdateShieldState({ strictTls: e.target.checked })}
-                        className="accent-[var(--bn-accent)] w-4 h-4 rounded"
+                        onChange={(v) => onUpdateShieldState({ strictTls: v })}
+                        ariaLabel="Verificación TLS estricta"
                       />
-                    </label>
+                    </div>
 
-                    <label className="flex items-center justify-between text-xs cursor-pointer">
+                    <div className="flex items-center justify-between text-xs">
                       <span className="text-[var(--bn-text)]">Bloquear cookies entre sitios</span>
-                      <input
-                        type="checkbox"
+                      <LeoSwitch
                         checked={shieldState.blockCrossSiteCookies}
-                        onChange={(e) =>
-                          onUpdateShieldState({ blockCrossSiteCookies: e.target.checked })
-                        }
-                        className="accent-[var(--bn-accent)] w-4 h-4 rounded"
+                        onChange={(v) => onUpdateShieldState({ blockCrossSiteCookies: v })}
+                        ariaLabel="Bloquear cookies entre sitios"
                       />
-                    </label>
+                    </div>
 
-                    <label className="flex items-center justify-between text-xs cursor-pointer">
+                    <div className="flex items-center justify-between text-xs">
                       <span className="text-[var(--bn-text)]">Bloquear scripts en páginas</span>
-                      <input
-                        type="checkbox"
+                      <LeoSwitch
                         checked={shieldState.blockScripts}
-                        onChange={(e) => onUpdateShieldState({ blockScripts: e.target.checked })}
-                        className="accent-[var(--bn-accent)] w-4 h-4 rounded"
+                        onChange={(v) => onUpdateShieldState({ blockScripts: v })}
+                        ariaLabel="Bloquear scripts"
                       />
-                    </label>
+                    </div>
 
                     <div className="flex items-center justify-between text-xs gap-2">
                       <span className="text-[var(--bn-text)]">Huella digital (Fingerprinting)</span>
@@ -270,7 +281,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
               <span>Ver cookies y protección TLS</span>
               <ExternalLink className="w-3 h-3" />
             </button>
-            <span>Brave Leo UI</span>
+            <span>FabiNav Shield</span>
           </div>
         </motion.div>
       )}

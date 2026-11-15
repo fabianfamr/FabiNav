@@ -354,20 +354,63 @@ async function fetchDuckDuckGoResults(query: string): Promise<SearchResult[]> {
   return results;
 }
 
-async function fetchWikipediaResults(query: string): Promise<SearchResult[]> {
+interface WikiKnowledgeCard {
+  title: string;
+  description: string | null;
+  extract: string;
+  thumbnailUrl: string | null;
+  url: string;
+}
+
+async function fetchWikipediaSummary(articleTitle: string): Promise<WikiKnowledgeCard | null> {
+  try {
+    const slug = encodeURIComponent(articleTitle.replace(/ /g, '_'));
+    const endpoint = `https://es.wikipedia.org/api/rest_v1/page/summary/${slug}`;
+    const response = await fetch(endpoint, {
+      headers: {
+        'User-Agent': 'FabiNav/1.8.0 (Web Browser UI)',
+        Accept: 'application/json'
+      },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      title?: string;
+      description?: string;
+      extract?: string;
+      thumbnail?: { source?: string };
+      content_urls?: { desktop?: { page?: string } };
+      type?: string;
+    };
+    if (!data?.extract || data.type === 'disambiguation') return null;
+    return {
+      title: data.title || articleTitle,
+      description: data.description || null,
+      extract: data.extract,
+      thumbnailUrl: data.thumbnail?.source || null,
+      url: data.content_urls?.desktop?.page || `https://es.wikipedia.org/wiki/${slug}`
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikipediaResults(
+  query: string
+): Promise<{ items: SearchResult[]; knowledge: WikiKnowledgeCard | null }> {
   const endpoint = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
     query
   )}&format=json&utf8=1&srlimit=4`;
 
   const response = await fetch(endpoint, {
     headers: {
-      'User-Agent': 'FabiNav/1.7.0 (Web Browser UI)'
+      'User-Agent': 'FabiNav/1.8.0 (Web Browser UI)'
     },
     signal: AbortSignal.timeout(5000)
   });
 
   if (!response.ok) {
-    return [];
+    return { items: [], knowledge: null };
   }
 
   const data = (await response.json()) as {
@@ -376,8 +419,8 @@ async function fetchWikipediaResults(query: string): Promise<SearchResult[]> {
     };
   };
 
-  const items = data?.query?.search || [];
-  return items.map((item) => {
+  const rawItems = data?.query?.search || [];
+  const items: SearchResult[] = rawItems.map((item) => {
     const slug = encodeURIComponent(item.title.replace(/ /g, '_'));
     const url = `https://es.wikipedia.org/wiki/${slug}`;
     return {
@@ -388,6 +431,11 @@ async function fetchWikipediaResults(query: string): Promise<SearchResult[]> {
       source: 'wikipedia' as const
     };
   });
+
+  const knowledge =
+    rawItems.length > 0 ? await fetchWikipediaSummary(rawItems[0].title) : null;
+
+  return { items, knowledge };
 }
 
 function inspectTlsCertificate(host: string, port = 443): Promise<Record<string, unknown>> {
@@ -876,17 +924,19 @@ async function startServer() {
   app.get('/api/search', async (req, res) => {
     const q = String(req.query.q || '').trim();
     if (!q) {
-      res.status(400).json({ error: 'Consulta vacía', results: [], wikipedia: [] });
+      res.status(400).json({ error: 'Consulta vacía', results: [], wikipedia: [], knowledge: null });
       return;
     }
 
+    const startedAt = Date.now();
     const [webSettled, wikiSettled] = await Promise.allSettled([
       fetchDuckDuckGoResults(q),
       fetchWikipediaResults(q)
     ]);
 
     const results = webSettled.status === 'fulfilled' ? webSettled.value : [];
-    const wikipedia = wikiSettled.status === 'fulfilled' ? wikiSettled.value : [];
+    const wikipedia = wikiSettled.status === 'fulfilled' ? wikiSettled.value.items : [];
+    const knowledge = wikiSettled.status === 'fulfilled' ? wikiSettled.value.knowledge : null;
     const webError =
       webSettled.status === 'rejected'
         ? String(webSettled.reason instanceof Error ? webSettled.reason.message : webSettled.reason)
@@ -896,6 +946,8 @@ async function startServer() {
       query: q,
       results,
       wikipedia,
+      knowledge,
+      durationMs: Date.now() - startedAt,
       webError,
       fetchedAt: Date.now()
     });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
@@ -7,7 +7,9 @@ import {
   X,
   Image as ImageIcon,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { FABI_WALLPAPERS } from '../constants/initialData';
 import {
@@ -16,11 +18,13 @@ import {
   FabiShieldState,
   TopSiteItem
 } from '../types';
+import { LeoSwitch } from './LeoSwitch';
 
 interface FabiNewTabViewProps {
   onNavigate: (url: string) => void;
   shieldState: FabiShieldState;
   settings: BrowserSettings;
+  onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   customization: FabiNewTabCustomization;
   topSites: TopSiteItem[];
   onAddTopSite: (title: string, url: string) => void;
@@ -29,13 +33,33 @@ interface FabiNewTabViewProps {
   onOpenShieldModal: () => void;
 }
 
-const SEARCH_ENGINE_LABELS: Record<BrowserSettings['defaultSearchEngine'], string> = {
-  brave: 'Brave Search',
-  google: 'Google',
-  duckduckgo: 'DuckDuckGo',
-  bing: 'Bing',
-  ecosia: 'Ecosia'
-};
+const SEARCH_ENGINES: Array<{
+  id: BrowserSettings['defaultSearchEngine'];
+  label: string;
+}> = [
+  { id: 'brave', label: 'Brave Search' },
+  { id: 'google', label: 'Google' },
+  { id: 'duckduckgo', label: 'DuckDuckGo' },
+  { id: 'bing', label: 'Bing' },
+  { id: 'ecosia', label: 'Ecosia' }
+];
+
+const SITE_TILE_TINTS = [
+  'bg-orange-500/20 text-orange-200 border-orange-400/25',
+  'bg-sky-500/20 text-sky-200 border-sky-400/25',
+  'bg-emerald-500/20 text-emerald-200 border-emerald-400/25',
+  'bg-indigo-500/20 text-indigo-200 border-indigo-400/25',
+  'bg-amber-500/20 text-amber-200 border-amber-400/25',
+  'bg-rose-500/20 text-rose-200 border-rose-400/25'
+];
+
+function getTileTint(title: string): string {
+  let h = 0;
+  for (let i = 0; i < title.length; i++) {
+    h = (h * 31 + title.charCodeAt(i)) >>> 0;
+  }
+  return SITE_TILE_TINTS[h % SITE_TILE_TINTS.length];
+}
 
 const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
@@ -43,6 +67,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   onNavigate,
   shieldState,
   settings,
+  onUpdateSettings,
   customization,
   topSites,
   onAddTopSite,
@@ -51,16 +76,39 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   onOpenShieldModal
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [showEngineMenu, setShowEngineMenu] = useState(false);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
   const [newSiteTitle, setNewSiteTitle] = useState('');
   const [newSiteUrl, setNewSiteUrl] = useState('');
   const [now, setNow] = useState(() => new Date());
   const [imgError, setImgError] = useState(false);
+  const engineMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (engineMenuRef.current && !engineMenuRef.current.contains(e.target as Node)) {
+        setShowEngineMenu(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowEngineMenu(false);
+        setShowCustomizeModal(false);
+        setShowAddSiteModal(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
   }, []);
 
   const currentWallpaper =
@@ -69,6 +117,9 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   useEffect(() => {
     setImgError(false);
   }, [currentWallpaper.url]);
+
+  const currentEngineLabel =
+    SEARCH_ENGINES.find((e) => e.id === settings.defaultSearchEngine)?.label || 'Brave Search';
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,11 +174,11 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.35, ease: LEO_EASE_OUT }}
-              className="w-full h-full object-cover brightness-[0.72]"
+              className="w-full h-full object-cover brightness-[0.74]"
             />
           )}
         </AnimatePresence>
-        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/25 to-black/65" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/25 to-black/70" />
       </div>
 
       {/* Top Row: Real Session Privacy Stats (Left) + Clock (Right) */}
@@ -140,13 +191,13 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             transition={{ duration: 0.2, ease: LEO_EASE_OUT }}
             onClick={onOpenShieldModal}
             title="Ver configuración de Escudos de FabiNav"
-            className="flex flex-wrap items-center gap-5 sm:gap-7 text-left px-4 py-3 rounded-2xl bg-black/35 hover:bg-black/50 backdrop-blur-md border border-white/10 transition-colors"
+            className="flex flex-wrap items-center gap-5 sm:gap-7 text-left px-4 py-3 rounded-2xl bg-black/40 hover:bg-black/55 backdrop-blur-md border border-white/12 transition-colors"
           >
             <div>
               <div className="text-2xl sm:text-3xl font-semibold text-[#ff6f4c] tabular-nums leading-none">
                 {shieldState.trackersBlockedCount + shieldState.cookiesBlockedCount}
               </div>
-              <div className="text-[11px] text-white/75 mt-1.5 max-w-[115px] leading-tight">
+              <div className="text-[11px] text-white/80 mt-1.5 max-w-[120px] leading-tight">
                 Rastreadores y cookies bloqueados
               </div>
             </div>
@@ -157,7 +208,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               <div className="text-2xl sm:text-3xl font-semibold text-white tabular-nums leading-none">
                 {shieldState.httpsUpgradesCount}
               </div>
-              <div className="text-[11px] text-white/75 mt-1.5 max-w-[100px] leading-tight">
+              <div className="text-[11px] text-white/80 mt-1.5 max-w-[100px] leading-tight">
                 Conexiones HTTPS/TLS
               </div>
             </div>
@@ -172,7 +223,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               >
                 {shieldState.enabled ? 'Activos' : 'En pausa'}
               </div>
-              <div className="text-[11px] text-white/75 mt-1.5 leading-tight">
+              <div className="text-[11px] text-white/80 mt-1.5 leading-tight">
                 Escudos y TLS
               </div>
             </div>
@@ -191,45 +242,101 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             <div className="text-4xl sm:text-5xl font-light tracking-tight text-white tabular-nums leading-none drop-shadow">
               {timeFormatted}
             </div>
-            <div className="text-xs text-white/80 mt-1.5 capitalize">{dateFormatted}</div>
+            <div className="text-xs text-white/85 mt-1.5 capitalize">{dateFormatted}</div>
           </motion.div>
         )}
       </div>
 
-      {/* Center: Brave Search Pill + Top Sites Grid */}
-      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl mx-auto my-8 z-10">
+      {/* Center: Brave Search Pill + Engine Selector + Top Sites Grid */}
+      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl mx-auto my-8 z-20">
         <motion.form
           onSubmit={handleSearchSubmit}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: LEO_EASE_OUT }}
-          className="w-full mb-8"
+          className="w-full mb-8 relative"
+          ref={engineMenuRef}
         >
-          <div className="relative flex items-center h-12 rounded-full bg-[#1e2025]/90 hover:bg-[#24272d]/95 focus-within:bg-[#191b20] backdrop-blur-xl border border-white/15 focus-within:border-[var(--bn-accent)] shadow-2xl transition-all leo-transition-s px-4">
-            <Search className="w-4 h-4 text-white/60 shrink-0 mr-3" />
+          <div className="relative flex items-center h-12 rounded-full bg-[#1b1d23]/90 hover:bg-[#22252c]/95 focus-within:bg-[#17191e] backdrop-blur-xl border border-white/15 focus-within:border-[var(--bn-accent)] shadow-2xl transition-all leo-transition-s pl-4 pr-1.5 gap-2">
+            <Search className="w-4 h-4 text-white/65 shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Buscar con ${SEARCH_ENGINE_LABELS[settings.defaultSearchEngine]} o escribir URL`}
-              className="w-full bg-transparent text-sm text-white placeholder-white/55 focus:outline-none"
+              placeholder={`Buscar con ${currentEngineLabel} o escribir URL`}
+              className="w-full bg-transparent text-sm text-white placeholder-white/55 focus:outline-none select-text"
             />
-            <span className="hidden sm:inline-block text-[11px] text-white/50 mr-2 shrink-0">
-              {SEARCH_ENGINE_LABELS[settings.defaultSearchEngine]}
-            </span>
+
+            {searchQuery.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                title="Limpiar texto"
+                className="p-1.5 rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowEngineMenu((v) => !v)}
+              title="Cambiar motor de búsqueda"
+              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/75 hover:text-white hover:bg-white/10 transition-colors shrink-0 whitespace-nowrap"
+            >
+              <span>{currentEngineLabel}</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
             <button
               type="submit"
               title="Buscar"
-              className="w-8 h-8 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-90 text-white flex items-center justify-center transition-all shrink-0"
+              className="w-9 h-9 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-90 text-white flex items-center justify-center transition-all shrink-0"
             >
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
+
+          <AnimatePresence>
+            {showEngineMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+                className="absolute right-12 top-14 w-48 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl py-1.5 z-50 text-xs text-[var(--bn-text)]"
+              >
+                <div className="px-3.5 py-1.5 text-[11px] text-[var(--bn-text-muted)] border-b border-[var(--bn-border)]">
+                  Motor predeterminado
+                </div>
+                {SEARCH_ENGINES.map((eng) => (
+                  <button
+                    key={eng.id}
+                    type="button"
+                    onClick={() => {
+                      onUpdateSettings({ defaultSearchEngine: eng.id });
+                      setShowEngineMenu(false);
+                    }}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between hover:bg-[var(--bn-hover)] transition-colors ${
+                      settings.defaultSearchEngine === eng.id
+                        ? 'text-[var(--bn-accent)] font-semibold'
+                        : 'text-[var(--bn-text)]'
+                    }`}
+                  >
+                    <span>{eng.label}</span>
+                    {settings.defaultSearchEngine === eng.id && (
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.form>
 
         {/* Brave Top Sites Grid */}
         {customization.showTopSites && (
-          <div className="w-full flex flex-wrap items-start justify-center gap-3 sm:gap-4">
+          <div className="w-full flex flex-wrap items-start justify-center gap-3.5 sm:gap-5">
             {topSites.map((site, idx) => (
               <motion.div
                 key={site.id}
@@ -244,11 +351,15 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                   title={`${site.title} · ${site.url}`}
                   className="w-13 h-13 rounded-2xl bg-black/45 hover:bg-black/65 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-white/15 hover:border-white/30 flex items-center justify-center transition-all leo-transition-s shadow-lg"
                 >
-                  <span className="w-8 h-8 rounded-xl bg-white/10 text-white font-semibold text-sm flex items-center justify-center">
+                  <span
+                    className={`w-8 h-8 rounded-xl border font-semibold text-sm flex items-center justify-center ${getTileTint(
+                      site.title
+                    )}`}
+                  >
                     {getSiteInitial(site.title)}
                   </span>
                 </button>
-                <span className="mt-2 text-[11px] text-white/90 truncate w-full text-center font-medium drop-shadow-xs">
+                <span className="mt-2 text-[11px] text-white/95 truncate w-full text-center font-medium drop-shadow-xs">
                   {site.title}
                 </span>
                 <button
@@ -271,11 +382,11 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 type="button"
                 onClick={() => setShowAddSiteModal(true)}
                 title="Añadir sitio"
-                className="w-13 h-13 rounded-2xl bg-black/30 hover:bg-black/50 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-dashed border-white/25 hover:border-white/50 flex items-center justify-center text-white/75 hover:text-white transition-all leo-transition-s"
+                className="w-13 h-13 rounded-2xl bg-black/30 hover:bg-black/50 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-dashed border-white/30 hover:border-white/55 flex items-center justify-center text-white/80 hover:text-white transition-all leo-transition-s"
               >
                 <Plus className="w-5 h-5" />
               </button>
-              <span className="mt-2 text-[11px] text-white/75 truncate w-full text-center">
+              <span className="mt-2 text-[11px] text-white/80 truncate w-full text-center">
                 Añadir sitio
               </span>
             </div>
@@ -289,7 +400,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           type="button"
           onClick={nextWallpaper}
           title="Cambiar imagen de fondo"
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/35 hover:bg-black/55 active:scale-95 backdrop-blur-md border border-white/10 text-white/80 hover:text-white transition-all"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 hover:bg-black/60 active:scale-95 backdrop-blur-md border border-white/12 text-white/85 hover:text-white transition-all whitespace-nowrap"
         >
           <ImageIcon className="w-3.5 h-3.5" />
           <span>{currentWallpaper.name}</span>
@@ -299,7 +410,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           <button
             type="button"
             onClick={onOpenShieldModal}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/35 hover:bg-black/55 active:scale-95 backdrop-blur-md border border-white/10 text-white/80 hover:text-white transition-all"
+            className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/40 hover:bg-black/60 active:scale-95 backdrop-blur-md border border-white/12 text-white/85 hover:text-white transition-all whitespace-nowrap"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
             <span>{shieldState.enabled ? 'Escudos activos' : 'Escudos en pausa'}</span>
@@ -308,7 +419,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           <button
             type="button"
             onClick={() => setShowCustomizeModal(true)}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/45 hover:bg-black/65 active:scale-95 backdrop-blur-md border border-white/15 text-white transition-all font-medium"
+            className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/50 hover:bg-black/70 active:scale-95 backdrop-blur-md border border-white/15 text-white transition-all font-medium whitespace-nowrap"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Personalizar</span>
@@ -355,21 +466,24 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                   <input
                     type="text"
                     required
+                    autoFocus
                     value={newSiteTitle}
                     onChange={(e) => setNewSiteTitle(e.target.value)}
                     placeholder="Ejemplo: YouTube"
-                    className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                    className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-[var(--bn-text-muted)] mb-1">Dirección URL</label>
+                  <label className="block text-[11px] text-[var(--bn-text-muted)] mb-1">
+                    Dirección URL
+                  </label>
                   <input
                     type="text"
                     required
                     value={newSiteUrl}
                     onChange={(e) => setNewSiteUrl(e.target.value)}
                     placeholder="https://youtube.com"
-                    className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                    className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
                   />
                 </div>
               </div>
@@ -415,7 +529,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             >
               <div className="flex items-center justify-between border-b border-[var(--bn-border)] pb-3">
                 <h3 className="font-semibold text-[var(--bn-text-strong)] text-sm">
-                  Personalizar panel de nueva pestaña
+                  Personalizar nueva pestaña
                 </h3>
                 <button
                   type="button"
@@ -427,40 +541,40 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               </div>
 
               <div className="space-y-3 text-xs">
-                <label className="flex items-center justify-between cursor-pointer py-1">
+                <div className="flex items-center justify-between py-1">
                   <span>Mostrar estadísticas de privacidad</span>
-                  <input
-                    type="checkbox"
+                  <LeoSwitch
                     checked={customization.showStats}
-                    onChange={(e) => onUpdateCustomization({ showStats: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
+                    onChange={(v) => onUpdateCustomization({ showStats: v })}
+                    ariaLabel="Mostrar estadísticas de privacidad"
                   />
-                </label>
+                </div>
 
-                <label className="flex items-center justify-between cursor-pointer py-1">
+                <div className="flex items-center justify-between py-1">
                   <span>Mostrar sitios principales</span>
-                  <input
-                    type="checkbox"
+                  <LeoSwitch
                     checked={customization.showTopSites}
-                    onChange={(e) => onUpdateCustomization({ showTopSites: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
+                    onChange={(v) => onUpdateCustomization({ showTopSites: v })}
+                    ariaLabel="Mostrar sitios principales"
                   />
-                </label>
+                </div>
 
-                <label className="flex items-center justify-between cursor-pointer py-1">
+                <div className="flex items-center justify-between py-1">
                   <span>Mostrar reloj y fecha</span>
-                  <input
-                    type="checkbox"
+                  <LeoSwitch
                     checked={customization.showClock}
-                    onChange={(e) => onUpdateCustomization({ showClock: e.target.checked })}
-                    className="accent-[var(--bn-accent)] w-4 h-4"
+                    onChange={(v) => onUpdateCustomization({ showClock: v })}
+                    ariaLabel="Mostrar reloj y fecha"
                   />
-                </label>
+                </div>
 
-                <div className="pt-2 border-t border-[var(--bn-border)]">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="pt-3 border-t border-[var(--bn-border)]">
+                  <div className="flex items-center justify-between mb-2.5">
                     <span className="text-xs font-medium text-[var(--bn-text-strong)]">
-                      Imagen de fondo ({FABI_WALLPAPERS.length} disponibles)
+                      Imagen de fondo
+                    </span>
+                    <span className="text-[11px] text-[var(--bn-text-muted)] tabular-nums">
+                      {FABI_WALLPAPERS.length} disponibles
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">

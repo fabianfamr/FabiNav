@@ -172,23 +172,23 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
         </div>
 
         <div className="w-full space-y-2 pt-2">
+          <button
+            type="button"
+            onClick={() => onNewTab(webUrl)}
+            className="w-full py-2 px-4 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium transition-colors"
+          >
+            Abrir en nueva pestaña de FabiNav
+          </button>
+
           <a
             href={webUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full py-2 px-4 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors"
+            className="w-full py-2 px-4 rounded-full bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-[var(--bn-text-strong)] text-xs font-medium flex items-center justify-center gap-2 transition-colors"
           >
-            <span>Abrir {title} en pestaña externa</span>
+            <span>Abrir en ventana externa</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
-
-          <button
-            type="button"
-            onClick={() => onNewTab(webUrl)}
-            className="w-full py-2 px-4 rounded-full bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-[var(--bn-text-strong)] text-xs font-medium transition-colors"
-          >
-            Intentar abrir en pestaña interna
-          </button>
         </div>
       </div>
     </div>
@@ -214,7 +214,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           {activeView === 'bookmarks' && (
             <div className="flex flex-col h-full">
               <div className="h-11 px-3.5 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)] flex items-center justify-between">
-                <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)]">
+                <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)] tabular-nums">
                   <BookmarkIcon className="w-4 h-4 text-[var(--bn-accent)]" />
                   <span>Marcadores ({bookmarks.length})</span>
                 </div>
@@ -306,7 +306,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                           onRemoveBookmark(b.id);
                         }}
                         title="Eliminar marcador"
-                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -321,8 +321,8 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           {activeView === 'history' && (
             <div className="flex flex-col h-full">
               <div className="h-11 px-3.5 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)] flex items-center justify-between">
-                <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)]">
-                  <History className="w-4 h-4 text-[var(--bn-info)]" />
+                <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)] tabular-nums">
+                  <History className="w-4 h-4 text-[var(--bn-info-text)]" />
                   <span>Historial ({historyEntries.length})</span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -331,7 +331,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                       type="button"
                       onClick={onClearHistory}
                       title="Limpiar historial"
-                      className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] hover:bg-[var(--bn-hover)] rounded-full"
+                      className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] hover:bg-[var(--bn-hover)] rounded-full"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -376,7 +376,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                         <div className="text-xs font-medium text-[var(--bn-text-strong)] truncate">
                           {item.title}
                         </div>
-                        <div className="text-[10px] text-[var(--bn-text-muted)] truncate font-mono mt-0.5">
+                        <div className="text-[10px] text-[var(--bn-text-muted)] truncate font-mono mt-0.5 tabular-nums">
                           {item.url} · {item.timeFormatted}
                         </div>
                       </div>
@@ -386,7 +386,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                           e.stopPropagation();
                           onDeleteHistoryItem(item.id);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -401,7 +401,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           {activeView === 'downloads' && (
             <div className="flex flex-col h-full">
               <div className="h-11 px-3.5 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)] flex items-center justify-between">
-                <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)]">
+                <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)] tabular-nums">
                   <Download className="w-4 h-4 text-[var(--bn-accent)]" />
                   <span>Descargas ({downloads.length})</span>
                 </div>
@@ -411,7 +411,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                       type="button"
                       onClick={onClearDownloads}
                       title="Limpiar lista"
-                      className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] hover:bg-[var(--bn-hover)] rounded-full"
+                      className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] hover:bg-[var(--bn-hover)] rounded-full"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -442,14 +442,14 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                         <div className="text-xs font-medium text-[var(--bn-text-strong)] truncate">
                           {d.filename}
                         </div>
-                        <div className="text-[10px] text-[var(--bn-text-muted)] font-mono mt-0.5">
+                        <div className="text-[10px] text-[var(--bn-text-muted)] font-mono mt-0.5 tabular-nums">
                           {d.fileSize} · {new Date(d.timestamp).toLocaleTimeString('es-ES')}
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => onRemoveDownload(d.id)}
-                        className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full shrink-0"
+                        className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full shrink-0"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -465,7 +465,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
             <div className="flex flex-col h-full">
               <div className="h-11 px-3.5 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)] flex items-center justify-between">
                 <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)]">
-                  <StickyNote className="w-4 h-4 text-[var(--bn-warning)]" />
+                  <StickyNote className="w-4 h-4 text-[var(--bn-warning-text)]" />
                   <span>Notas de sesión</span>
                 </div>
                 <div className="flex items-center gap-1">
@@ -477,7 +477,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                     className="p-1 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] disabled:opacity-40 rounded-full"
                   >
                     {copiedNotes ? (
-                      <Check className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+                      <Check className="w-3.5 h-3.5 text-[var(--bn-success-text)]" />
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
@@ -515,7 +515,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => onUpdateNotes('')}
-                      className="hover:text-[var(--bn-danger)]"
+                      className="hover:text-[var(--bn-danger-text)]"
                     >
                       Vaciar notas
                     </button>
@@ -672,8 +672,12 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                         className="p-2 rounded-lg bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] space-y-0.5"
                       >
                         <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-[var(--bn-success)] font-semibold">{req.method}</span>
-                          <span className="text-[var(--bn-text-muted)] tabular-nums">{req.timestamp}</span>
+                          <span className="text-[var(--bn-success-text)] font-semibold">
+                            {req.method} · {req.status}
+                          </span>
+                          <span className="text-[var(--bn-text-muted)] tabular-nums">
+                            {req.timestamp}
+                          </span>
                         </div>
                         <div className="text-[var(--bn-text-strong)] truncate">{req.url}</div>
                         <div className="text-[10px] text-[var(--bn-text-muted)]">{req.type}</div>
@@ -686,14 +690,18 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
               {devTab === 'system' && (
                 <div className="flex-1 overflow-y-auto p-3 space-y-2.5 font-sans text-xs select-text">
                   <div className="p-3 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] space-y-1">
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">Resolución del viewport</div>
-                    <div className="font-mono text-[var(--bn-text-strong)]">
+                    <div className="text-[11px] text-[var(--bn-text-muted)]">
+                      Resolución del viewport
+                    </div>
+                    <div className="font-mono text-[var(--bn-text-strong)] tabular-nums">
                       {window.innerWidth} × {window.innerHeight} px
                     </div>
                   </div>
 
                   <div className="p-3 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] space-y-1">
-                    <div className="text-[11px] text-[var(--bn-text-muted)]">Plataforma del navegador</div>
+                    <div className="text-[11px] text-[var(--bn-text-muted)]">
+                      Plataforma del navegador
+                    </div>
                     <div className="font-mono text-[11px] text-[var(--bn-text-strong)] break-all">
                       {navigator.userAgent}
                     </div>
@@ -703,7 +711,10 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                     <div className="text-[11px] text-[var(--bn-text-muted)]">Memoria JS real (V8)</div>
                     <div className="font-mono text-[var(--bn-text-strong)] tabular-nums">
                       {perfMem
-                        ? `${(perfMem.usedJSHeapSize / (1024 * 1024)).toFixed(1)} MB / ${(perfMem.jsHeapSizeLimit / (1024 * 1024)).toFixed(0)} MB`
+                        ? `${(perfMem.usedJSHeapSize / (1024 * 1024)).toFixed(1)} MB / ${(
+                            perfMem.jsHeapSizeLimit /
+                            (1024 * 1024)
+                          ).toFixed(0)} MB`
                         : 'No expuesta por este navegador'}
                     </div>
                   </div>

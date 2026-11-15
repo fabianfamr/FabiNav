@@ -30,9 +30,11 @@ import {
   Bookmark,
   DownloadItem,
   StoredCookieItem,
-  GoogleUserProfile
+  GoogleUserProfile,
+  TlsInspectionResult
 } from '../types';
 import { APP_VERSION } from '../constants/initialData';
+import { LeoSwitch } from './LeoSwitch';
 
 interface FabiInternalsViewProps {
   url: string;
@@ -98,8 +100,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [newBmUrl, setNewBmUrl] = useState('');
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('apariencia');
   const [cookiePartition, setCookiePartition] = useState<'normal' | 'private'>('normal');
+  const [cookieFilter, setCookieFilter] = useState('');
   const [cookies, setCookies] = useState<StoredCookieItem[]>([]);
   const [loadingCookies, setLoadingCookies] = useState(false);
+
+  const [tlsProbeHost, setTlsProbeHost] = useState('github.com');
+  const [tlsProbeLoading, setTlsProbeLoading] = useState(false);
+  const [tlsProbeResult, setTlsProbeResult] = useState<TlsInspectionResult | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const cleanUrl = url.toLowerCase().trim();
@@ -137,6 +145,23 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     setCookies([]);
   };
 
+  const handleInspectTls = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = tlsProbeHost.trim();
+    if (!cleaned) return;
+    setTlsProbeLoading(true);
+    try {
+      const res = await fetch(`/api/tls?url=${encodeURIComponent(cleaned)}`);
+      if (res.ok) {
+        setTlsProbeResult((await res.json()) as TlsInspectionResult);
+      }
+    } catch {
+      // Ignore network errors
+    } finally {
+      setTlsProbeLoading(false);
+    }
+  };
+
   // 1. MARCADORES (fabinav://bookmarks)
   if (cleanUrl.includes('bookmarks')) {
     const filteredBookmarks = bookmarks.filter(
@@ -163,7 +188,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">Marcadores</h1>
-                <p className="text-xs text-[var(--bn-text-muted)]">
+                <p className="text-xs text-[var(--bn-text-muted)] tabular-nums">
                   {bookmarks.length} marcadores guardados en este dispositivo
                 </p>
               </div>
@@ -235,7 +260,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     type="button"
                     onClick={() => onRemoveBookmark(b.id)}
                     title="Eliminar marcador"
-                    className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full"
+                    className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -270,7 +295,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               <button
                 type="button"
                 onClick={onClearDownloads}
-                className="px-3.5 py-1.5 rounded-full border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] text-xs text-[var(--bn-danger)] font-medium"
+                className="px-3.5 py-1.5 rounded-full border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] text-xs text-[var(--bn-danger-text)] font-medium"
               >
                 Limpiar lista
               </button>
@@ -290,14 +315,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     <div className="text-xs font-semibold text-[var(--bn-text-strong)] truncate">
                       {d.filename}
                     </div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)] font-mono mt-0.5">
+                    <div className="text-[11px] text-[var(--bn-text-muted)] font-mono mt-0.5 tabular-nums">
                       {d.fileSize} · {new Date(d.timestamp).toLocaleTimeString('es-ES')}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => onRemoveDownload(d.id)}
-                    className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full"
+                    className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full"
                     title="Quitar de la lista"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -339,7 +364,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               <button
                 type="button"
                 onClick={onClearHistory}
-                className="px-4 py-1.5 bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] text-[var(--bn-danger)] text-xs font-medium rounded-full flex items-center gap-1.5 border border-[var(--bn-border)] shrink-0"
+                className="px-4 py-1.5 bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] text-[var(--bn-danger-text)] text-xs font-medium rounded-full flex items-center gap-1.5 border border-[var(--bn-border)] shrink-0"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Borrar datos de navegación</span>
@@ -373,7 +398,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     <div className="text-xs font-medium text-[var(--bn-text-strong)] truncate group-hover:text-[var(--bn-accent)]">
                       {item.title}
                     </div>
-                    <div className="text-[11px] text-[var(--bn-text-muted)] truncate flex items-center gap-2 mt-0.5 font-mono">
+                    <div className="text-[11px] text-[var(--bn-text-muted)] truncate flex items-center gap-2 mt-0.5 font-mono tabular-nums">
                       <span className="truncate">{item.url}</span>
                       <span aria-hidden="true">·</span>
                       <span className="shrink-0">{item.timeFormatted}</span>
@@ -383,7 +408,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     type="button"
                     onClick={() => onDeleteHistoryItem(item.id)}
                     title="Eliminar registro"
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full transition-opacity"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -398,10 +423,16 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
   // 4. ESCUDOS, COOKIES Y PROTECCIÓN TLS (fabinav://shields)
   if (cleanUrl.includes('shields')) {
+    const filteredCookies = cookies.filter(
+      (c) =>
+        c.domain.toLowerCase().includes(cookieFilter.toLowerCase()) ||
+        c.name.toLowerCase().includes(cookieFilter.toLowerCase())
+    );
+
     return (
       <div className="w-full h-full overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)] p-6 sm:p-10">
         <div className="max-w-3xl mx-auto space-y-6">
-          <div className="flex items-center justify-between gap-4 pb-5 border-b border-[var(--bn-border)]">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-[var(--bn-border)]">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] flex items-center justify-center">
                 <ShieldCheck className="w-5 h-5" />
@@ -411,14 +442,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Escudos, Cookies y TLS
                 </h1>
                 <p className="text-xs text-[var(--bn-text-muted)]">
-                  Protección contra rastreadores, verificación TLS 1.2/1.3 y almacén real de cookies
+                  Protección contra rastreadores, verificación TLS 1.2/1.3 y almacén de cookies por partición
                 </p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => onUpdateShieldState({ enabled: !shieldState.enabled })}
-              className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
                 shieldState.enabled
                   ? 'bg-[var(--bn-accent)] text-white'
                   : 'bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[var(--bn-text-muted)]'
@@ -443,7 +474,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             </div>
             <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl">
               <div className="text-[11px] text-[var(--bn-text-muted)]">Mejoras HTTPS/TLS</div>
-              <div className="text-xl font-semibold text-[var(--bn-success)] mt-1 tabular-nums font-mono">
+              <div className="text-xl font-semibold text-[var(--bn-success-text)] mt-1 tabular-nums font-mono">
                 {shieldState.httpsUpgradesCount}
               </div>
             </div>
@@ -480,25 +511,25 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               </select>
             </div>
 
-            <label className="flex items-center justify-between p-4 gap-4 cursor-pointer">
+            <div className="flex items-center justify-between p-4 gap-4">
               <div>
                 <div className="text-xs font-medium text-[var(--bn-text-strong)] flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+                  <Lock className="w-3.5 h-3.5 text-[var(--bn-success-text)]" />
                   <span>Verificación estricta TLS 1.2 / 1.3</span>
                 </div>
                 <div className="text-[11px] text-[var(--bn-text-muted)]">
                   Rechaza certificados inválidos o cifrados obsoletos al abrir páginas HTTPS
                 </div>
               </div>
-              <input
-                type="checkbox"
+              <LeoSwitch
+                size="md"
                 checked={shieldState.strictTls}
-                onChange={(e) => onUpdateShieldState({ strictTls: e.target.checked })}
-                className="accent-[var(--bn-accent)] w-4 h-4"
+                onChange={(v) => onUpdateShieldState({ strictTls: v })}
+                ariaLabel="Verificación estricta TLS"
               />
-            </label>
+            </div>
 
-            <label className="flex items-center justify-between p-4 gap-4 cursor-pointer">
+            <div className="flex items-center justify-between p-4 gap-4">
               <div>
                 <div className="text-xs font-medium text-[var(--bn-text-strong)]">
                   Actualizar conexiones a HTTPS
@@ -507,15 +538,15 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Convierte automáticamente direcciones http:// a https:// al navegar
                 </div>
               </div>
-              <input
-                type="checkbox"
+              <LeoSwitch
+                size="md"
                 checked={shieldState.upgradeHttps}
-                onChange={(e) => onUpdateShieldState({ upgradeHttps: e.target.checked })}
-                className="accent-[var(--bn-accent)] w-4 h-4"
+                onChange={(v) => onUpdateShieldState({ upgradeHttps: v })}
+                ariaLabel="Actualizar conexiones a HTTPS"
               />
-            </label>
+            </div>
 
-            <label className="flex items-center justify-between p-4 gap-4 cursor-pointer">
+            <div className="flex items-center justify-between p-4 gap-4">
               <div>
                 <div className="text-xs font-medium text-[var(--bn-text-strong)]">
                   Bloquear cookies entre sitios y de rastreo
@@ -524,79 +555,175 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Impide que cookies de terceros o analíticas se guarden en tu sesión
                 </div>
               </div>
-              <input
-                type="checkbox"
+              <LeoSwitch
+                size="md"
                 checked={shieldState.blockCrossSiteCookies}
-                onChange={(e) => onUpdateShieldState({ blockCrossSiteCookies: e.target.checked })}
-                className="accent-[var(--bn-accent)] w-4 h-4"
+                onChange={(v) => onUpdateShieldState({ blockCrossSiteCookies: v })}
+                ariaLabel="Bloquear cookies entre sitios"
               />
-            </label>
+            </div>
+          </div>
+
+          {/* Live TLS Certificate Inspector Tool */}
+          <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-[var(--bn-success-text)]" />
+              <span className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                Inspector TLS en vivo
+              </span>
+            </div>
+
+            <form onSubmit={handleInspectTls} className="flex gap-2">
+              <input
+                type="text"
+                value={tlsProbeHost}
+                onChange={(e) => setTlsProbeHost(e.target.value)}
+                placeholder="Dominio o URL HTTPS (ej. github.com)"
+                className="flex-1 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+              />
+              <button
+                type="submit"
+                disabled={tlsProbeLoading}
+                className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] disabled:opacity-60 text-white text-xs font-medium whitespace-nowrap"
+              >
+                {tlsProbeLoading ? 'Analizando...' : 'Inspeccionar TLS'}
+              </button>
+            </form>
+
+            {tlsProbeResult && (
+              <div className="pt-2 border-t border-[var(--bn-border)] grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <span className="text-[var(--bn-text-muted)]">Host: </span>
+                  <span className="font-mono text-[var(--bn-text-strong)]">{tlsProbeResult.host}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--bn-text-muted)]">Estado: </span>
+                  <span
+                    className={
+                      tlsProbeResult.authorized
+                        ? 'text-[var(--bn-success-text)] font-medium'
+                        : 'text-[var(--bn-warning-text)] font-medium'
+                    }
+                  >
+                    {tlsProbeResult.authorized
+                      ? 'Certificado válido'
+                      : tlsProbeResult.authorizationError || 'No verificado'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--bn-text-muted)]">Protocolo: </span>
+                  <span className="font-mono text-[var(--bn-text-strong)]">
+                    {tlsProbeResult.protocol || 'N/A'}
+                  </span>
+                  {tlsProbeResult.alpnProtocol ? ` (${tlsProbeResult.alpnProtocol})` : ''}
+                </div>
+                <div className="truncate">
+                  <span className="text-[var(--bn-text-muted)]">Cifrado: </span>
+                  <span className="font-mono text-[var(--bn-text-strong)]">
+                    {tlsProbeResult.cipher || 'N/A'}
+                  </span>
+                </div>
+                <div className="truncate">
+                  <span className="text-[var(--bn-text-muted)]">Emisor: </span>
+                  <span className="text-[var(--bn-text-strong)]">
+                    {tlsProbeResult.issuerO || tlsProbeResult.issuerCN || 'N/A'}
+                  </span>
+                </div>
+                {tlsProbeResult.validTo && (
+                  <div className="tabular-nums">
+                    <span className="text-[var(--bn-text-muted)]">Expira: </span>
+                    <span className="text-[var(--bn-text-strong)]">
+                      {new Date(tlsProbeResult.validTo).toLocaleDateString('es-ES')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Real Partitioned Cookie Jar Manager */}
           <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-[var(--bn-border)] flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Cookie className="w-4 h-4 text-[var(--bn-accent)]" />
-                <span className="text-xs font-semibold text-[var(--bn-text-strong)]">
-                  Almacén de Cookies ({cookies.length})
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex rounded-full bg-[var(--bn-omnibox)] p-0.5 border border-[var(--bn-border)] text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => setCookiePartition('normal')}
-                    className={`px-3 py-1 rounded-full font-medium transition-colors ${
-                      cookiePartition === 'normal'
-                        ? 'bg-[var(--bn-accent)] text-white'
-                        : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
-                    }`}
-                  >
-                    Sesión normal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCookiePartition('private')}
-                    className={`px-3 py-1 rounded-full font-medium transition-colors ${
-                      cookiePartition === 'private'
-                        ? 'bg-[#7c3aed] text-white'
-                        : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
-                    }`}
-                  >
-                    Privada
-                  </button>
+            <div className="p-4 border-b border-[var(--bn-border)] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Cookie className="w-4 h-4 text-[var(--bn-accent)]" />
+                  <span className="text-xs font-semibold text-[var(--bn-text-strong)] tabular-nums">
+                    Almacén de Cookies ({filteredCookies.length})
+                  </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => fetchCookies(cookiePartition)}
-                  title="Actualizar cookies"
-                  className="p-1.5 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
-                >
-                  <RotateCw className={`w-3.5 h-3.5 ${loadingCookies ? 'animate-spin' : ''}`} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-full bg-[var(--bn-omnibox)] p-0.5 border border-[var(--bn-border)] text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setCookiePartition('normal')}
+                      className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                        cookiePartition === 'normal'
+                          ? 'bg-[var(--bn-accent)] text-white'
+                          : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+                      }`}
+                    >
+                      Sesión normal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCookiePartition('private')}
+                      className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                        cookiePartition === 'private'
+                          ? 'bg-[var(--bn-private)] text-white'
+                          : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+                      }`}
+                    >
+                      Privada
+                    </button>
+                  </div>
 
-                {cookies.length > 0 && (
                   <button
                     type="button"
-                    onClick={handleClearCookies}
-                    className="px-3 py-1 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-danger)] font-medium"
+                    onClick={() => fetchCookies(cookiePartition)}
+                    title="Actualizar cookies"
+                    className="p-1.5 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
                   >
-                    Borrar todas
+                    <RotateCw className={`w-3.5 h-3.5 ${loadingCookies ? 'animate-spin' : ''}`} />
                   </button>
-                )}
+
+                  {cookies.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearCookies}
+                      className="px-3 py-1 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-danger-text)] font-medium"
+                    >
+                      Borrar todas
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {cookies.length > 0 && (
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] absolute left-3 top-2" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar cookies por dominio o nombre..."
+                    value={cookieFilter}
+                    onChange={(e) => setCookieFilter(e.target.value)}
+                    className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border)] rounded-full pl-8 pr-3 py-1.5 text-xs text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none focus:border-[var(--bn-accent)]"
+                  />
+                </div>
+              )}
             </div>
 
-            {cookies.length === 0 ? (
+            {filteredCookies.length === 0 ? (
               <div className="p-8 text-center text-xs text-[var(--bn-text-muted)]">
-                No hay cookies almacenadas en la partición {cookiePartition === 'private' ? 'privada' : 'normal'}.
+                {cookies.length === 0
+                  ? `No hay cookies almacenadas en la partición ${
+                      cookiePartition === 'private' ? 'privada' : 'normal'
+                    }.`
+                  : 'Ninguna cookie coincide con tu filtro.'}
               </div>
             ) : (
               <div className="divide-y divide-[var(--bn-border)] max-h-80 overflow-y-auto">
-                {cookies.map((cookie) => (
+                {filteredCookies.map((cookie) => (
                   <div
                     key={cookie.id}
                     className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs hover:bg-[var(--bn-hover)]/50"
@@ -606,22 +733,28 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         <span className="font-semibold text-[var(--bn-text-strong)] truncate">
                           {cookie.domain}
                         </span>
+                        <span aria-hidden="true" className="text-[var(--bn-text-muted)]">
+                          ·
+                        </span>
                         <span className="font-mono text-[11px] text-[var(--bn-accent)] truncate">
                           {cookie.name}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] text-[var(--bn-text-muted)] font-mono">
+                      <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-[var(--bn-text-muted)] font-mono">
                         <span>Path: {cookie.path}</span>
                         {cookie.secure && (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400">
-                            Secure
-                          </span>
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-[var(--bn-success-text)]">Secure</span>
+                          </>
                         )}
                         {cookie.httpOnly && (
-                          <span className="px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-400">
-                            HttpOnly
-                          </span>
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-[var(--bn-info-text)]">HttpOnly</span>
+                          </>
                         )}
+                        <span aria-hidden="true">·</span>
                         <span>SameSite={cookie.sameSite}</span>
                       </div>
                     </div>
@@ -629,7 +762,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                       type="button"
                       onClick={() => handleDeleteCookie(cookie.id)}
                       title="Eliminar cookie"
-                      className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger)] rounded-full shrink-0"
+                      className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -669,9 +802,11 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 F
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">Acerca de FabiNav</h1>
+                <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">
+                  Acerca de FabiNav
+                </h1>
                 <p className="text-xs text-[var(--bn-text-muted)] font-mono tabular-nums">
-                  Versión {APP_VERSION} · Diseño Brave Leo + Búsqueda Web Real
+                  Versión {APP_VERSION} · Diseño Brave Leo + TLS 1.2/1.3 + Búsqueda en vivo
                 </p>
               </div>
             </div>
@@ -690,7 +825,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               <span>Información general</span>
             </div>
             <p className="text-xs text-[var(--bn-text-muted)] leading-relaxed">
-              FabiNav utiliza la estética y tokens de movimiento del sistema de diseño Brave Leo, con búsqueda web en vivo desde el servidor, almacenamiento 100% local sin inicios de sesión simulados ni cuentas falsas, barra lateral configurable y exportación a proyecto Electron.
+              FabiNav sigue los lineamientos de Brave Leo, con búsqueda web en vivo y paneles de conocimiento, proxy seguro del lado del servidor con cookies particionadas e inspección TLS 1.2/1.3, perfil real conectado con Google, barra lateral configurable y exportación a proyecto Electron.
             </p>
           </div>
 
@@ -763,7 +898,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
         })}
       </aside>
 
-      {/* Main Single-Column Settings Content with Brave Leo transition */}
+      {/* Main Single-Column Settings Content */}
       <div className="flex-1 overflow-y-auto p-6 sm:p-10">
         <AnimatePresence mode="wait">
           <motion.div
@@ -828,7 +963,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                           <button
                             type="button"
                             onClick={onGoogleSignIn}
-                            className="px-3.5 py-1.5 rounded-full bg-white text-[#1f1f1f] hover:bg-[#f1f3f4] font-medium text-xs shrink-0"
+                            className="px-3.5 py-1.5 rounded-full bg-white text-[#1f1f1f] hover:bg-[#f1f3f4] border border-[#dadce0] font-medium text-xs shrink-0"
                           >
                             Sign in with Google
                           </button>
@@ -872,7 +1007,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     >
                       <div className="text-xs font-semibold flex items-center justify-between">
                         <span>{t.label}</span>
-                        {settings.theme === t.id && <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />}
+                        {settings.theme === t.id && (
+                          <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        )}
                       </div>
                       <p className="text-[11px] text-[var(--bn-text-muted)] mt-1">{t.desc}</p>
                     </button>
@@ -880,50 +1017,56 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 </div>
 
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Mostrar botón de Inicio</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Mostrar botón de Inicio
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Añade el acceso directo a la página principal en la barra superior
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={settings.showHomeButton}
-                      onChange={(e) => onUpdateSettings({ showHomeButton: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateSettings({ showHomeButton: v })}
+                      ariaLabel="Mostrar botón de Inicio"
                     />
-                  </label>
+                  </div>
 
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Mostrar barra de marcadores</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Mostrar barra de marcadores
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Muestra tus marcadores debajo de la barra de direcciones
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={settings.showBookmarksBar}
-                      onChange={(e) => onUpdateSettings({ showBookmarksBar: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateSettings({ showBookmarksBar: v })}
+                      ariaLabel="Mostrar barra de marcadores"
                     />
-                  </label>
+                  </div>
 
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Usar pestañas verticales</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Usar pestañas verticales
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Lista tus pestañas abiertas en una columna lateral como en Brave
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={settings.useVerticalTabs}
-                      onChange={(e) => onUpdateSettings({ useVerticalTabs: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateSettings({ useVerticalTabs: v })}
+                      ariaLabel="Usar pestañas verticales"
                     />
-                  </label>
+                  </div>
 
                   <div className="p-4 flex items-center justify-between gap-4">
                     <div>
@@ -935,7 +1078,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     <select
                       value={settings.zoomLevel}
                       onChange={(e) => onUpdateSettings({ zoomLevel: Number(e.target.value) })}
-                      className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                      className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] tabular-nums"
                     >
                       {[75, 90, 100, 110, 125, 150].map((z) => (
                         <option key={z} value={z}>
@@ -965,8 +1108,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 </div>
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
                   <div className="p-4 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Bloqueo de rastreadores y anuncios</div>
+                    <div className="font-medium text-[var(--bn-text-strong)]">
+                      Bloqueo de rastreadores y anuncios
                     </div>
                     <select
                       value={shieldState.blockTrackersAndAds}
@@ -983,35 +1126,35 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     </select>
                   </div>
 
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <span>Verificación estricta TLS 1.2 / 1.3</span>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={shieldState.strictTls}
-                      onChange={(e) => onUpdateShieldState({ strictTls: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateShieldState({ strictTls: v })}
+                      ariaLabel="Verificación estricta TLS"
                     />
-                  </label>
+                  </div>
 
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <span>Actualizar conexiones a HTTPS</span>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={shieldState.upgradeHttps}
-                      onChange={(e) => onUpdateShieldState({ upgradeHttps: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateShieldState({ upgradeHttps: v })}
+                      ariaLabel="Actualizar conexiones a HTTPS"
                     />
-                  </label>
+                  </div>
 
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <span>Bloquear cookies entre sitios</span>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={shieldState.blockCrossSiteCookies}
-                      onChange={(e) => onUpdateShieldState({ blockCrossSiteCookies: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateShieldState({ blockCrossSiteCookies: v })}
+                      ariaLabel="Bloquear cookies entre sitios"
                     />
-                  </label>
+                  </div>
                 </div>
               </>
             )}
@@ -1051,24 +1194,28 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               <>
                 <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Barra lateral</h2>
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
-                  <label className="p-4 flex items-center justify-between gap-4 cursor-pointer">
+                  <div className="p-4 flex items-center justify-between gap-4">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Mostrar barra lateral</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Mostrar barra lateral
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Acceso rápido a marcadores, historial, notas y mensajería
                       </div>
                     </div>
-                    <input
-                      type="checkbox"
+                    <LeoSwitch
+                      size="md"
                       checked={settings.showSidebar}
-                      onChange={(e) => onUpdateSettings({ showSidebar: e.target.checked })}
-                      className="accent-[var(--bn-accent)] w-4 h-4"
+                      onChange={(v) => onUpdateSettings({ showSidebar: v })}
+                      ariaLabel="Mostrar barra lateral"
                     />
-                  </label>
+                  </div>
 
                   <div className="p-4 flex items-center justify-between gap-4">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Posición de la barra lateral</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Posición de la barra lateral
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         En Brave puedes mostrarla a la derecha o a la izquierda
                       </div>
@@ -1092,11 +1239,15 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
             {settingsSection === 'datos' && (
               <>
-                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Datos y respaldo</h2>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">
+                  Datos y respaldo
+                </h2>
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
                   <div className="p-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Exportar respaldo local (.json)</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Exportar respaldo local (.json)
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Guarda tus marcadores, sitios principales, notas y configuración
                       </div>
@@ -1113,7 +1264,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
                   <div className="p-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Importar respaldo (.json)</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Importar respaldo (.json)
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Restaura una copia exportada previamente
                       </div>
@@ -1141,7 +1294,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
                   <div className="p-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">Proyecto de escritorio Electron</div>
+                      <div className="font-medium text-[var(--bn-text-strong)]">
+                        Proyecto de escritorio Electron
+                      </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
                         Ver y descargar los archivos main.js y preload.js
                       </div>
@@ -1161,7 +1316,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
             {settingsSection === 'acerca' && (
               <>
-                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Acerca de FabiNav</h2>
+                <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">
+                  Acerca de FabiNav
+                </h2>
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl p-5 space-y-3 text-xs">
                   <div className="flex items-center gap-3">
                     <div
@@ -1175,7 +1332,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         FabiNav v{APP_VERSION}
                       </div>
                       <div className="text-[11px] text-[var(--bn-text-muted)]">
-                        Diseño Brave Leo · Búsqueda web en vivo · Almacenamiento local
+                        Diseño Brave Leo · TLS 1.2/1.3 · Búsqueda web en vivo
                       </div>
                     </div>
                   </div>

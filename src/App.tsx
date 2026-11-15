@@ -37,13 +37,17 @@ import { CommandPalette } from './components/CommandPalette';
 import { ElectronExportModal } from './components/ElectronExportModal';
 import { FabiShieldModal } from './components/BraveShieldModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
-import { Plus, X, Pin, VolumeX, Columns, Lock, Globe } from 'lucide-react';
+import { Plus, X, Pin, VolumeX, Columns, Lock, Globe, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
-const STORAGE_KEY_PREFIX = 'fabinav_v1_7_';
+const STORAGE_KEY_PREFIX = 'fabinav_v1_8_';
+const LEGACY_STORAGE_PREFIX = 'fabinav_v1_7_';
 
 function loadStored<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`);
+    const raw =
+      localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`) ??
+      localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${key}`);
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -109,15 +113,27 @@ export default function App() {
   ]);
   const [networkReqs, setNetworkReqs] = useState<DevToolNetworkReq[]>([]);
 
-  // Modals & Sidebar
+  // Modals, Toast & Sidebar
   const [activeSidebarView, setActiveSidebarView] = useState<SidebarPanelView>(null);
   const [isShieldsModalOpen, setIsShieldsModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const omniboxRef = useRef<HTMLInputElement | null>(null);
   const reportedPageKeysRef = useRef<Set<string>>(new Set());
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMsg(null);
+    }, 2400);
+  }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const splitTab = splitTabId ? tabs.find((t) => t.id === splitTabId) : null;
@@ -143,6 +159,7 @@ export default function App() {
       const profile = await signInWithGoogle();
       setGoogleUser(profile);
       appendLog('info', `Sesión de Google conectada: ${profile.email || profile.displayName}`, 'Google');
+      showToast(`Conectado como ${profile.displayName}`);
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'No se pudo completar el inicio de sesión con Google';
@@ -158,6 +175,7 @@ export default function App() {
       await signOutGoogle();
       setGoogleUser(null);
       appendLog('info', 'Sesión de Google desconectada', 'Google');
+      showToast('Sesión de Google desconectada');
     } catch {
       // Ignore sign out errors
     }
@@ -431,6 +449,27 @@ export default function App() {
     }
   };
 
+  const handleCloseOtherTabs = (keepTabId: string) => {
+    const kept = tabs.filter((t) => t.id === keepTabId || t.isPinned);
+    if (kept.length === tabs.length) return;
+    if (splitTabId && !kept.some((t) => t.id === splitTabId)) {
+      setSplitTabId(null);
+    }
+    setTabs(kept);
+    setActiveTabId(keepTabId);
+    if (!kept.some((t) => t.tabMode === 'private')) {
+      fetch('/api/cookies?partition=private', { method: 'DELETE' }).catch(() => {});
+    }
+    showToast('Otras pestañas cerradas');
+  };
+
+  const handleDuplicateTab = (tabId: string) => {
+    const target = tabs.find((t) => t.id === tabId);
+    if (!target) return;
+    handleNewTab(target.url, target.tabMode || 'normal');
+    showToast('Pestaña duplicada');
+  };
+
   const handleReopenClosedTab = (recordId?: string) => {
     if (closedTabs.length === 0) return;
     const target = recordId ? closedTabs.find((c) => c.id === recordId) : closedTabs[0];
@@ -539,14 +578,19 @@ export default function App() {
     );
   };
 
+  const handleReloadTab = (tabId: string) => {
+    const target = tabs.find((t) => t.id === tabId);
+    if (!target) return;
+    reportedPageKeysRef.current.delete(`${target.id}:${target.url}`);
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, isLoading: true } : t)));
+    setTimeout(() => {
+      setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, isLoading: false } : t)));
+    }, 450);
+  };
+
   const handleReload = () => {
     if (!activeTab) return;
-    const targetUrl = activeTab.url;
-    reportedPageKeysRef.current.delete(`${activeTab.id}:${targetUrl}`);
-    setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, isLoading: true } : t)));
-    setTimeout(() => {
-      setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, isLoading: false } : t)));
-    }, 450);
+    handleReloadTab(activeTab.id);
   };
 
   const handleGoHome = () => {
@@ -579,6 +623,7 @@ export default function App() {
     if (existing) {
       setBookmarks((prev) => prev.filter((b) => b.id !== existing.id));
       setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, isBookmarked: false } : t)));
+      showToast('Eliminado de marcadores');
     } else {
       const newBm: Bookmark = {
         id: `bm-${Date.now()}`,
@@ -589,6 +634,7 @@ export default function App() {
       };
       setBookmarks((prev) => [...prev, newBm]);
       setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, isBookmarked: true } : t)));
+      showToast('Guardado en marcadores');
     }
   };
 
@@ -944,6 +990,9 @@ export default function App() {
         useVerticalTabs={settings.useVerticalTabs}
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
+        onCloseOtherTabs={handleCloseOtherTabs}
+        onDuplicateTab={handleDuplicateTab}
+        onReloadTab={handleReloadTab}
         onNewTab={() => handleNewTab()}
         onReopenClosedTab={handleReopenClosedTab}
         onTogglePinTab={handleTogglePinTab}
@@ -967,6 +1016,10 @@ export default function App() {
         onGoForward={handleGoForward}
         onReload={handleReload}
         onGoHome={handleGoHome}
+        onResetZoom={() => {
+          handleUpdateSettings({ zoomLevel: 100 });
+          showToast('Zoom restablecido al 100%');
+        }}
         onToggleBookmark={handleToggleBookmark}
         onToggleSplitMode={() => {
           if (splitTabId) {
@@ -1193,6 +1246,22 @@ export default function App() {
         onClose={() => setIsElectronModalOpen(false)}
         onRecordDownload={handleRecordDownload}
       />
+
+      {/* Non-intrusive Leo Toast Feedback */}
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            transition={{ duration: 0.16, ease: [0, 0, 0.58, 1] }}
+            className="fixed bottom-5 right-5 z-50 px-4 py-2 rounded-full bg-[var(--bn-surface-alt)] border border-[var(--bn-border-strong)] shadow-2xl text-xs font-medium text-[var(--bn-text-strong)] flex items-center gap-2 pointer-events-none"
+          >
+            <Check className="w-3.5 h-3.5 text-[var(--bn-success-text)] shrink-0" />
+            <span>{toastMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

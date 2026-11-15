@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -55,6 +55,15 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   const [notice, setNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -95,7 +104,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
           >
             {/* Header */}
             <div className="px-6 py-4 bg-[var(--bn-toolbar)] border-b border-[var(--bn-border)] flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 {googleUser?.photoUrl ? (
                   <img
                     src={googleUser.photoUrl}
@@ -108,11 +117,11 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                     {googleUser ? googleUser.displayName[0]?.toUpperCase() || 'G' : 'G'}
                   </div>
                 )}
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-semibold text-[var(--bn-text-strong)]">
                     Cuenta de Google y respaldo local
                   </h3>
-                  <p className="text-[11px] text-[var(--bn-text-muted)]">
+                  <p className="text-[11px] text-[var(--bn-text-muted)] truncate">
                     {googleUser
                       ? `Conectado como ${googleUser.email || googleUser.displayName}`
                       : 'Conecta tu cuenta de Google para obtener tu foto de perfil real'}
@@ -122,7 +131,8 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] rounded-full transition-colors"
+                aria-label="Cerrar modal"
+                className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] rounded-full transition-colors shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -131,14 +141,14 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             {/* Content */}
             <div className="p-6 space-y-5 overflow-y-auto max-h-[75vh] text-xs">
               {notice && (
-                <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-success)]/40 text-[var(--bn-success)] rounded-xl flex items-center gap-2">
+                <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-success)]/40 text-[var(--bn-success-text)] rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>{notice}</span>
                 </div>
               )}
 
               {authError && (
-                <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-danger)]/40 text-[var(--bn-danger)] rounded-xl flex items-center gap-2">
+                <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-danger)]/40 text-[var(--bn-danger-text)] rounded-xl flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{authError}</span>
                 </div>
@@ -195,7 +205,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                       type="button"
                       disabled={isAuthLoading}
                       onClick={onGoogleSignIn}
-                      className="gsi-material-button shrink-0 disabled:opacity-60 inline-flex items-center justify-center gap-2.5 px-4 py-2 rounded-full bg-white text-[#1f1f1f] hover:bg-[#f1f3f4] active:scale-95 border border-[#747775]/40 font-medium text-xs shadow-sm transition-all"
+                      className="gsi-material-button shrink-0 disabled:opacity-60 inline-flex items-center justify-center gap-2.5 px-4 py-2 rounded-full bg-white text-[#1f1f1f] hover:bg-[#f1f3f4] active:scale-95 border border-[#747775]/40 font-medium text-xs shadow-sm transition-all whitespace-nowrap"
                     >
                       <span className="w-4 h-4 shrink-0">
                         <svg viewBox="0 0 48 48" className="w-full h-full block">
@@ -225,7 +235,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
 
               {/* Local Data Summary */}
               <div>
-                <h4 className="text-[11px] font-semibold text-[var(--bn-text-muted)] mb-2.5 uppercase tracking-wider">
+                <h4 className="text-xs font-semibold text-[var(--bn-text-muted)] mb-2.5">
                   Datos guardados en este dispositivo
                 </h4>
                 <div className="grid grid-cols-2 gap-2.5">
@@ -235,11 +245,13 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                       <div className="font-semibold text-[var(--bn-text-strong)] tabular-nums">
                         {bookmarksCount} marcadores
                       </div>
-                      <div className="text-[11px] text-[var(--bn-text-muted)]">Guardados localmente</div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)]">
+                        Guardados localmente
+                      </div>
                     </div>
                   </div>
                   <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl flex items-center gap-2.5">
-                    <History className="w-4 h-4 text-[var(--bn-info)] shrink-0" />
+                    <History className="w-4 h-4 text-[var(--bn-info-text)] shrink-0" />
                     <div>
                       <div className="font-semibold text-[var(--bn-text-strong)] tabular-nums">
                         {historyCount} visitas
@@ -248,7 +260,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                     </div>
                   </div>
                   <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl flex items-center gap-2.5">
-                    <Files className="w-4 h-4 text-[var(--bn-success)] shrink-0" />
+                    <Files className="w-4 h-4 text-[var(--bn-success-text)] shrink-0" />
                     <div>
                       <div className="font-semibold text-[var(--bn-text-strong)] tabular-nums">
                         {openTabsCount} pestañas
@@ -257,7 +269,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                     </div>
                   </div>
                   <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl flex items-center gap-2.5">
-                    <Globe className="w-4 h-4 text-[var(--bn-warning)] shrink-0" />
+                    <Globe className="w-4 h-4 text-[var(--bn-warning-text)] shrink-0" />
                     <div>
                       <div className="font-semibold text-[var(--bn-text-strong)] tabular-nums">
                         {topSitesCount} accesos
@@ -274,7 +286,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                   <h4 className="text-xs font-semibold text-[var(--bn-text-strong)]">
                     Copia de seguridad portátil (.json)
                   </h4>
-                  <p className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                  <p className="text-[11px] text-[var(--bn-text-muted)] mt-0.5 tabular-nums">
                     Última exportación: {lastExportText}
                   </p>
                 </div>
@@ -286,7 +298,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                       setNotice('Archivo JSON de respaldo descargado.');
                       setTimeout(() => setNotice(null), 2500);
                     }}
-                    className="flex-1 py-2 px-3.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-95 text-white font-medium flex items-center justify-center gap-2 transition-all"
+                    className="flex-1 py-2 px-3.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-95 text-white font-medium flex items-center justify-center gap-2 transition-all whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Exportar respaldo JSON</span>
@@ -302,7 +314,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 py-2 px-3.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] active:scale-95 border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] font-medium flex items-center justify-center gap-2 transition-all"
+                    className="flex-1 py-2 px-3.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] active:scale-95 border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] font-medium flex items-center justify-center gap-2 transition-all whitespace-nowrap"
                   >
                     <Upload className="w-3.5 h-3.5" />
                     <span>Importar respaldo JSON</span>
@@ -314,7 +326,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             {/* Footer */}
             <div className="px-6 py-3 bg-[var(--bn-toolbar)] border-t border-[var(--bn-border)] flex items-center justify-between text-[11px] text-[var(--bn-text-muted)]">
               <span className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+                <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-success-text)]" />
                 <span>Autenticación oficial de Google y respaldo local</span>
               </span>
               <button

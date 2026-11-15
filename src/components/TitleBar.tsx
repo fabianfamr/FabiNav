@@ -28,7 +28,9 @@ import {
   Printer,
   User,
   Cookie,
-  Trash2
+  Trash2,
+  X,
+  Compass
 } from 'lucide-react';
 import {
   WebTab,
@@ -52,6 +54,7 @@ interface TitleBarProps {
   onGoForward: () => void;
   onReload: () => void;
   onGoHome: () => void;
+  onResetZoom: () => void;
   onToggleBookmark: () => void;
   onToggleSplitMode: () => void;
   onToggleShieldsModal: () => void;
@@ -93,6 +96,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onGoForward,
   onReload,
   onGoHome,
+  onResetZoom,
   onToggleBookmark,
   onToggleSplitMode,
   onToggleShieldsModal,
@@ -142,8 +146,18 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         setShowSecurityPopover(false);
       }
     };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowBraveMenu(false);
+        setShowSecurityPopover(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, []);
 
   const isExternalUrl =
@@ -170,9 +184,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     try {
       const [tlsRes, cookiesRes] = await Promise.all([
         fetch(`/api/tls?url=${encodeURIComponent(currentTab.url)}`),
-        fetch(
-          `/api/cookies?partition=${partition}&domain=${encodeURIComponent(currentHost)}`
-        )
+        fetch(`/api/cookies?partition=${partition}&domain=${encodeURIComponent(currentHost)}`)
       ]);
       if (tlsRes.ok) {
         setTlsInfo((await tlsRes.json()) as TlsInspectionResult);
@@ -197,10 +209,24 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     setSiteCookies([]);
   };
 
-  const query = inputUrl.trim().toLowerCase();
-  const suggestions =
+  const trimmedInput = inputUrl.trim();
+  const query = trimmedInput.toLowerCase();
+  const looksLikeUrl =
+    trimmedInput.startsWith('http://') ||
+    trimmedInput.startsWith('https://') ||
+    trimmedInput.startsWith('fabinav://') ||
+    (trimmedInput.includes('.') && !trimmedInput.includes(' '));
+
+  const matchedSuggestions =
     isFocused && query.length > 0 && query !== currentTab?.url.toLowerCase()
       ? [
+          {
+            title: looksLikeUrl
+              ? `Ir a ${trimmedInput}`
+              : `Buscar «${trimmedInput}» en FabiNav Search`,
+            url: trimmedInput,
+            kind: looksLikeUrl ? 'Sitio web' : 'Búsqueda'
+          },
           ...INTERNAL_SUGGESTIONS.filter(
             (s) => s.title.toLowerCase().includes(query) || s.url.toLowerCase().includes(query)
           ),
@@ -214,38 +240,51 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               (h) => h.title.toLowerCase().includes(query) || h.url.toLowerCase().includes(query)
             )
             .map((h) => ({ title: h.title, url: h.url, kind: 'Historial' }))
-        ].slice(0, 6)
+        ].slice(0, 7)
       : [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedSuggestionIndex >= 0 && suggestions[selectedSuggestionIndex]) {
-      onNavigate(suggestions[selectedSuggestionIndex].url);
+    if (selectedSuggestionIndex >= 0 && matchedSuggestions[selectedSuggestionIndex]) {
+      onNavigate(matchedSuggestions[selectedSuggestionIndex].url);
       setIsFocused(false);
       setSelectedSuggestionIndex(-1);
       omniboxRef?.current?.blur();
       return;
     }
 
-    if (!inputUrl.trim()) return;
-    onNavigate(inputUrl.trim());
+    if (!trimmedInput) return;
+    onNavigate(trimmedInput);
     setIsFocused(false);
     setSelectedSuggestionIndex(-1);
     omniboxRef?.current?.blur();
   };
 
   const handleOmniboxKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!suggestions.length) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
-    } else if (e.key === 'Escape') {
+    if (e.key === 'Escape') {
       setIsFocused(false);
       setSelectedSuggestionIndex(-1);
+      omniboxRef?.current?.blur();
+      return;
     }
+    if (!matchedSuggestions.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedSuggestionIndex((prev) => (prev + 1) % matchedSuggestions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedSuggestionIndex(
+        (prev) => (prev - 1 + matchedSuggestions.length) % matchedSuggestions.length
+      );
+    }
+  };
+
+  const renderSuggestionIcon = (kind: string) => {
+    if (kind === 'Marcador') return <Star className="w-3.5 h-3.5 text-[var(--bn-accent)] shrink-0" />;
+    if (kind === 'Historial') return <History className="w-3.5 h-3.5 text-[var(--bn-info-text)] shrink-0" />;
+    if (kind === 'FabiNav') return <Compass className="w-3.5 h-3.5 text-[var(--bn-accent)] shrink-0" />;
+    if (kind === 'Búsqueda') return <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />;
+    return <Globe className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />;
   };
 
   return (
@@ -311,14 +350,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             type="button"
             onClick={openSecurityInspector}
             title="Ver información TLS, certificado y cookies del sitio"
-            className="mr-2 p-1 rounded-full hover:bg-[var(--bn-hover)] transition-colors shrink-0 flex items-center justify-center"
+            className="mr-1.5 p-1 rounded-full hover:bg-[var(--bn-hover)] transition-colors shrink-0 flex items-center justify-center"
           >
             {currentTab?.tabMode === 'private' ? (
-              <EyeOff className="w-3.5 h-3.5 text-[#a78bfa]" />
+              <EyeOff className="w-3.5 h-3.5 text-[var(--bn-private-text)]" />
             ) : currentTab?.url.startsWith('https://') ? (
-              <Lock className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+              <Lock className="w-3.5 h-3.5 text-[var(--bn-success-text)]" />
             ) : currentTab?.url.startsWith('http://') ? (
-              <ShieldAlert className="w-3.5 h-3.5 text-[var(--bn-warning)]" />
+              <ShieldAlert className="w-3.5 h-3.5 text-[var(--bn-warning-text)]" />
             ) : (
               <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
             )}
@@ -358,17 +397,37 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               }, 150);
             }}
             onKeyDown={handleOmniboxKeyDown}
-            placeholder="Busca en la web o escribe una dirección URL"
-            className="w-full bg-transparent border-none text-[13px] text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none"
+            placeholder="Busca en la web o escribe una dirección URL (Ctrl+L)"
+            className="w-full bg-transparent border-none text-[13px] text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none select-text"
             aria-label="Barra de direcciones y búsqueda"
           />
 
-          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-            {settings.zoomLevel !== 100 && (
-              <span className="text-[11px] font-mono text-[var(--bn-text-muted)] tabular-nums px-1.5 py-0.5 rounded bg-[var(--bn-hover)]">
-                {settings.zoomLevel}%
-              </span>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            {isFocused && inputUrl.length > 0 && (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setInputUrl('');
+                }}
+                title="Limpiar barra de direcciones"
+                className="p-1 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
             )}
+
+            {settings.zoomLevel !== 100 && (
+              <button
+                type="button"
+                onClick={onResetZoom}
+                title="Restablecer zoom al 100%"
+                className="text-[11px] font-mono text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] tabular-nums px-1.5 py-0.5 rounded-full bg-[var(--bn-hover)] transition-colors"
+              >
+                {settings.zoomLevel}%
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onToggleBookmark}
@@ -421,7 +480,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {isShieldActive && shieldCount > 0 && (
             <motion.span
               key={shieldCount}
-              initial={{ scale: 1.35 }}
+              initial={{ scale: 1.3 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.2, ease: LEO_EASE_OUT }}
               className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--bn-accent)] text-white text-[9px] font-semibold flex items-center justify-center tabular-nums shadow"
@@ -447,8 +506,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     <ShieldCheck className="w-4 h-4 text-[var(--bn-accent)]" />
                     <span>Página interna de FabiNav</span>
                   </div>
-                  <p className="text-[11px] text-[var(--bn-text-muted)]">
-                    Esta vista se ejecuta de forma local dentro del navegador sin conexiones externas.
+                  <p className="text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
+                    Esta vista se ejecuta localmente dentro del navegador sin conexiones externas.
                   </p>
                 </div>
               ) : (
@@ -459,10 +518,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         {currentHost}
                       </span>
                       <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                        className={`text-[11px] font-medium shrink-0 ${
                           currentTab?.url.startsWith('https://')
-                            ? 'bg-emerald-500/15 text-emerald-400'
-                            : 'bg-amber-500/15 text-amber-400'
+                            ? 'text-[var(--bn-success-text)]'
+                            : 'text-[var(--bn-warning-text)]'
                         }`}
                       >
                         {currentTab?.url.startsWith('https://') ? 'HTTPS / TLS' : 'HTTP sin TLS'}
@@ -473,7 +532,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {/* Real TLS Inspection Details */}
                   <div className="p-3.5 space-y-1.5">
                     <div className="flex items-center gap-1.5 font-medium text-[var(--bn-text-strong)]">
-                      <Lock className="w-3.5 h-3.5 text-[var(--bn-success)]" />
+                      <Lock className="w-3.5 h-3.5 text-[var(--bn-success-text)]" />
                       <span>Certificado y cifrado TLS</span>
                     </div>
 
@@ -490,6 +549,14 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                           </span>
                           {tlsInfo.cipher ? ` · ${tlsInfo.cipher}` : ''}
                         </div>
+                        {tlsInfo.alpnProtocol && (
+                          <div>
+                            ALPN:{' '}
+                            <span className="text-[var(--bn-text-strong)] font-mono">
+                              {tlsInfo.alpnProtocol}
+                            </span>
+                          </div>
+                        )}
                         {tlsInfo.issuerO || tlsInfo.issuerCN ? (
                           <div className="truncate">
                             Emisor:{' '}
@@ -499,7 +566,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                           </div>
                         ) : null}
                         {tlsInfo.validTo ? (
-                          <div>
+                          <div className="tabular-nums">
                             Expira:{' '}
                             <span className="text-[var(--bn-text-strong)]">
                               {new Date(tlsInfo.validTo).toLocaleDateString('es-ES')}
@@ -508,7 +575,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         ) : null}
                         <div
                           className={
-                            tlsInfo.authorized ? 'text-emerald-400' : 'text-amber-400'
+                            tlsInfo.authorized
+                              ? 'text-[var(--bn-success-text)] font-medium'
+                              : 'text-[var(--bn-warning-text)] font-medium'
                           }
                         >
                           {tlsInfo.authorized
@@ -526,7 +595,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {/* Real Site Cookies */}
                   <div className="p-3.5 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1.5 font-medium text-[var(--bn-text-strong)]">
+                      <span className="flex items-center gap-1.5 font-medium text-[var(--bn-text-strong)] tabular-nums">
                         <Cookie className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
                         <span>Cookies del sitio ({siteCookies.length})</span>
                       </span>
@@ -534,7 +603,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         <button
                           type="button"
                           onClick={handleClearSiteCookies}
-                          className="text-[11px] text-[var(--bn-danger)] hover:underline flex items-center gap-1"
+                          className="text-[11px] text-[var(--bn-danger-text)] hover:underline flex items-center gap-1"
                         >
                           <Trash2 className="w-3 h-3" />
                           <span>Limpiar</span>
@@ -550,7 +619,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         }}
                         className="text-[var(--bn-accent)] hover:underline font-medium"
                       >
-                        Administrar todas las cookies y TLS
+                        Administrar cookies y TLS
                       </button>
                     </div>
                   </div>
@@ -562,7 +631,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
         {/* Omnibox Autocomplete */}
         <AnimatePresence>
-          {suggestions.length > 0 && (
+          {matchedSuggestions.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: -4, scale: 0.99 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -570,7 +639,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               transition={{ duration: 0.12, ease: LEO_EASE_OUT }}
               className="absolute left-0 right-10 top-10 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden py-1.5"
             >
-              {suggestions.map((item, idx) => (
+              {matchedSuggestions.map((item, idx) => (
                 <button
                   key={`${item.url}-${idx}`}
                   type="button"
@@ -586,11 +655,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <Globe className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+                    {renderSuggestionIcon(item.kind)}
                     <span className="truncate font-medium">{item.title}</span>
-                    <span className="text-[11px] text-[var(--bn-text-muted)] truncate">{item.url}</span>
+                    {item.kind !== 'Búsqueda' && (
+                      <span className="text-[11px] text-[var(--bn-text-muted)] truncate">
+                        {item.url}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[10px] text-[var(--bn-text-muted)] shrink-0">{item.kind}</span>
+                  <span className="text-[11px] text-[var(--bn-text-muted)] shrink-0">{item.kind}</span>
                 </button>
               ))}
             </motion.div>
@@ -619,7 +692,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           title={settings.showSidebar ? 'Ocultar barra lateral' : 'Mostrar barra lateral'}
           className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
             settings.showSidebar
-              ? 'text-[var(--bn-text-strong)] bg-[var(--bn-hover)]/60'
+              ? 'text-[var(--bn-text-strong)] bg-[var(--bn-hover)]/65'
               : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
           }`}
         >
@@ -701,7 +774,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
                   <span className="flex items-center gap-2.5">
-                    <EyeOff className="w-3.5 h-3.5 text-[#a78bfa]" />
+                    <EyeOff className="w-3.5 h-3.5 text-[var(--bn-private-text)]" />
                     <span>Nueva pestaña privada</span>
                   </span>
                 </button>
@@ -791,7 +864,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                 >
                   <span>Mostrar barra de marcadores</span>
-                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)]">
+                  <span className="text-[11px] font-medium text-[var(--bn-text-muted)]">
                     {settings.showBookmarksBar ? 'Sí' : 'No'}
                   </span>
                 </button>

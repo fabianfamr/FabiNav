@@ -2,7 +2,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
-  /* Official Brave Leo Motion Tokens (from brave/leo docs/motion.md) */
+  /* Official Brave Leo Motion & Design Tokens */
   :root {
     --leo-duration-xs: 50ms;
     --leo-duration-s: 100ms;
@@ -26,34 +26,41 @@
     --bn-omnibox: #191a1e;
     --bn-omnibox-focus: #111216;
     --bn-surface: #1e2025;
-    --bn-surface-alt: #27292e;
+    --bn-surface-alt: #26282e;
     --bn-hover: #32353c;
     --bn-active: #3a3e47;
-    --bn-border: #34363e;
-    --bn-border-strong: #464954;
+    --bn-border: #33363f;
+    --bn-border-strong: #464a56;
     --bn-text: #d8dade;
     --bn-text-strong: #ffffff;
     --bn-text-muted: #9398a3;
     --bn-accent: #fb542b;
     --bn-accent-hover: #e0441e;
     --bn-accent-soft: rgba(251, 84, 43, 0.14);
+    --bn-link: #8ab4f8;
+    --bn-link-hover: #aecbfa;
     --bn-interactive: #6366f1;
     --bn-private: #7c3aed;
+    --bn-private-text: #c4b5fd;
     --bn-success: #22c55e;
+    --bn-success-text: #4ade80;
     --bn-warning: #eab308;
+    --bn-warning-text: #facc15;
     --bn-danger: #ef4444;
+    --bn-danger-text: #f87171;
     --bn-info: #3b82f6;
+    --bn-info-text: #60a5fa;
   }
 
   .theme-brave-midnight {
     --bn-tabstrip: #08090b;
-    --bn-toolbar: #141519;
-    --bn-omnibox: #0c0d10;
+    --bn-toolbar: #131418;
+    --bn-omnibox: #0b0c0f;
     --bn-omnibox-focus: #050608;
-    --bn-surface: #111216;
-    --bn-surface-alt: #1a1c22;
-    --bn-hover: #242730;
-    --bn-active: #2e323d;
+    --bn-surface: #101115;
+    --bn-surface-alt: #181a20;
+    --bn-hover: #22252e;
+    --bn-active: #2b2f3a;
     --bn-border: #23262e;
     --bn-border-strong: #353946;
     --bn-text: #d8dade;
@@ -62,12 +69,19 @@
     --bn-accent: #fb542b;
     --bn-accent-hover: #e0441e;
     --bn-accent-soft: rgba(251, 84, 43, 0.16);
+    --bn-link: #8ab4f8;
+    --bn-link-hover: #aecbfa;
     --bn-interactive: #818cf8;
     --bn-private: #7c3aed;
+    --bn-private-text: #c4b5fd;
     --bn-success: #22c55e;
+    --bn-success-text: #4ade80;
     --bn-warning: #eab308;
+    --bn-warning-text: #facc15;
     --bn-danger: #ef4444;
+    --bn-danger-text: #f87171;
     --bn-info: #3b82f6;
+    --bn-info-text: #60a5fa;
   }
 
   .theme-brave-light {
@@ -77,22 +91,29 @@
     --bn-omnibox-focus: #ffffff;
     --bn-surface: #f8f9fa;
     --bn-surface-alt: #ffffff;
-    --bn-hover: #e8eaed;
-    --bn-active: #dadce0;
+    --bn-hover: #ebedf0;
+    --bn-active: #dfe2e6;
     --bn-border: #dadce0;
     --bn-border-strong: #bdc1c6;
     --bn-text: #3c4043;
-    --bn-text-strong: #202124;
+    --bn-text-strong: #1f2023;
     --bn-text-muted: #5f6368;
-    --bn-accent: #fb542b;
-    --bn-accent-hover: #d93f1a;
-    --bn-accent-soft: rgba(251, 84, 43, 0.1);
+    --bn-accent: #e84820;
+    --bn-accent-hover: #cc3a16;
+    --bn-accent-soft: rgba(232, 72, 32, 0.1);
+    --bn-link: #1a56db;
+    --bn-link-hover: #1e40af;
     --bn-interactive: #4f46e5;
     --bn-private: #6d28d9;
+    --bn-private-text: #6d28d9;
     --bn-success: #16a34a;
+    --bn-success-text: #15803d;
     --bn-warning: #ca8a04;
+    --bn-warning-text: #a16207;
     --bn-danger: #dc2626;
+    --bn-danger-text: #b91c1c;
     --bn-info: #2563eb;
+    --bn-info-text: #1d4ed8;
   }
 
   body {
@@ -103,6 +124,15 @@
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--bn-accent);
+    outline-offset: 2px;
   }
 
   .leo-transition-xs {
