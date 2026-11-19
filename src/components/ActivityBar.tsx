@@ -60,7 +60,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               type="button"
               onClick={() => onSelectView(isActive ? null : item.id)}
               title={item.label}
-              className={`relative w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
+              className={`relative w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
                 isActive
                   ? 'text-[var(--bn-accent)]'
                   : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]'
@@ -87,7 +87,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         type="button"
         onClick={onOpenSettings}
         title="Configuración de la barra lateral"
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs"
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs"
       >
         <Settings className="w-4 h-4" />
       </button>

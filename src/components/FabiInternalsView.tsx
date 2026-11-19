@@ -34,7 +34,7 @@ import {
   TlsInspectionResult
 } from '../types';
 import { APP_VERSION } from '../constants/initialData';
-import { LeoSwitch } from './LeoSwitch';
+import { FabiSwitch } from './FabiSwitch';
 
 interface FabiInternalsViewProps {
   url: string;
@@ -69,7 +69,7 @@ type SettingsSection =
   | 'datos'
   | 'acerca';
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   url,
@@ -107,8 +107,42 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [tlsProbeHost, setTlsProbeHost] = useState('github.com');
   const [tlsProbeLoading, setTlsProbeLoading] = useState(false);
   const [tlsProbeResult, setTlsProbeResult] = useState<TlsInspectionResult | null>(null);
+  const [desktopActionMsg, setDesktopActionMsg] = useState<string | null>(null);
+  const [desktopUpdateReady, setDesktopUpdateReady] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDesktopCheckUpdates = async () => {
+    const bridge = window.fabinavDesktop;
+    if (!bridge?.isElectron) {
+      setDesktopActionMsg(
+        `FabiNav Web v${APP_VERSION}: en la versión de escritorio (Electron) comprueba e instala nuevas versiones desde GitHub Releases automáticamente.`
+      );
+      return;
+    }
+    setDesktopActionMsg('Buscando actualizaciones en GitHub Releases...');
+    try {
+      const res = await bridge.checkForUpdates();
+      if (res.state === 'downloaded') {
+        setDesktopUpdateReady(true);
+      }
+      setDesktopActionMsg(res.message || `Estado: ${res.state}`);
+    } catch {
+      setDesktopActionMsg('No se pudo comprobar actualizaciones en este momento.');
+    }
+  };
+
+  const handleDesktopUninstall = async () => {
+    const bridge = window.fabinavDesktop;
+    if (!bridge?.isElectron) {
+      setDesktopActionMsg(
+        'En la app de escritorio instalada, este botón abre directamente el desinstalador de Windows ("Desinstalar FabiNav"), Finder o la carpeta del AppImage.'
+      );
+      return;
+    }
+    const res = await bridge.openUninstallSettings();
+    if (res?.message) setDesktopActionMsg(res.message);
+  };
 
   const cleanUrl = url.toLowerCase().trim();
 
@@ -521,7 +555,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Rechaza certificados inválidos o cifrados obsoletos al abrir páginas HTTPS
                 </div>
               </div>
-              <LeoSwitch
+              <FabiSwitch
                 size="md"
                 checked={shieldState.strictTls}
                 onChange={(v) => onUpdateShieldState({ strictTls: v })}
@@ -538,7 +572,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Convierte automáticamente direcciones http:// a https:// al navegar
                 </div>
               </div>
-              <LeoSwitch
+              <FabiSwitch
                 size="md"
                 checked={shieldState.upgradeHttps}
                 onChange={(v) => onUpdateShieldState({ upgradeHttps: v })}
@@ -555,7 +589,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   Impide que cookies de terceros o analíticas se guarden en tu sesión
                 </div>
               </div>
-              <LeoSwitch
+              <FabiSwitch
                 size="md"
                 checked={shieldState.blockCrossSiteCookies}
                 onChange={(v) => onUpdateShieldState({ blockCrossSiteCookies: v })}
@@ -797,7 +831,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             <div className="flex items-center gap-3">
               <div
                 className="w-11 h-11 rounded-2xl text-white flex items-center justify-center font-bold text-lg shadow"
-                style={{ background: 'var(--leo-gradient-brand)' }}
+                style={{ background: 'var(--fabi-gradient-brand)' }}
               >
                 F
               </div>
@@ -819,14 +853,46 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             </button>
           </div>
 
-          <div className="p-5 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl space-y-2">
+          <div className="p-5 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl space-y-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-[var(--bn-text-strong)]">
               <Info className="w-4 h-4 text-[var(--bn-accent)]" />
-              <span>Información general</span>
+              <span>Información general, actualizaciones y desinstalación</span>
             </div>
             <p className="text-xs text-[var(--bn-text-muted)] leading-relaxed">
-              FabiNav es un navegador web moderno con búsqueda en vivo y paneles de conocimiento, proxy seguro del lado del servidor con cookies particionadas e inspección TLS 1.2/1.3, perfil conectado con Google, barra lateral configurable y exportación a proyecto Electron.
+              FabiNav es un navegador web moderno con búsqueda en vivo, proxy seguro con cookies particionadas e inspección TLS 1.2/1.3, perfil conectado con Google, empaquetado Electron multiplataforma con actualizaciones automáticas por GitHub Releases y desinstalador directo de un clic.
             </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleDesktopCheckUpdates}
+                className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-1.5"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Buscar actualizaciones</span>
+              </button>
+              {desktopUpdateReady && (
+                <button
+                  type="button"
+                  onClick={() => window.fabinavDesktop?.installUpdate()}
+                  className="px-4 py-1.5 rounded-full bg-[var(--bn-success)] text-white text-xs font-medium"
+                >
+                  Reiniciar e instalar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleDesktopUninstall}
+                className="px-4 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[var(--bn-danger-text)] text-xs font-medium inline-flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Desinstalar FabiNav</span>
+              </button>
+            </div>
+            {desktopActionMsg && (
+              <p className="text-[11px] text-[var(--bn-text-strong)] bg-[var(--bn-surface)] border border-[var(--bn-border)] rounded-xl px-3 py-2">
+                {desktopActionMsg}
+              </p>
+            )}
           </div>
 
           <div className="p-5 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl space-y-3">
@@ -863,9 +929,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   ];
 
   const themeOptions: Array<{ id: BrowserTheme; label: string; desc: string }> = [
-    { id: 'brave-dark', label: 'FabiNav Oscuro', desc: 'Gris grafito clásico de escritorio' },
-    { id: 'brave-midnight', label: 'Noche Profunda', desc: 'Contraste oscuro intenso para baja luz' },
-    { id: 'brave-light', label: 'FabiNav Claro', desc: 'Superficie clara luminosa para uso diurno' }
+    { id: 'fabi-dark', label: 'FabiNav Oscuro', desc: 'Gris grafito clásico de escritorio' },
+    { id: 'fabi-midnight', label: 'Noche Profunda', desc: 'Contraste oscuro intenso para baja luz' },
+    { id: 'fabi-light', label: 'FabiNav Claro', desc: 'Superficie clara luminosa para uso diurno' }
   ];
 
   return (
@@ -906,7 +972,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
             className="max-w-2xl mx-auto space-y-6"
           >
             {settingsSection === 'primeros-pasos' && (
@@ -994,26 +1060,33 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 <h2 className="text-base font-semibold text-[var(--bn-text-strong)]">Apariencia</h2>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {themeOptions.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => onUpdateSettings({ theme: t.id })}
-                      className={`p-4 rounded-2xl border text-left transition-colors ${
-                        settings.theme === t.id
-                          ? 'bg-[var(--bn-surface-alt)] border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
-                          : 'bg-[var(--bn-surface-alt)] border-[var(--bn-border)] text-[var(--bn-text)] hover:border-[var(--bn-border-strong)]'
-                      }`}
-                    >
-                      <div className="text-xs font-semibold flex items-center justify-between">
-                        <span>{t.label}</span>
-                        {settings.theme === t.id && (
-                          <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-[var(--bn-text-muted)] mt-1">{t.desc}</p>
-                    </button>
-                  ))}
+                  {themeOptions.map((t) => {
+                    const isSelected =
+                      settings.theme === t.id ||
+                      (t.id === 'fabi-dark' && settings.theme === 'brave-dark') ||
+                      (t.id === 'fabi-midnight' && settings.theme === 'brave-midnight') ||
+                      (t.id === 'fabi-light' && settings.theme === 'brave-light');
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => onUpdateSettings({ theme: t.id })}
+                        className={`p-4 rounded-2xl border text-left transition-colors ${
+                          isSelected
+                            ? 'bg-[var(--bn-surface-alt)] border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
+                            : 'bg-[var(--bn-surface-alt)] border-[var(--bn-border)] text-[var(--bn-text)] hover:border-[var(--bn-border-strong)]'
+                        }`}
+                      >
+                        <div className="text-xs font-semibold flex items-center justify-between">
+                          <span>{t.label}</span>
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[var(--bn-text-muted)] mt-1">{t.desc}</p>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)] text-xs">
@@ -1026,7 +1099,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         Añade el acceso directo a la página principal en la barra superior
                       </div>
                     </div>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={settings.showHomeButton}
                       onChange={(v) => onUpdateSettings({ showHomeButton: v })}
@@ -1043,7 +1116,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         Muestra tus marcadores debajo de la barra de direcciones
                       </div>
                     </div>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={settings.showBookmarksBar}
                       onChange={(v) => onUpdateSettings({ showBookmarksBar: v })}
@@ -1060,7 +1133,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         Lista tus pestañas abiertas en una columna lateral
                       </div>
                     </div>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={settings.useVerticalTabs}
                       onChange={(v) => onUpdateSettings({ useVerticalTabs: v })}
@@ -1128,7 +1201,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
                   <div className="p-4 flex items-center justify-between gap-4">
                     <span>Verificación estricta TLS 1.2 / 1.3</span>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={shieldState.strictTls}
                       onChange={(v) => onUpdateShieldState({ strictTls: v })}
@@ -1138,7 +1211,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
                   <div className="p-4 flex items-center justify-between gap-4">
                     <span>Actualizar conexiones a HTTPS</span>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={shieldState.upgradeHttps}
                       onChange={(v) => onUpdateShieldState({ upgradeHttps: v })}
@@ -1148,7 +1221,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
                   <div className="p-4 flex items-center justify-between gap-4">
                     <span>Bloquear cookies entre sitios</span>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={shieldState.blockCrossSiteCookies}
                       onChange={(v) => onUpdateShieldState({ blockCrossSiteCookies: v })}
@@ -1203,7 +1276,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         Acceso rápido a marcadores, historial, notas y mensajería
                       </div>
                     </div>
-                    <LeoSwitch
+                    <FabiSwitch
                       size="md"
                       checked={settings.showSidebar}
                       onChange={(v) =>
@@ -1325,7 +1398,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   <div className="flex items-center gap-3">
                     <div
                       className="w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold text-base"
-                      style={{ background: 'var(--leo-gradient-brand)' }}
+                      style={{ background: 'var(--fabi-gradient-brand)' }}
                     >
                       F
                     </div>
@@ -1338,13 +1411,36 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('fabinav://about')}
-                    className="text-xs text-[var(--bn-accent)] hover:underline"
-                  >
-                    Ver atajos de teclado y detalles
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleDesktopCheckUpdates}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-1.5"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      <span>Buscar actualizaciones</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDesktopUninstall}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[var(--bn-danger-text)] text-xs font-medium inline-flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Desinstalar FabiNav</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('fabinav://about')}
+                      className="text-xs text-[var(--bn-accent)] hover:underline ml-auto"
+                    >
+                      Ver atajos de teclado y detalles
+                    </button>
+                  </div>
+                  {desktopActionMsg && (
+                    <p className="text-[11px] text-[var(--bn-text-strong)] bg-[var(--bn-surface)] border border-[var(--bn-border)] rounded-xl px-3 py-2">
+                      {desktopActionMsg}
+                    </p>
+                  )}
                 </div>
               </>
             )}

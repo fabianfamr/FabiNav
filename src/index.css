@@ -4,22 +4,24 @@
 @layer base {
   /* FabiNav Design & Motion Tokens */
   :root {
-    --leo-duration-xs: 50ms;
-    --leo-duration-s: 100ms;
-    --leo-duration-m: 200ms;
-    --leo-duration-l: 300ms;
-    --leo-duration-xl: 500ms;
+    --fabi-duration-xs: 50ms;
+    --fabi-duration-s: 100ms;
+    --fabi-duration-m: 200ms;
+    --fabi-duration-l: 300ms;
+    --fabi-duration-xl: 500ms;
 
-    --leo-easing-out: cubic-bezier(0, 0, 0.58, 1);
-    --leo-easing-in: cubic-bezier(0.5, 0, 0.5, 1);
-    --leo-easing-in-out: cubic-bezier(0.42, 0, 0.58, 1);
-    --leo-easing-linear: cubic-bezier(0, 0, 1, 1);
-    --leo-easing-in-out-back: cubic-bezier(0.7, -0.4, 0.4, 1.4);
+    --fabi-easing-out: cubic-bezier(0, 0, 0.58, 1);
+    --fabi-easing-in: cubic-bezier(0.5, 0, 0.5, 1);
+    --fabi-easing-in-out: cubic-bezier(0.42, 0, 0.58, 1);
+    --fabi-easing-linear: cubic-bezier(0, 0, 1, 1);
+    --fabi-easing-in-out-back: cubic-bezier(0.7, -0.4, 0.4, 1.4);
 
-    --leo-gradient-brand: linear-gradient(135deg, #fa7250 0%, #ff1893 100%);
+    --fabi-gradient-brand: linear-gradient(135deg, #fa7250 0%, #ff1893 100%);
+    --leo-gradient-brand: var(--fabi-gradient-brand);
   }
 
   :root,
+  .theme-fabi-dark,
   .theme-brave-dark {
     --bn-tabstrip: #17181c;
     --bn-tab-active: #34363d;
@@ -53,6 +55,7 @@
     --bn-info-text: #60a5fa;
   }
 
+  .theme-fabi-midnight,
   .theme-brave-midnight {
     --bn-tabstrip: #08090b;
     --bn-tab-active: #1f222a;
@@ -86,6 +89,7 @@
     --bn-info-text: #60a5fa;
   }
 
+  .theme-fabi-light,
   .theme-brave-light {
     --bn-tabstrip: #dee1e6;
     --bn-tab-active: #ffffff;
@@ -138,19 +142,22 @@
     outline-offset: 2px;
   }
 
+  .fabi-transition-xs,
   .leo-transition-xs {
-    transition-duration: var(--leo-duration-xs);
-    transition-timing-function: var(--leo-easing-out);
+    transition-duration: var(--fabi-duration-xs);
+    transition-timing-function: var(--fabi-easing-out);
   }
 
+  .fabi-transition-s,
   .leo-transition-s {
-    transition-duration: var(--leo-duration-s);
-    transition-timing-function: var(--leo-easing-out);
+    transition-duration: var(--fabi-duration-s);
+    transition-timing-function: var(--fabi-easing-out);
   }
 
+  .fabi-transition-m,
   .leo-transition-m {
-    transition-duration: var(--leo-duration-m);
-    transition-timing-function: var(--leo-easing-out);
+    transition-duration: var(--fabi-duration-m);
+    transition-timing-function: var(--fabi-easing-out);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -169,6 +176,14 @@
 
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+
+  .fabi-drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .fabi-no-drag {
+    -webkit-app-region: no-drag;
   }
 
   .no-scrollbar::-webkit-scrollbar {

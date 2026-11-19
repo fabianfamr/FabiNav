@@ -9,7 +9,7 @@ interface ElectronExportModalProps {
   onRecordDownload?: (filename: string, size: string, url: string) => void;
 }
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const ElectronExportModal: React.FC<ElectronExportModalProps> = ({
   isOpen,
@@ -63,7 +63,7 @@ export const ElectronExportModal: React.FC<ElectronExportModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+          transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
           className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4"
           onClick={onClose}
         >
@@ -72,7 +72,7 @@ export const ElectronExportModal: React.FC<ElectronExportModalProps> = ({
             initial={{ opacity: 0, y: 12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ duration: 0.18, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.18, ease: FABI_EASE_OUT }}
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-3xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden text-[var(--bn-text)]"
           >
@@ -130,10 +130,10 @@ export const ElectronExportModal: React.FC<ElectronExportModalProps> = ({
                 <div className="space-y-4">
                   <div className="p-4 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl space-y-1.5">
                     <h4 className="font-semibold text-[var(--bn-text-strong)] text-sm">
-                      Empaquetado nativo con aislamiento de contexto
+                      Publicación automática con GitHub Actions, actualizaciones y desinstalación fácil
                     </h4>
                     <p className="text-xs text-[var(--bn-text-muted)] leading-relaxed">
-                      La plantilla incluye configuración con <code className="font-mono text-[var(--bn-text-strong)]">contextIsolation: true</code>, <code className="font-mono text-[var(--bn-text-strong)]">sandbox: true</code> y filtrado básico de solicitudes de rastreo desde el proceso principal de Electron.
+                      El repositorio incluye <code className="font-mono text-[var(--bn-text-strong)]">.github/workflows/release-electron.yml</code>, <code className="font-mono text-[var(--bn-text-strong)]">electron-builder.yml</code> y <code className="font-mono text-[var(--bn-text-strong)]">electron/main.cjs</code> con servidor integrado, <code className="font-mono text-[var(--bn-text-strong)]">electron-updater</code> (actualizaciones automáticas vía GitHub Releases) y desinstalador directo desde el Menú Inicio o Configuración.
                     </p>
                   </div>
 
@@ -141,31 +141,31 @@ export const ElectronExportModal: React.FC<ElectronExportModalProps> = ({
                     <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl space-y-2">
                       <div className="flex items-center gap-2 text-[var(--bn-text-strong)] font-semibold text-xs">
                         <Terminal className="w-4 h-4 text-[var(--bn-accent)]" />
-                        <span>1. Instalar dependencias</span>
+                        <span>1. Instalar en local (opcional)</span>
                       </div>
                       <code className="block p-2 bg-[var(--bn-omnibox)] border border-[var(--bn-border)] rounded-lg text-[11px] font-mono text-[var(--bn-text)]">
-                        npm install -D electron electron-builder
+                        npm run electron:setup
                       </code>
                     </div>
 
                     <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl space-y-2">
                       <div className="flex items-center gap-2 text-[var(--bn-text-strong)] font-semibold text-xs">
                         <Code2 className="w-4 h-4 text-[var(--bn-info)]" />
-                        <span>2. Ejecutar en local</span>
+                        <span>2. Publicar en GitHub</span>
                       </div>
                       <code className="block p-2 bg-[var(--bn-omnibox)] border border-[var(--bn-border)] rounded-lg text-[11px] font-mono text-[var(--bn-text)]">
-                        npm run start
+                        git tag v{APP_VERSION} &amp;&amp; git push --tags
                       </code>
                     </div>
 
                     <div className="p-3 bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl space-y-2">
                       <div className="flex items-center gap-2 text-[var(--bn-text-strong)] font-semibold text-xs">
                         <Laptop className="w-4 h-4 text-[var(--bn-success)]" />
-                        <span>3. Compilar instalador</span>
+                        <span>3. Actualizar o quitar</span>
                       </div>
-                      <code className="block p-2 bg-[var(--bn-omnibox)] border border-[var(--bn-border)] rounded-lg text-[11px] font-mono text-[var(--bn-text)]">
-                        npm run build:win
-                      </code>
+                      <p className="text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
+                        Auto-actualización al detectar nueva versión en Releases y desinstalador limpio en Windows, macOS y Linux.
+                      </p>
                     </div>
                   </div>
 

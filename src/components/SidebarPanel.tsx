@@ -50,7 +50,7 @@ interface SidebarPanelProps {
   onRunConsoleCommand: (cmd: string) => void;
 }
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   activeView,
@@ -205,7 +205,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           initial={{ opacity: 0, x: slideX }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: slideX }}
-          transition={{ duration: 0.18, ease: LEO_EASE_OUT }}
+          transition={{ duration: 0.18, ease: FABI_EASE_OUT }}
           className={`w-80 bg-[var(--bn-surface)] ${
             position === 'right' ? 'border-l' : 'border-r'
           } border-[var(--bn-border)] flex flex-col h-full select-none z-20 text-[var(--bn-text)] text-xs shrink-0`}

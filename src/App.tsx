@@ -35,13 +35,30 @@ import { BookmarksBar } from './components/BookmarksBar';
 import { WebViewport, PageSecurityReport } from './components/WebViewport';
 import { CommandPalette } from './components/CommandPalette';
 import { ElectronExportModal } from './components/ElectronExportModal';
-import { FabiShieldModal } from './components/BraveShieldModal';
+import { FabiShieldModal } from './components/FabiShieldModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
-import { Plus, X, Pin, VolumeX, Columns, Lock, Globe, Check, Compass, RotateCcw } from 'lucide-react';
+import { QrCodeModal } from './components/QrCodeModal';
+import { TaskManagerModal } from './components/TaskManagerModal';
+import {
+  Plus,
+  X,
+  Pin,
+  VolumeX,
+  Columns,
+  Lock,
+  Globe,
+  Check,
+  Compass,
+  RotateCcw,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  Tag
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-const STORAGE_KEY_PREFIX = 'fabinav_v1_9_';
-const LEGACY_STORAGE_PREFIXES = ['fabinav_v1_8_', 'fabinav_v1_7_'];
+const STORAGE_KEY_PREFIX = 'fabinav_v1_10_';
+const LEGACY_STORAGE_PREFIXES = ['fabinav_v1_9_', 'fabinav_v1_8_', 'fabinav_v1_7_'];
 
 function loadStored<T>(key: string, fallback: T): T {
   try {
@@ -57,6 +74,23 @@ function loadStored<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function normalizeLoadedSettings(raw: BrowserSettings): BrowserSettings {
+  const themeMap: Record<string, BrowserSettings['theme']> = {
+    'brave-dark': 'fabi-dark',
+    'brave-midnight': 'fabi-midnight',
+    'brave-light': 'fabi-light'
+  };
+  const nextTheme = themeMap[raw.theme] || raw.theme || DEFAULT_SETTINGS.theme;
+  const nextEngine =
+    (raw.defaultSearchEngine as string) === 'brave' ? 'fabinav' : raw.defaultSearchEngine;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    theme: nextTheme,
+    defaultSearchEngine: nextEngine || 'fabinav'
+  };
 }
 
 export default function App() {
@@ -76,7 +110,7 @@ export default function App() {
 
   // Settings, Theme & Customization
   const [settings, setSettings] = useState<BrowserSettings>(() =>
-    loadStored('settings', DEFAULT_SETTINGS)
+    normalizeLoadedSettings(loadStored('settings', DEFAULT_SETTINGS))
   );
   const [shieldState, setShieldState] = useState<FabiShieldState>(() =>
     loadStored('shields', INITIAL_SHIELD_STATE)
@@ -124,11 +158,23 @@ export default function App() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [isTaskManagerOpen, setIsTaskManagerOpen] = useState(false);
+  const [isFindBarOpen, setIsFindBarOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findMatchStatus, setFindMatchStatus] = useState<string | null>(null);
+  const [customWindowTitle, setCustomWindowTitle] = useState<string>(() =>
+    loadStored('window_title', '')
+  );
+  const [isRenameWindowOpen, setIsRenameWindowOpen] = useState(false);
+  const [renameInput, setRenameInput] = useState('');
+  const [tabSearchSignal, setTabSearchSignal] = useState(0);
   const [windowMode, setWindowMode] = useState<'maximized' | 'restored' | 'minimized' | 'closed'>('maximized');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const omniboxRef = useRef<HTMLInputElement | null>(null);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
   const reportedPageKeysRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<number | null>(null);
 
@@ -157,6 +203,55 @@ export default function App() {
       }
     );
     return () => unsubscribe();
+  }, []);
+
+  // Listen to native Electron window state & auto-updater events (if running in desktop app)
+  useEffect(() => {
+    const bridge = window.fabinavDesktop;
+    if (!bridge?.isElectron) return;
+
+    const unsubWin = bridge.onWindowState?.((st) => {
+      setWindowMode(st.isMaximized ? 'maximized' : 'restored');
+    });
+
+    const unsubUpd = bridge.onUpdateStatus?.((status) => {
+      if (status.state === 'downloaded') {
+        showToast(
+          status.version
+            ? `FabiNav v${status.version} listo. Se instalará al cerrar.`
+            : 'Actualización lista para instalar al cerrar.'
+        );
+      }
+    });
+
+    return () => {
+      unsubWin?.();
+      unsubUpd?.();
+    };
+  }, [showToast]);
+
+  const handleMinimizeBrowserWindow = useCallback(() => {
+    if (window.fabinavDesktop?.isElectron) {
+      window.fabinavDesktop.minimizeWindow();
+      return;
+    }
+    setWindowMode('minimized');
+  }, []);
+
+  const handleToggleMaximizeBrowserWindow = useCallback(() => {
+    if (window.fabinavDesktop?.isElectron) {
+      window.fabinavDesktop.toggleMaximizeWindow();
+      return;
+    }
+    setWindowMode((prev) => (prev === 'maximized' ? 'restored' : 'maximized'));
+  }, []);
+
+  const handleCloseBrowserWindow = useCallback(() => {
+    if (window.fabinavDesktop?.isElectron) {
+      window.fabinavDesktop.closeWindow();
+      return;
+    }
+    setWindowMode('closed');
   }, []);
 
   const handleGoogleSignIn = async () => {
@@ -201,6 +296,7 @@ export default function App() {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}top_sites`, JSON.stringify(topSites));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}backup_meta`, JSON.stringify(backupMeta));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}notes`, JSON.stringify(sessionNotes));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}window_title`, JSON.stringify(customWindowTitle));
     } catch {
       // Ignore quota errors
     }
@@ -214,18 +310,25 @@ export default function App() {
     newTabCustomization,
     topSites,
     backupMeta,
-    sessionNotes
+    sessionNotes,
+    customWindowTitle
   ]);
 
-  // Apply FabiNav theme class
+  // Apply FabiNav theme class & document title
   useEffect(() => {
     document.body.className = `theme-${settings.theme}`;
-    if (settings.theme === 'brave-light') {
+    if (settings.theme === 'fabi-light' || (settings.theme as string) === 'brave-light') {
       document.documentElement.classList.remove('dark');
     } else {
       document.documentElement.classList.add('dark');
     }
   }, [settings.theme]);
+
+  useEffect(() => {
+    document.title = customWindowTitle.trim()
+      ? `${customWindowTitle.trim()} — FabiNav`
+      : 'FabiNav — Navegador de Privacidad y Velocidad';
+  }, [customWindowTitle]);
 
   // Sync browser Fullscreen state
   useEffect(() => {
@@ -282,8 +385,12 @@ export default function App() {
     let target = rawInput.trim();
     let upgradedHttps = false;
 
-    if (target.startsWith('brave://')) {
-      target = target.replace('brave://', 'fabinav://');
+    if (target.startsWith('fabinav://') === false && target.includes('://')) {
+      const colonIdx = target.indexOf('://');
+      const scheme = target.slice(0, colonIdx).toLowerCase();
+      if (scheme !== 'http' && scheme !== 'https') {
+        target = `fabinav://${target.slice(colonIdx + 3)}`;
+      }
     }
 
     if (
@@ -430,9 +537,27 @@ export default function App() {
   };
 
   const handleCloseTab = (tabId: string) => {
-    if (tabs.length <= 1) return;
-
     const target = tabs.find((t) => t.id === tabId);
+
+    // Si es la última pestaña abierta, cerramos el navegador completo (y preparamos nueva pestaña limpia por si se reabre)
+    if (tabs.length <= 1) {
+      if (target?.tabMode === 'private') {
+        fetch('/api/cookies?partition=private', { method: 'DELETE' }).catch(() => {});
+      }
+      const freshId = `tab-${Date.now()}`;
+      setSplitTabId(null);
+      setTabs([
+        {
+          ...INITIAL_TABS[0],
+          id: freshId,
+          createdAt: Date.now()
+        }
+      ]);
+      setActiveTabId(freshId);
+      handleCloseBrowserWindow();
+      return;
+    }
+
     if (target && target.tabMode !== 'private') {
       setClosedTabs((prev) => [
         {
@@ -826,6 +951,210 @@ export default function App() {
     appendLog('warn', `Comando no reconocido: "${cmd}". Escribe "help" para ver opciones.`, 'Consola');
   };
 
+  const handleOpenFindInPage = useCallback(() => {
+    setIsFindBarOpen(true);
+    setFindMatchStatus(null);
+    setTimeout(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    }, 30);
+  }, []);
+
+  const handleRunFind = (direction: 'next' | 'prev' = 'next') => {
+    const q = findQuery.trim();
+    if (!q) {
+      setFindMatchStatus(null);
+      return;
+    }
+    const winWithFind = window as unknown as {
+      find?: (
+        str: string,
+        caseSensitive?: boolean,
+        backwards?: boolean,
+        wrapAround?: boolean
+      ) => boolean;
+    };
+    if (typeof winWithFind.find === 'function') {
+      const found = winWithFind.find(q, false, direction === 'prev', true);
+      setFindMatchStatus(found ? 'Coincidencia encontrada' : 'Sin coincidencias en la vista');
+    } else {
+      setFindMatchStatus('Búsqueda no compatible en este visor');
+    }
+  };
+
+  const handleEditAction = async (action: 'cut' | 'copy' | 'paste') => {
+    if (action === 'copy') {
+      const selected = window.getSelection()?.toString() || '';
+      const textToCopy = selected || activeTab?.url || '';
+      if (textToCopy) {
+        try {
+          await navigator.clipboard.writeText(textToCopy);
+          showToast(selected ? 'Texto copiado al portapapeles' : 'Vínculo copiado al portapapeles');
+          return;
+        } catch {
+          document.execCommand('copy');
+        }
+      }
+      showToast('Nada seleccionado para copiar');
+      return;
+    }
+
+    if (action === 'cut') {
+      const ok = document.execCommand('cut');
+      showToast(ok ? 'Selección cortada' : 'Selecciona texto editable para cortar');
+      return;
+    }
+
+    if (action === 'paste') {
+      try {
+        const clip = await navigator.clipboard.readText();
+        if (!clip) {
+          showToast('El portapapeles está vacío');
+          return;
+        }
+        const activeEl = document.activeElement;
+        if (
+          activeEl instanceof HTMLInputElement ||
+          activeEl instanceof HTMLTextAreaElement
+        ) {
+          const start = activeEl.selectionStart ?? activeEl.value.length;
+          const end = activeEl.selectionEnd ?? activeEl.value.length;
+          const nextVal =
+            activeEl.value.slice(0, start) + clip + activeEl.value.slice(end);
+          activeEl.value = nextVal;
+          activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+          showToast('Pegado desde el portapapeles');
+        } else if (omniboxRef.current) {
+          omniboxRef.current.focus();
+          omniboxRef.current.value = clip;
+          showToast('Pegado en la barra de direcciones');
+        }
+      } catch {
+        showToast('Usa Ctrl+V para pegar desde el portapapeles');
+      }
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!activeTab?.url) return;
+    try {
+      await navigator.clipboard.writeText(activeTab.url);
+      showToast('Vínculo copiado al portapapeles');
+    } catch {
+      showToast('No se pudo acceder al portapapeles');
+    }
+  };
+
+  const handleSavePageAs = () => {
+    if (!activeTab) return;
+    const safeSlug =
+      (activeTab.title || 'pagina')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 40) || 'pagina';
+    const filename = `fabinav-${safeSlug}.html`;
+    const htmlSnapshot = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>${activeTab.title}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #14161b; color: #f1f3f5; padding: 32px; line-height: 1.6; }
+    .card { max-width: 720px; margin: 0 auto; background: #1d2027; border: 1px solid #303440; border-radius: 16px; padding: 24px; }
+    a { color: #ff6f4c; }
+    .meta { font-size: 13px; color: #9ea4b0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${activeTab.title}</h1>
+    <p class="meta">Guardado desde FabiNav v${APP_VERSION} · ${new Date().toLocaleString('es-ES')}</p>
+    <p>URL original: <a href="${activeTab.url}">${activeTab.url}</a></p>
+    <p class="meta">Escudos: ${shieldState.enabled ? 'Activos' : 'En pausa'} · Modo: ${
+      activeTab.tabMode === 'private' ? 'Privado' : 'Normal'
+    }</p>
+  </div>
+</body>
+</html>`;
+    const blob = new Blob([htmlSnapshot], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    handleRecordDownload(filename, `${(blob.size / 1024).toFixed(1)} KB`, activeTab.url);
+    showToast(`Página guardada: ${filename}`);
+  };
+
+  const handleCaptureView = () => {
+    if (!activeTab) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+    grad.addColorStop(0, '#14161b');
+    grad.addColorStop(1, '#1e222b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    // Header chrome preview
+    ctx.fillStyle = '#242731';
+    ctx.fillRect(48, 48, 1184, 64);
+    ctx.fillStyle = '#fb542b';
+    ctx.beginPath();
+    ctx.arc(84, 80, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillText('FabiNav — Captura de vista', 112, 87);
+
+    // Card body
+    ctx.fillStyle = '#181a20';
+    ctx.fillRect(48, 136, 1184, 536);
+    ctx.strokeStyle = '#333845';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(48, 136, 1184, 536);
+
+    ctx.fillStyle = '#f5f6f8';
+    ctx.font = 'bold 34px system-ui, sans-serif';
+    ctx.fillText((activeTab.title || 'Pestaña de FabiNav').slice(0, 56), 92, 230);
+
+    ctx.fillStyle = '#ff7d5c';
+    ctx.font = '20px monospace';
+    ctx.fillText(activeTab.url.slice(0, 82), 92, 280);
+
+    ctx.fillStyle = '#9fa6b4';
+    ctx.font = '18px system-ui, sans-serif';
+    ctx.fillText(
+      `Fecha: ${new Date().toLocaleString('es-ES')}   ·   Escudos: ${
+        shieldState.enabled ? 'Activos' : 'En pausa'
+      }   ·   Tema: ${settings.theme}`,
+      92,
+      344
+    );
+    ctx.fillText(
+      `Bloqueos de sesión: ${shieldState.trackersBlockedCount} rastreadores · ${shieldState.cookiesBlockedCount} cookies · ${shieldState.httpsUpgradesCount} HTTPS`,
+      92,
+      386
+    );
+
+    const pngUrl = canvas.toDataURL('image/png');
+    const filename = `fabinav-captura-${Date.now()}.png`;
+    const a = document.createElement('a');
+    a.href = pngUrl;
+    a.download = filename;
+    a.click();
+
+    handleRecordDownload(filename, '42.0 KB', activeTab.url);
+    showToast('Captura guardada como PNG');
+  };
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -835,9 +1164,24 @@ export default function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         handleNewTab('fabinav://newtab', 'private');
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setTabSearchSignal((n) => n + 1);
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleCaptureView();
       } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Delete') {
         e.preventDefault();
         handleClearBrowsingData();
+      } else if (e.shiftKey && e.key === 'Escape') {
+        e.preventDefault();
+        setIsTaskManagerOpen((v) => !v);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        handleOpenFindInPage();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSavePageAs();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
         e.preventDefault();
         handleNewTab();
@@ -881,7 +1225,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tabs, activeTabId, splitTabId, activeTab, closedTabs, settings.showSidebar]);
+  }, [tabs, activeTabId, splitTabId, activeTab, closedTabs, settings.showSidebar, settings.theme, shieldState]);
 
   // Command Palette Items
   const commands: CommandItem[] = [
@@ -955,6 +1299,29 @@ export default function App() {
       action: () => setIsElectronModalOpen(true)
     },
     {
+      id: 'cmd-find-page',
+      title: 'Buscar en la página actual',
+      subtitle: 'Localizar texto dentro de la pestaña activa',
+      shortcut: 'Ctrl+F',
+      category: 'Herramientas',
+      action: handleOpenFindInPage
+    },
+    {
+      id: 'cmd-qr-code',
+      title: 'Generar código QR de esta pestaña',
+      subtitle: 'Compartir URL activa mediante código QR escaneable',
+      category: 'Compartir',
+      action: () => setIsQrModalOpen(true)
+    },
+    {
+      id: 'cmd-task-manager',
+      title: 'Administrador de tareas',
+      subtitle: 'Pestañas activas, memoria JS y conexiones de sesión',
+      shortcut: 'Shift+Esc',
+      category: 'Herramientas',
+      action: () => setIsTaskManagerOpen(true)
+    },
+    {
       id: 'cmd-settings',
       title: 'Configuración de FabiNav',
       subtitle: 'Apariencia, barra lateral y buscador',
@@ -965,19 +1332,19 @@ export default function App() {
       id: 'cmd-theme-dark',
       title: 'Tema: FabiNav Oscuro',
       category: 'Apariencia',
-      action: () => handleUpdateSettings({ theme: 'brave-dark' })
+      action: () => handleUpdateSettings({ theme: 'fabi-dark' })
     },
     {
       id: 'cmd-theme-midnight',
       title: 'Tema: Noche Profunda',
       category: 'Apariencia',
-      action: () => handleUpdateSettings({ theme: 'brave-midnight' })
+      action: () => handleUpdateSettings({ theme: 'fabi-midnight' })
     },
     {
       id: 'cmd-theme-light',
       title: 'Tema: FabiNav Claro',
       category: 'Apariencia',
-      action: () => handleUpdateSettings({ theme: 'brave-light' })
+      action: () => handleUpdateSettings({ theme: 'fabi-light' })
     }
   ];
 
@@ -1069,7 +1436,7 @@ export default function App() {
         >
           <span
             className="w-7 h-7 rounded-xl flex items-center justify-center text-white"
-            style={{ background: 'var(--leo-gradient-brand)' }}
+            style={{ background: 'var(--fabi-gradient-brand)' }}
           >
             <Compass className="w-4 h-4" />
           </span>
@@ -1090,7 +1457,7 @@ export default function App() {
         <div className="max-w-sm w-full p-6 rounded-2xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-center space-y-4">
           <div
             className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center text-white shadow"
-            style={{ background: 'var(--leo-gradient-brand)' }}
+            style={{ background: 'var(--fabi-gradient-brand)' }}
           >
             <Compass className="w-6 h-6" />
           </div>
@@ -1137,6 +1504,8 @@ export default function App() {
         closedTabs={closedTabs}
         useVerticalTabs={settings.useVerticalTabs}
         isMaximized={windowMode === 'maximized'}
+        windowTitle={customWindowTitle}
+        openTabSearchSignal={tabSearchSignal}
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
         onCloseOtherTabs={handleCloseOtherTabs}
@@ -1150,11 +1519,9 @@ export default function App() {
         onToggleVerticalTabs={() =>
           handleUpdateSettings({ useVerticalTabs: !settings.useVerticalTabs })
         }
-        onMinimizeWindow={() => setWindowMode('minimized')}
-        onToggleMaximizeWindow={() =>
-          setWindowMode((prev) => (prev === 'maximized' ? 'restored' : 'maximized'))
-        }
-        onCloseWindow={() => setWindowMode('closed')}
+        onMinimizeWindow={handleMinimizeBrowserWindow}
+        onToggleMaximizeWindow={handleToggleMaximizeBrowserWindow}
+        onCloseWindow={handleCloseBrowserWindow}
       />
 
       {/* 2. FabiNav Main Toolbar + Omnibox + Menu Panel */}
@@ -1163,6 +1530,7 @@ export default function App() {
         googleUser={googleUser}
         bookmarks={bookmarks}
         historyEntries={historyEntries}
+        closedTabs={closedTabs}
         settings={settings}
         omniboxRef={omniboxRef}
         onNavigate={(url) => handleNavigate(activeTab.id, url)}
@@ -1205,15 +1573,27 @@ export default function App() {
         onNewTab={() => handleNewTab()}
         onNewWindow={handleNewWindow}
         onNewPrivateTab={() => handleNewTab('fabinav://newtab', 'private')}
-        onReopenClosedTab={() => handleReopenClosedTab()}
+        onReopenClosedTab={handleReopenClosedTab}
         canReopenClosedTab={closedTabs.length > 0}
         onToggleBookmarksBar={() =>
           handleUpdateSettings({ showBookmarksBar: !settings.showBookmarksBar })
         }
         onClearBrowsingData={handleClearBrowsingData}
+        onOpenFindInPage={handleOpenFindInPage}
+        onEditAction={handleEditAction}
+        onSavePageAs={handleSavePageAs}
+        onCaptureView={handleCaptureView}
+        onCopyLink={handleCopyLink}
+        onOpenQrModal={() => setIsQrModalOpen(true)}
+        onOpenTabSearch={() => setTabSearchSignal((n) => n + 1)}
+        onOpenRenameWindow={() => {
+          setRenameInput(customWindowTitle);
+          setIsRenameWindowOpen(true);
+        }}
+        onOpenTaskManager={() => setIsTaskManagerOpen(true)}
         isFullscreen={isFullscreen}
         onToggleFullscreen={handleToggleFullscreen}
-        onCloseWindow={() => setWindowMode('closed')}
+        onCloseWindow={handleCloseBrowserWindow}
         isSplitActive={!!splitTabId}
         shieldCount={
           shieldState.trackersBlockedCount +
@@ -1235,6 +1615,70 @@ export default function App() {
 
       {/* 4. Main Workspace */}
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Floating Find-in-Page Bar (Ctrl+F) */}
+        <AnimatePresence>
+          {isFindBarOpen && (
+            <motion.form
+              initial={{ opacity: 0, y: -8, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.97 }}
+              transition={{ duration: 0.14, ease: [0, 0, 0.58, 1] }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleRunFind('next');
+              }}
+              className="absolute top-2.5 right-4 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-xs"
+            >
+              <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+              <input
+                ref={findInputRef}
+                type="text"
+                value={findQuery}
+                onChange={(e) => {
+                  setFindQuery(e.target.value);
+                  setFindMatchStatus(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsFindBarOpen(false);
+                  }
+                }}
+                placeholder="Buscar en la página..."
+                className="w-44 bg-transparent text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none text-xs select-text"
+              />
+              {findMatchStatus && (
+                <span className="text-[10px] text-[var(--bn-text-muted)] whitespace-nowrap px-1">
+                  {findMatchStatus}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => handleRunFind('prev')}
+                title="Anterior"
+                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRunFind('next')}
+                title="Siguiente"
+                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFindBarOpen(false)}
+                title="Cerrar búsqueda (Esc)"
+                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.form>
+          )}
+        </AnimatePresence>
+
         {/* Left FabiNav Sidebar if configured on left */}
         {settings.sidebarPosition === 'left' && renderSidebarStripAndPanel()}
 
@@ -1249,7 +1693,7 @@ export default function App() {
                 type="button"
                 onClick={() => handleNewTab()}
                 title="Nueva pestaña (Ctrl+T)"
-                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-colors leo-transition-xs"
+                className="p-1 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-colors fabi-transition-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -1261,7 +1705,7 @@ export default function App() {
                   <div
                     key={tab.id}
                     onClick={() => handleSelectTab(tab.id)}
-                    className={`group px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors leo-transition-s ${
+                    className={`group px-2.5 py-2 rounded-xl flex items-center justify-between gap-2 cursor-pointer transition-colors fabi-transition-s ${
                       isActive
                         ? 'bg-[var(--bn-toolbar)] text-[var(--bn-text-strong)] font-medium shadow-xs'
                         : 'text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text)]'
@@ -1276,7 +1720,7 @@ export default function App() {
                       <span className="truncate">{tab.title || 'Nueva pestaña'}</span>
                     </div>
 
-                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity leo-transition-xs">
+                    <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity fabi-transition-xs">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1310,14 +1754,14 @@ export default function App() {
                       >
                         <Columns className="w-3 h-3" />
                       </button>
-                      {!tab.isPinned && tabs.length > 1 && (
+                      {(!tab.isPinned || tabs.length === 1) && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleCloseTab(tab.id);
                           }}
-                          title="Cerrar"
+                          title={tabs.length === 1 ? 'Cerrar pestaña y salir' : 'Cerrar'}
                           className="p-0.5 rounded hover:text-[var(--bn-danger)]"
                         >
                           <X className="w-3 h-3" />
@@ -1414,6 +1858,114 @@ export default function App() {
         onClose={() => setIsElectronModalOpen(false)}
         onRecordDownload={handleRecordDownload}
       />
+
+      {/* QR Code Share Modal */}
+      <QrCodeModal
+        isOpen={isQrModalOpen}
+        url={activeTab?.url || 'fabinav://newtab'}
+        title={activeTab?.title || 'FabiNav'}
+        onClose={() => setIsQrModalOpen(false)}
+        onRecordDownload={handleRecordDownload}
+      />
+
+      {/* Task Manager Modal */}
+      <TaskManagerModal
+        isOpen={isTaskManagerOpen}
+        tabs={tabs}
+        activeTabId={activeTabId}
+        shieldState={shieldState}
+        networkCount={networkReqs.length}
+        onSelectTab={(id) => {
+          handleSelectTab(id);
+          setIsTaskManagerOpen(false);
+        }}
+        onCloseTab={handleCloseTab}
+        onClose={() => setIsTaskManagerOpen(false)}
+      />
+
+      {/* Rename Window Modal */}
+      <AnimatePresence>
+        {isRenameWindowOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14, ease: [0, 0, 0.58, 1] }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4"
+            onClick={() => setIsRenameWindowOpen(false)}
+          >
+            <motion.form
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.16, ease: [0, 0, 0.58, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              onSubmit={(e) => {
+                e.preventDefault();
+                setCustomWindowTitle(renameInput.trim());
+                setIsRenameWindowOpen(false);
+                showToast(
+                  renameInput.trim()
+                    ? `Ventana renombrada a "${renameInput.trim()}"`
+                    : 'Nombre personalizado de ventana eliminado'
+                );
+              }}
+              className="w-full max-w-sm bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl p-5 space-y-4 text-xs"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-sm text-[var(--bn-text-strong)]">
+                  <Tag className="w-4 h-4 text-[var(--bn-accent)]" />
+                  <span>Nombrar la ventana</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRenameWindowOpen(false)}
+                  className="p-1 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <input
+                type="text"
+                autoFocus
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                placeholder="Ej. Trabajo, Investigación, Personal..."
+                maxLength={32}
+                className="w-full px-3.5 py-2 rounded-xl bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none focus:border-[var(--bn-accent)] select-text"
+              />
+              <div className="flex items-center justify-end gap-2">
+                {customWindowTitle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomWindowTitle('');
+                      setIsRenameWindowOpen(false);
+                      showToast('Nombre personalizado eliminado');
+                    }}
+                    className="px-3.5 py-1.5 rounded-full text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)] transition-colors"
+                  >
+                    Restablecer
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsRenameWindowOpen(false)}
+                  className="px-4 py-1.5 rounded-full border border-[var(--bn-border)] hover:bg-[var(--bn-hover)] text-[var(--bn-text)] transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium transition-colors"
+                >
+                  Guardar
+                </button>
+              </div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Non-intrusive Toast Feedback */}
       <AnimatePresence>

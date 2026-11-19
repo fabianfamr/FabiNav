@@ -18,7 +18,7 @@ import {
   FabiShieldState,
   TopSiteItem
 } from '../types';
-import { LeoSwitch } from './LeoSwitch';
+import { FabiSwitch } from './FabiSwitch';
 
 interface FabiNewTabViewProps {
   onNavigate: (url: string) => void;
@@ -61,7 +61,7 @@ function getTileTint(title: string): string {
   return SITE_TILE_TINTS[h % SITE_TILE_TINTS.length];
 }
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   onNavigate,
@@ -119,7 +119,9 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   }, [currentWallpaper.url]);
 
   const normalizedEngine =
-    settings.defaultSearchEngine === 'brave' ? 'fabinav' : settings.defaultSearchEngine;
+    (settings.defaultSearchEngine as string) === 'brave'
+      ? 'fabinav'
+      : settings.defaultSearchEngine;
   const currentEngineLabel =
     SEARCH_ENGINES.find((e) => e.id === normalizedEngine)?.label || 'FabiNav Search';
 
@@ -175,7 +177,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               initial={{ opacity: 0, scale: 1.02 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.35, ease: LEO_EASE_OUT }}
+              transition={{ duration: 0.35, ease: FABI_EASE_OUT }}
               className="w-full h-full object-cover brightness-[0.74]"
             />
           )}
@@ -190,7 +192,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             type="button"
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.2, ease: FABI_EASE_OUT }}
             onClick={onOpenShieldModal}
             title="Ver configuración de Escudos de FabiNav"
             className="flex flex-wrap items-center gap-5 sm:gap-7 text-left px-4 py-3 rounded-2xl bg-black/40 hover:bg-black/55 backdrop-blur-md border border-white/12 transition-colors"
@@ -238,7 +240,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           <motion.div
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.2, ease: FABI_EASE_OUT }}
             className="text-right shrink-0"
           >
             <div className="text-4xl sm:text-5xl font-light tracking-tight text-white tabular-nums leading-none drop-shadow">
@@ -255,11 +257,11 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           onSubmit={handleSearchSubmit}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.22, ease: LEO_EASE_OUT }}
+          transition={{ duration: 0.22, ease: FABI_EASE_OUT }}
           className="w-full mb-8 relative"
           ref={engineMenuRef}
         >
-          <div className="relative flex items-center h-12 rounded-full bg-[#1b1d23]/90 hover:bg-[#22252c]/95 focus-within:bg-[#17191e] backdrop-blur-xl border border-white/15 focus-within:border-[var(--bn-accent)] shadow-2xl transition-all leo-transition-s pl-4 pr-1.5 gap-2">
+          <div className="relative flex items-center h-12 rounded-full bg-[#1b1d23]/90 hover:bg-[#22252c]/95 focus-within:bg-[#17191e] backdrop-blur-xl border border-white/15 focus-within:border-[var(--bn-accent)] shadow-2xl transition-all fabi-transition-s pl-4 pr-1.5 gap-2">
             <Search className="w-4 h-4 text-white/65 shrink-0" />
             <input
               type="text"
@@ -305,7 +307,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 initial={{ opacity: 0, y: -6, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
-                transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+                transition={{ duration: 0.14, ease: FABI_EASE_OUT }}
                 className="absolute right-12 top-14 w-48 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl py-1.5 z-50 text-xs text-[var(--bn-text)]"
               >
                 <div className="px-3.5 py-1.5 text-[11px] text-[var(--bn-text-muted)] border-b border-[var(--bn-border)]">
@@ -344,14 +346,14 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 key={site.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, delay: Math.min(idx * 0.03, 0.18), ease: LEO_EASE_OUT }}
+                transition={{ duration: 0.2, delay: Math.min(idx * 0.03, 0.18), ease: FABI_EASE_OUT }}
                 className="group relative flex flex-col items-center w-[76px]"
               >
                 <button
                   type="button"
                   onClick={() => onNavigate(site.url)}
                   title={`${site.title} · ${site.url}`}
-                  className="w-13 h-13 rounded-2xl bg-black/45 hover:bg-black/65 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-white/15 hover:border-white/30 flex items-center justify-center transition-all leo-transition-s shadow-lg"
+                  className="w-13 h-13 rounded-2xl bg-black/45 hover:bg-black/65 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-white/15 hover:border-white/30 flex items-center justify-center transition-all fabi-transition-s shadow-lg"
                 >
                   <span
                     className={`w-8 h-8 rounded-xl border font-semibold text-sm flex items-center justify-center ${getTileTint(
@@ -384,7 +386,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 type="button"
                 onClick={() => setShowAddSiteModal(true)}
                 title="Añadir sitio"
-                className="w-13 h-13 rounded-2xl bg-black/30 hover:bg-black/50 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-dashed border-white/30 hover:border-white/55 flex items-center justify-center text-white/80 hover:text-white transition-all leo-transition-s"
+                className="w-13 h-13 rounded-2xl bg-black/30 hover:bg-black/50 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-dashed border-white/30 hover:border-white/55 flex items-center justify-center text-white/80 hover:text-white transition-all fabi-transition-s"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -436,7 +438,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.14, ease: FABI_EASE_OUT }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
             onClick={() => setShowAddSiteModal(false)}
           >
@@ -444,7 +446,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               initial={{ opacity: 0, y: 10, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+              transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
               onSubmit={handleAddSiteSubmit}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-sm bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl p-5 shadow-2xl text-[var(--bn-text)] space-y-4"
@@ -517,7 +519,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.14, ease: FABI_EASE_OUT }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
             onClick={() => setShowCustomizeModal(false)}
           >
@@ -525,7 +527,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               initial={{ opacity: 0, y: 10, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+              transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-md bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl p-5 shadow-2xl text-[var(--bn-text)] space-y-4"
             >
@@ -545,7 +547,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               <div className="space-y-3 text-xs">
                 <div className="flex items-center justify-between py-1">
                   <span>Mostrar estadísticas de privacidad</span>
-                  <LeoSwitch
+                  <FabiSwitch
                     checked={customization.showStats}
                     onChange={(v) => onUpdateCustomization({ showStats: v })}
                     ariaLabel="Mostrar estadísticas de privacidad"
@@ -554,7 +556,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
 
                 <div className="flex items-center justify-between py-1">
                   <span>Mostrar sitios principales</span>
-                  <LeoSwitch
+                  <FabiSwitch
                     checked={customization.showTopSites}
                     onChange={(v) => onUpdateCustomization({ showTopSites: v })}
                     ariaLabel="Mostrar sitios principales"
@@ -563,7 +565,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
 
                 <div className="flex items-center justify-between py-1">
                   <span>Mostrar reloj y fecha</span>
-                  <LeoSwitch
+                  <FabiSwitch
                     checked={customization.showClock}
                     onChange={(v) => onUpdateCustomization({ showClock: v })}
                     ariaLabel="Mostrar reloj y fecha"

@@ -12,10 +12,14 @@ import { GoogleUserProfile } from '../types';
 
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+auth.languageCode = 'es';
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
 provider.addScope('https://www.googleapis.com/auth/userinfo.email');
+provider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 let isSigningIn = false;
 // Token guardado únicamente en memoria (nunca en localStorage/sessionStorage)

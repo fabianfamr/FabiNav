@@ -1,0 +1,72 @@
+name: Build & Publish FabiNav Electron
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publicar como Release en GitHub (true/false)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build FabiNav (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install Electron desktop toolchain
+        run: npm run electron:setup
+
+      - name: Build frontend, bundle backend & generate icons
+        run: npm run electron:prepare
+
+      - name: Package & Publish to GitHub Releases (tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --config electron-builder.yml --publish always
+
+      - name: Package & Create Release (manual workflow_dispatch)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') && inputs.publish_release == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --config electron-builder.yml --publish always
+
+      - name: Package locally without publishing
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') && inputs.publish_release != 'true' }}
+        run: npx electron-builder --config electron-builder.yml --publish never
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabinav-${{ runner.os }}
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/*.yml
+          if-no-files-found: ignore

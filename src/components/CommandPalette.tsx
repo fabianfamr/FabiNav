@@ -8,7 +8,7 @@ interface CommandPaletteProps {
   commands: CommandItem[];
 }
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
   isOpen,
@@ -72,7 +72,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.14, ease: LEO_EASE_OUT }}
+          transition={{ duration: 0.14, ease: FABI_EASE_OUT }}
           className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-start justify-center pt-16 p-4"
           onClick={onClose}
         >
@@ -81,7 +81,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             initial={{ opacity: 0, y: -10, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.97 }}
-            transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           >

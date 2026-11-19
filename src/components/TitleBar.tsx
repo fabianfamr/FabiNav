@@ -41,12 +41,25 @@ import {
   Wrench,
   StickyNote,
   ZoomIn,
-  AppWindow
+  AppWindow,
+  Scissors,
+  Copy,
+  Clipboard,
+  FileDown,
+  Camera,
+  Link2,
+  QrCode,
+  Activity,
+  Tag,
+  Check,
+  PanelTop,
+  Command
 } from 'lucide-react';
 import {
   WebTab,
   Bookmark,
   HistoryEntry,
+  ClosedTabRecord,
   BrowserSettings,
   GoogleUserProfile,
   TlsInspectionResult,
@@ -58,6 +71,7 @@ interface TitleBarProps {
   googleUser: GoogleUserProfile | null;
   bookmarks: Bookmark[];
   historyEntries: HistoryEntry[];
+  closedTabs: ClosedTabRecord[];
   settings: BrowserSettings;
   omniboxRef?: React.RefObject<HTMLInputElement | null>;
   onNavigate: (url: string) => void;
@@ -79,10 +93,19 @@ interface TitleBarProps {
   onNewTab: () => void;
   onNewWindow: () => void;
   onNewPrivateTab: () => void;
-  onReopenClosedTab: () => void;
+  onReopenClosedTab: (recordId?: string) => void;
   canReopenClosedTab: boolean;
   onToggleBookmarksBar: () => void;
   onClearBrowsingData: () => void;
+  onOpenFindInPage: () => void;
+  onEditAction: (action: 'cut' | 'copy' | 'paste') => void;
+  onSavePageAs: () => void;
+  onCaptureView: () => void;
+  onCopyLink: () => void;
+  onOpenQrModal: () => void;
+  onOpenTabSearch: () => void;
+  onOpenRenameWindow: () => void;
+  onOpenTaskManager: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onCloseWindow: () => void;
@@ -104,11 +127,20 @@ const INTERNAL_SUGGESTIONS = [
 const ZOOM_STEPS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200];
 const EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
+type MenuSubmenuId =
+  | 'history'
+  | 'bookmarks'
+  | 'findEdit'
+  | 'saveShare'
+  | 'moreTools'
+  | 'help';
+
 export const TitleBar: React.FC<TitleBarProps> = ({
   currentTab,
   googleUser,
   bookmarks,
   historyEntries,
+  closedTabs,
   settings,
   omniboxRef,
   onNavigate,
@@ -134,6 +166,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   canReopenClosedTab,
   onToggleBookmarksBar,
   onClearBrowsingData,
+  onOpenFindInPage,
+  onEditAction,
+  onSavePageAs,
+  onCaptureView,
+  onCopyLink,
+  onOpenQrModal,
+  onOpenTabSearch,
+  onOpenRenameWindow,
+  onOpenTaskManager,
   isFullscreen,
   onToggleFullscreen,
   onCloseWindow,
@@ -144,7 +185,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [inputUrl, setInputUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [showMainMenu, setShowMainMenu] = useState(false);
-  const [showMoreTools, setShowMoreTools] = useState(false);
+  const [activeSubmenu, setActiveSubmenu] = useState<MenuSubmenuId | null>(null);
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
   const [tlsInfo, setTlsInfo] = useState<TlsInspectionResult | null>(null);
   const [siteCookies, setSiteCookies] = useState<StoredCookieItem[]>([]);
@@ -152,6 +193,24 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const menuRef = useRef<HTMLDivElement>(null);
   const securityRef = useRef<HTMLDivElement>(null);
+  const submenuCloseTimer = useRef<number | null>(null);
+
+  const openSubmenu = (id: MenuSubmenuId | null) => {
+    if (submenuCloseTimer.current) {
+      window.clearTimeout(submenuCloseTimer.current);
+      submenuCloseTimer.current = null;
+    }
+    setActiveSubmenu(id);
+  };
+
+  const scheduleCloseSubmenu = () => {
+    if (submenuCloseTimer.current) {
+      window.clearTimeout(submenuCloseTimer.current);
+    }
+    submenuCloseTimer.current = window.setTimeout(() => {
+      setActiveSubmenu(null);
+    }, 160);
+  };
 
   useEffect(() => {
     if (currentTab) {
@@ -170,7 +229,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowMainMenu(false);
-        setShowMoreTools(false);
+        setActiveSubmenu(null);
       }
       if (securityRef.current && !securityRef.current.contains(e.target as Node)) {
         setShowSecurityPopover(false);
@@ -179,7 +238,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowMainMenu(false);
-        setShowMoreTools(false);
+        setActiveSubmenu(null);
         setShowSecurityPopover(false);
       }
     };
@@ -188,6 +247,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKey);
+      if (submenuCloseTimer.current) {
+        window.clearTimeout(submenuCloseTimer.current);
+      }
     };
   }, []);
 
@@ -347,7 +409,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           onClick={onGoBack}
           disabled={!currentTab?.canGoBack}
           title="Ir atrás (Alt+Izquierda)"
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent transition-all leo-transition-xs"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent transition-all fabi-transition-xs"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -356,7 +418,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           onClick={onGoForward}
           disabled={!currentTab?.canGoForward}
           title="Ir adelante (Alt+Derecha)"
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent transition-all leo-transition-xs"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent transition-all fabi-transition-xs"
         >
           <ArrowRight className="w-4 h-4" />
         </button>
@@ -364,7 +426,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onReload}
           title="Volver a cargar esta página (Ctrl+R)"
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs"
         >
           <RotateCw
             className={`w-3.5 h-3.5 ${
@@ -377,7 +439,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             type="button"
             onClick={onGoHome}
             title="Abrir página principal"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs"
           >
             <Home className="w-4 h-4" />
           </button>
@@ -390,7 +452,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               ? 'Quitar de marcadores'
               : 'Añadir esta pestaña a marcadores'
           }
-          className={`w-8 h-8 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs ${
+          className={`w-8 h-8 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs ${
             currentTab?.isBookmarked
               ? 'text-[var(--bn-accent)]'
               : 'text-[var(--bn-text)] hover:text-[var(--bn-text-strong)]'
@@ -404,7 +466,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       <div className="flex-1 max-w-4xl mx-auto flex items-center relative" ref={securityRef}>
         <form
           onSubmit={handleSubmit}
-          className={`flex-1 flex items-center h-[34px] pl-2 pr-1.5 rounded-full border transition-all leo-transition-s ${
+          className={`flex-1 flex items-center h-[34px] pl-2 pr-1.5 rounded-full border transition-all fabi-transition-s ${
             isFocused
               ? 'bg-[var(--bn-omnibox-focus)] border-[var(--bn-interactive)] ring-2 ring-[var(--bn-interactive)]/30 shadow-sm'
               : 'bg-[var(--bn-omnibox)] border-transparent hover:border-[var(--bn-border-strong)]'
@@ -724,7 +786,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onToggleSplitMode}
           title="Vista dividida (Ctrl+\)"
-          className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
+          className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
             isSplitActive
               ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
               : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
@@ -737,7 +799,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onToggleSidebar}
           title={settings.showSidebar ? 'Ocultar barra lateral' : 'Mostrar barra lateral'}
-          className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
+          className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
             settings.showSidebar
               ? 'text-[var(--bn-text-strong)] bg-[var(--bn-hover)]/65'
               : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
@@ -754,7 +816,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               ? `${googleUser.displayName} (${googleUser.email})`
               : 'Iniciar sesión con Google o respaldo local'
           }
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all leo-transition-xs"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs"
         >
           {googleUser?.photoUrl ? (
             <img
@@ -772,16 +834,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           )}
         </button>
 
-        {/* FabiNav Main Desktop Menu Panel */}
+        {/* FabiNav Main Desktop Menu Panel with Cascading Left Flyouts */}
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             onClick={() => {
               setShowMainMenu((v) => !v);
-              setShowMoreTools(false);
+              setActiveSubmenu(null);
             }}
             title="Personaliza y controla FabiNav"
-            className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all leo-transition-xs ${
+            className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
               showMainMenu
                 ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
                 : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
@@ -797,11 +859,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
                 transition={{ duration: 0.14, ease: EASE_OUT }}
-                className="absolute right-0 top-10 w-[320px] max-h-[calc(100vh-76px)] overflow-y-auto bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[12px] py-1.5 text-[var(--bn-text)] rounded-xl origin-top-right"
+                onMouseLeave={scheduleCloseSubmenu}
+                className="absolute right-0 top-10 w-[316px] overflow-visible bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[12px] py-1.5 text-[var(--bn-text)] rounded-xl origin-top-right"
               >
                 {/* Section 1: Tabs & Windows */}
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onNewTab();
                     setShowMainMenu(false);
@@ -817,6 +881,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onNewWindow();
                     setShowMainMenu(false);
@@ -832,6 +897,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onNewPrivateTab();
                     setShowMainMenu(false);
@@ -848,6 +914,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 {canReopenClosedTab && (
                   <button
                     type="button"
+                    onMouseEnter={() => openSubmenu(null)}
                     onClick={() => {
                       onReopenClosedTab();
                       setShowMainMenu(false);
@@ -864,8 +931,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
-                {/* Section 2: Segmented Sidebar Control (Activada | Auto | Desactivada) */}
-                <div className="px-3.5 py-1.5 flex items-center justify-between gap-2">
+                {/* Section 2: Segmented Sidebar Control */}
+                <div
+                  onMouseEnter={() => openSubmenu(null)}
+                  className="px-3.5 py-1.5 flex items-center justify-between gap-2"
+                >
                   <span className="flex items-center gap-2.5 text-[var(--bn-text)] shrink-0">
                     <PanelLeft className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Barra lateral</span>
@@ -902,9 +972,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
-                {/* Section 3: Privacy, History, Bookmarks, Downloads */}
+                {/* Section 3: Shields, History >, Bookmarks >, Downloads, Clear Data */}
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onNavigate('fabinav://shields');
                     setShowMainMenu(false);
@@ -915,41 +986,210 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     <Cookie className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
                     <span>Escudos, Cookies y TLS</span>
                   </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNavigate('fabinav://history');
-                    setShowMainMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                {/* Cascading Row: Historial > */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => openSubmenu('history')}
                 >
-                  <span className="flex items-center gap-3">
-                    <History className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Historial</span>
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openSubmenu(activeSubmenu === 'history' ? null : 'history')}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
+                      activeSubmenu === 'history'
+                        ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                        : 'hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <History className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                      <span>Historial</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNavigate('fabinav://bookmarks');
-                    setShowMainMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                  {activeSubmenu === 'history' && (
+                    <div
+                      onMouseEnter={() => openSubmenu('history')}
+                      className="sm:right-[calc(100%+6px)] right-2 top-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNavigate('fabinav://history');
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <History className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Historial completo</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+H</span>
+                      </button>
+
+                      {closedTabs.length > 0 && (
+                        <>
+                          <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+                          <div className="px-3.5 py-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
+                            Cerradas recientemente
+                          </div>
+                          {closedTabs.slice(0, 4).map((ct) => (
+                            <button
+                              key={ct.id}
+                              type="button"
+                              onClick={() => {
+                                onReopenClosedTab(ct.id);
+                                setShowMainMenu(false);
+                                setActiveSubmenu(null);
+                              }}
+                              className="w-full text-left px-3.5 py-1.5 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                            >
+                              <RotateCcw className="w-3 h-3 text-[var(--bn-text-muted)] shrink-0" />
+                              <span className="truncate">{ct.title}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+
+                      {historyEntries.length > 0 && (
+                        <>
+                          <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+                          <div className="px-3.5 py-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
+                            Visitados recientemente
+                          </div>
+                          {historyEntries.slice(0, 5).map((entry) => (
+                            <button
+                              key={entry.id}
+                              type="button"
+                              onClick={() => {
+                                onNavigate(entry.url);
+                                setShowMainMenu(false);
+                                setActiveSubmenu(null);
+                              }}
+                              className="w-full text-left px-3.5 py-1.5 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between gap-2 transition-colors"
+                            >
+                              <span className="flex items-center gap-2.5 min-w-0">
+                                <Globe className="w-3 h-3 text-[var(--bn-text-muted)] shrink-0" />
+                                <span className="truncate">{entry.title}</span>
+                              </span>
+                              <span className="text-[10px] text-[var(--bn-text-muted)] shrink-0 tabular-nums">
+                                {entry.timeFormatted}
+                              </span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Cascading Row: Favoritos y listas > */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => openSubmenu('bookmarks')}
                 >
-                  <span className="flex items-center gap-3">
-                    <BookmarkIcon className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Favoritos y listas</span>
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openSubmenu(activeSubmenu === 'bookmarks' ? null : 'bookmarks')}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
+                      activeSubmenu === 'bookmarks'
+                        ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                        : 'hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <BookmarkIcon className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                      <span>Favoritos y listas</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                  </button>
+
+                  {activeSubmenu === 'bookmarks' && (
+                    <div
+                      onMouseEnter={() => openSubmenu('bookmarks')}
+                      className="sm:right-[calc(100%+6px)] right-2 top-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNavigate('fabinav://bookmarks');
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <BookmarkIcon className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                        <span>Administrador de marcadores</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onToggleBookmarksBar();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <PanelTop className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Mostrar barra de marcadores</span>
+                        </span>
+                        {settings.showBookmarksBar && (
+                          <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onToggleBookmark();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <Star className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        <span>
+                          {currentTab?.isBookmarked
+                            ? 'Quitar pestaña de marcadores'
+                            : 'Añadir esta pestaña a marcadores'}
+                        </span>
+                      </button>
+
+                      {bookmarks.length > 0 && (
+                        <>
+                          <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+                          <div className="px-3.5 py-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
+                            Marcadores guardados ({bookmarks.length})
+                          </div>
+                          {bookmarks.slice(0, 6).map((bm) => (
+                            <button
+                              key={bm.id}
+                              type="button"
+                              onClick={() => {
+                                onNavigate(bm.url);
+                                setShowMainMenu(false);
+                                setActiveSubmenu(null);
+                              }}
+                              className="w-full text-left px-3.5 py-1.5 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                            >
+                              <Globe className="w-3 h-3 text-[var(--bn-text-muted)] shrink-0" />
+                              <span className="truncate">{bm.title}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onNavigate('fabinav://downloads');
                     setShowMainMenu(false);
@@ -965,23 +1205,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    onToggleBookmarksBar();
-                    setShowMainMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
-                >
-                  <span className="flex items-center gap-3">
-                    <Star className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Barra de marcadores</span>
-                  </span>
-                  <span className="text-[11px] font-medium text-[var(--bn-text-muted)]">
-                    {settings.showBookmarksBar ? 'Visible' : 'Oculta'}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onClearBrowsingData();
                     setShowMainMenu(false);
@@ -998,7 +1222,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
                 {/* Section 4: Zoom [ - 100% + ] | Fullscreen */}
-                <div className="px-3.5 py-1.5 flex items-center justify-between gap-2">
+                <div
+                  onMouseEnter={() => openSubmenu(null)}
+                  className="px-3.5 py-1.5 flex items-center justify-between gap-2"
+                >
                   <span className="flex items-center gap-3 text-[var(--bn-text)]">
                     <ZoomIn className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                     <span>Zoom</span>
@@ -1056,9 +1283,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
-                {/* Section 5: Print, Command Search, Split View, More Tools */}
+                {/* Section 5: Print, Find & Edit >, Save & Share >, More Tools > */}
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     setShowMainMenu(false);
                     window.print();
@@ -1072,74 +1300,317 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+P</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenCommandPalette();
-                    setShowMainMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                {/* Cascading Row: Buscar y editar > */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => openSubmenu('findEdit')}
                 >
-                  <span className="flex items-center gap-3">
-                    <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Buscar y comandos</span>
-                  </span>
-                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+K</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleSplitMode();
-                    setShowMainMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
-                >
-                  <span className="flex items-center gap-3">
-                    <Columns className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>{isSplitActive ? 'Cerrar vista dividida' : 'Vista dividida'}</span>
-                  </span>
-                  <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+\</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowMoreTools((v) => !v)}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
-                >
-                  <span className="flex items-center gap-3">
-                    <Wrench className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Más herramientas</span>
-                  </span>
-                  <ChevronRight
-                    className={`w-3.5 h-3.5 text-[var(--bn-text-muted)] transition-transform ${
-                      showMoreTools ? 'rotate-90' : ''
+                  <button
+                    type="button"
+                    onClick={() => openSubmenu(activeSubmenu === 'findEdit' ? null : 'findEdit')}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
+                      activeSubmenu === 'findEdit'
+                        ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                        : 'hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
                     }`}
-                  />
-                </button>
+                  >
+                    <span className="flex items-center gap-3">
+                      <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                      <span>Buscar y editar</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                  </button>
 
-                <AnimatePresence initial={false}>
-                  {showMoreTools && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.14, ease: EASE_OUT }}
-                      className="overflow-hidden bg-[var(--bn-surface-alt)]/70 border-y border-[var(--bn-border)]/70"
+                  {activeSubmenu === 'findEdit' && (
+                    <div
+                      onMouseEnter={() => openSubmenu('findEdit')}
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[250px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
                     >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenFindInPage();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Buscar...</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+F</span>
+                      </button>
+
+                      <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onEditAction('cut');
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Scissors className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Cortar</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+X</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onEditAction('copy');
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Copy className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Copiar</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+C</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onEditAction('paste');
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Clipboard className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Pegar</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+V</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Cascading Row: Guardar y compartir > */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => openSubmenu('saveShare')}
+                >
+                  <button
+                    type="button"
+                    onClick={() => openSubmenu(activeSubmenu === 'saveShare' ? null : 'saveShare')}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
+                      activeSubmenu === 'saveShare'
+                        ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                        : 'hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <FileDown className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                      <span>Guardar y compartir</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                  </button>
+
+                  {activeSubmenu === 'saveShare' && (
+                    <div
+                      onMouseEnter={() => openSubmenu('saveShare')}
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                    >
+                      <div className="px-3.5 pt-1 pb-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
+                        Guardar
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSavePageAs();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <FileDown className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Guardar página como...</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+S</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onCaptureView();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Camera className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Captura de vista</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+S</span>
+                      </button>
+
+                      <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
+                      <div className="px-3.5 pt-1 pb-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
+                        Compartir
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onCopyLink();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <Link2 className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                        <span>Copiar vínculo</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenQrModal();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <QrCode className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        <span>Crear código QR</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Cascading Row: Más herramientas > */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => openSubmenu('moreTools')}
+                >
+                  <button
+                    type="button"
+                    onClick={() => openSubmenu(activeSubmenu === 'moreTools' ? null : 'moreTools')}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
+                      activeSubmenu === 'moreTools'
+                        ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                        : 'hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Wrench className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                      <span>Más herramientas</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                  </button>
+
+                  {activeSubmenu === 'moreTools' && (
+                    <div
+                      onMouseEnter={() => openSubmenu('moreTools')}
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[290px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenTabSearch();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Búsqueda de pestañas</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+A</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenRenameWindow();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <Tag className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                        <span>Nombrar la ventana...</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenCommandPalette();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Command className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Comandos rápidos</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+K</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateSettings({ useVerticalTabs: !settings.useVerticalTabs });
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Columns className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Mostrar pestañas verticalmente</span>
+                        </span>
+                        {settings.useVerticalTabs && (
+                          <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onToggleSplitMode();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Columns className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>{isSplitActive ? 'Cerrar vista dividida' : 'Vista dividida'}</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+\</span>
+                      </button>
+
+                      <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
+
                       <button
                         type="button"
                         onClick={() => {
                           onOpenDevTools();
                           setShowMainMenu(false);
+                          setActiveSubmenu(null);
                         }}
-                        className="w-full text-left pl-9 pr-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
                       >
                         <span className="flex items-center gap-2.5">
                           <Terminal className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Herramientas de desarrollo</span>
+                          <span>Herramientas del desarrollador</span>
                         </span>
-                        <span className="text-[11px] text-[var(--bn-text-muted)]">F12</span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+I</span>
                       </button>
 
                       <button
@@ -1147,8 +1618,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         onClick={() => {
                           onOpenElectronModal();
                           setShowMainMenu(false);
+                          setActiveSubmenu(null);
                         }}
-                        className="w-full text-left pl-9 pr-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <Laptop className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                         <span>Exportar proyecto Electron</span>
@@ -1159,36 +1631,109 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         onClick={() => {
                           onOpenNotes();
                           setShowMainMenu(false);
+                          setActiveSubmenu(null);
                         }}
-                        className="w-full text-left pl-9 pr-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <StickyNote className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                         <span>Notas de sesión</span>
                       </button>
-                    </motion.div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenTaskManager();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Activity className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                          <span>Administrador de tareas</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Shift+Esc</span>
+                      </button>
+                    </div>
                   )}
-                </AnimatePresence>
+                </div>
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
-                {/* Section 6: Help, Settings, Exit */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onNavigate('fabinav://about');
-                    setShowMainMenu(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                {/* Section 6: Help >, Settings, Exit */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => openSubmenu('help')}
                 >
-                  <span className="flex items-center gap-3">
-                    <HelpCircle className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Ayuda</span>
-                  </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openSubmenu(activeSubmenu === 'help' ? null : 'help')}
+                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
+                      activeSubmenu === 'help'
+                        ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                        : 'hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <HelpCircle className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                      <span>Ayuda</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                  </button>
+
+                  {activeSubmenu === 'help' && (
+                    <div
+                      onMouseEnter={() => openSubmenu('help')}
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[250px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNavigate('fabinav://about');
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <Info className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                        <span>Acerca de FabiNav</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenCommandPalette();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Command className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                          <span>Atajos y comandos</span>
+                        </span>
+                        <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+K</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenNotes();
+                          setShowMainMenu(false);
+                          setActiveSubmenu(null);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                      >
+                        <StickyNote className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                        <span>Notas de sesión</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     onNavigate('fabinav://settings');
                     setShowMainMenu(false);
@@ -1203,6 +1748,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <button
                   type="button"
+                  onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
                     setShowMainMenu(false);
                     onCloseWindow();

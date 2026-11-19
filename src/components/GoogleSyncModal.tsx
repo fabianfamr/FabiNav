@@ -33,7 +33,7 @@ interface GoogleSyncModalProps {
   topSitesCount?: number;
 }
 
-const LEO_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   isOpen,
@@ -89,7 +89,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.16, ease: LEO_EASE_OUT }}
+          transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
           onClick={onClose}
         >
@@ -98,7 +98,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
             initial={{ opacity: 0, y: 10, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ duration: 0.18, ease: LEO_EASE_OUT }}
+            transition={{ duration: 0.18, ease: FABI_EASE_OUT }}
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl overflow-hidden flex flex-col text-[var(--bn-text)]"
           >
@@ -231,6 +231,10 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
                     </button>
                   </div>
                 )}
+
+                <div className="mt-3 pt-3 border-t border-[var(--bn-border)]/70 text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
+                  Nota de dominio OAuth: si en la ventana de Google aparece <code className="font-mono text-[var(--bn-text)]">seismic-listener-n61jg.firebaseapp.com</code> en lugar de <strong className="text-[var(--bn-text-strong)]">FabiNav</strong>, conecta tu propio dominio personalizado en Firebase Authentication/Hosting y verifica el nombre <strong className="text-[var(--bn-text-strong)]">FabiNav</strong> en la pantalla de consentimiento de Google Cloud Console.
+                </div>
               </div>
 
               {/* Local Data Summary */}
