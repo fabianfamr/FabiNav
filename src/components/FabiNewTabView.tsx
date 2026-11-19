@@ -7,9 +7,7 @@ import {
   X,
   Image as ImageIcon,
   ShieldCheck,
-  ArrowRight,
-  ChevronDown,
-  ChevronRight
+  ArrowRight
 } from 'lucide-react';
 import { FABI_WALLPAPERS } from '../constants/initialData';
 import {
@@ -25,7 +23,6 @@ interface FabiNewTabViewProps {
   onNavigate: (url: string) => void;
   shieldState: FabiShieldState;
   settings: BrowserSettings;
-  onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   customization: FabiNewTabCustomization;
   topSites: TopSiteItem[];
   onAddTopSite: (title: string, url: string) => void;
@@ -68,7 +65,6 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   onNavigate,
   shieldState,
   settings,
-  onUpdateSettings,
   customization,
   topSites,
   onAddTopSite,
@@ -77,14 +73,12 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   onOpenShieldModal
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showEngineMenu, setShowEngineMenu] = useState(false);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [showAddSiteModal, setShowAddSiteModal] = useState(false);
   const [newSiteTitle, setNewSiteTitle] = useState('');
   const [newSiteUrl, setNewSiteUrl] = useState('');
   const [now, setNow] = useState(() => new Date());
   const [imgError, setImgError] = useState(false);
-  const engineMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
@@ -92,22 +86,14 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
   }, []);
 
   useEffect(() => {
-    const handleOutside = (e: MouseEvent) => {
-      if (engineMenuRef.current && !engineMenuRef.current.contains(e.target as Node)) {
-        setShowEngineMenu(false);
-      }
-    };
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowEngineMenu(false);
         setShowCustomizeModal(false);
         setShowAddSiteModal(false);
       }
     };
-    document.addEventListener('mousedown', handleOutside);
     document.addEventListener('keydown', handleEsc);
     return () => {
-      document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('keydown', handleEsc);
     };
   }, []);
@@ -255,7 +241,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
         )}
       </div>
 
-      {/* Center: FabiNav Search Pill + Engine Selector + Top Sites Grid */}
+      {/* Center: FabiNav Search Pill + Top Sites Grid */}
       <div className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl mx-auto my-8 z-20">
         <motion.form
           onSubmit={handleSearchSubmit}
@@ -263,7 +249,6 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.22, ease: FABI_EASE_OUT }}
           className="w-full mb-8 relative"
-          ref={engineMenuRef}
         >
           <div className="relative flex items-center h-12 rounded-full bg-[#1b1d23]/90 hover:bg-[#22252c]/95 focus-within:bg-[#17191e] backdrop-blur-xl border border-white/15 focus-within:border-[var(--bn-accent)] shadow-2xl transition-all fabi-transition-s pl-4 pr-1.5 gap-2">
             <Search className="w-4 h-4 text-white/65 shrink-0" />
@@ -287,16 +272,6 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             )}
 
             <button
-              type="button"
-              onClick={() => setShowEngineMenu((v) => !v)}
-              title="Cambiar motor de búsqueda"
-              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] text-white/75 hover:text-white hover:bg-white/10 transition-colors shrink-0 whitespace-nowrap"
-            >
-              <span>{currentEngineLabel}</span>
-              <ChevronDown className="w-3 h-3" />
-            </button>
-
-            <button
               type="submit"
               title="Buscar"
               className="w-9 h-9 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-90 text-white flex items-center justify-center transition-all shrink-0"
@@ -304,42 +279,6 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-
-          <AnimatePresence>
-            {showEngineMenu && (
-              <motion.div
-                initial={{ opacity: 0, y: -6, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4, scale: 0.96 }}
-                transition={{ duration: 0.14, ease: FABI_EASE_OUT }}
-                className="absolute right-12 top-14 w-48 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl py-1.5 z-50 text-xs text-[var(--bn-text)]"
-              >
-                <div className="px-3.5 py-1.5 text-[11px] text-[var(--bn-text-muted)] border-b border-[var(--bn-border)]">
-                  {t(lang, 'defaultEngineTitle')}
-                </div>
-                {SEARCH_ENGINES.map((eng) => (
-                  <button
-                    key={eng.id}
-                    type="button"
-                    onClick={() => {
-                      onUpdateSettings({ defaultSearchEngine: eng.id });
-                      setShowEngineMenu(false);
-                    }}
-                    className={`w-full text-left px-3.5 py-2 flex items-center justify-between hover:bg-[var(--bn-hover)] transition-colors ${
-                      normalizedEngine === eng.id
-                        ? 'text-[var(--bn-accent)] font-semibold'
-                        : 'text-[var(--bn-text)]'
-                    }`}
-                  >
-                    <span>{eng.label}</span>
-                    {normalizedEngine === eng.id && (
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </motion.form>
 
         {/* FabiNav Top Sites Grid */}

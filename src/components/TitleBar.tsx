@@ -53,7 +53,9 @@ import {
   Tag,
   Check,
   PanelTop,
-  Command
+  Command,
+  Puzzle,
+  Languages
 } from 'lucide-react';
 import {
   WebTab,
@@ -63,7 +65,8 @@ import {
   BrowserSettings,
   GoogleUserProfile,
   TlsInspectionResult,
-  StoredCookieItem
+  StoredCookieItem,
+  BrowserExtension
 } from '../types';
 import { t } from '../i18n/translations';
 
@@ -74,6 +77,7 @@ interface TitleBarProps {
   historyEntries: HistoryEntry[];
   closedTabs: ClosedTabRecord[];
   settings: BrowserSettings;
+  extensions?: BrowserExtension[];
   omniboxRef?: React.RefObject<HTMLInputElement | null>;
   onNavigate: (url: string) => void;
   onGoBack: () => void;
@@ -81,6 +85,8 @@ interface TitleBarProps {
   onReload: () => void;
   onGoHome: () => void;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
+  onToggleExtension?: (id: string) => void;
+  onTranslatePage?: () => void;
   onResetZoom: () => void;
   onToggleBookmark: () => void;
   onToggleSplitMode: () => void;
@@ -117,6 +123,7 @@ interface TitleBarProps {
 
 const INTERNAL_SUGGESTIONS = [
   { title: 'Nueva pestaña', url: 'fabinav://newtab', kind: 'FabiNav' },
+  { title: 'Extensiones', url: 'fabinav://extensions', kind: 'FabiNav' },
   { title: 'Escudos, Cookies y TLS', url: 'fabinav://shields', kind: 'FabiNav' },
   { title: 'Historial de navegación', url: 'fabinav://history', kind: 'FabiNav' },
   { title: 'Administrador de marcadores', url: 'fabinav://bookmarks', kind: 'FabiNav' },
@@ -143,6 +150,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   historyEntries,
   closedTabs,
   settings,
+  extensions = [],
   omniboxRef,
   onNavigate,
   onGoBack,
@@ -150,6 +158,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onReload,
   onGoHome,
   onUpdateSettings,
+  onToggleExtension,
+  onTranslatePage,
   onResetZoom,
   onToggleBookmark,
   onToggleSplitMode,
@@ -748,7 +758,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.99 }}
               transition={{ duration: 0.12, ease: EASE_OUT }}
-              className="absolute left-0 right-0 top-10 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden py-1.5"
+              className="absolute left-0 right-0 top-10 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl z-50 overflow-hidden py-0"
             >
               {matchedSuggestions.map((item, idx) => (
                 <button
@@ -782,8 +792,47 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* Right: FabiNav Toolbar Actions, Google Avatar & Desktop Menu Panel */}
+      {/* Right: Pinned Extensions, FabiNav Toolbar Actions, Google Avatar & Desktop Menu Panel */}
       <div className="flex items-center gap-0.5 shrink-0">
+        {extensions
+          .filter((ext) => ext.pinned)
+          .slice(0, 4)
+          .map((ext) => (
+            <button
+              key={ext.id}
+              type="button"
+              onClick={() => onToggleExtension?.(ext.id)}
+              title={`${ext.name} (${ext.enabled ? 'Activa · clic para desactivar' : 'Inactiva · clic para activar'})`}
+              className={`hidden md:flex w-7 h-7 rounded-full items-center justify-center text-[11px] font-bold transition-all fabi-transition-xs relative ${
+                ext.enabled
+                  ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)] ring-1 ring-[var(--bn-accent)]/60'
+                  : 'text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)] opacity-70 hover:opacity-100'
+              }`}
+            >
+              <span
+                className="w-4 h-4 rounded-md flex items-center justify-center text-white text-[10px] leading-none"
+                style={{ backgroundColor: ext.enabled ? ext.accentColor : 'var(--bn-border-strong)' }}
+              >
+                {ext.name[0]?.toUpperCase() || 'E'}
+              </span>
+            </button>
+          ))}
+
+        <button
+          type="button"
+          onClick={() => onNavigate('fabinav://extensions')}
+          title={t(lang, 'secExtensions')}
+          className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
+            currentTab?.url.startsWith('fabinav://extensions')
+              ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
+              : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+          }`}
+        >
+          <Puzzle className="w-4 h-4" />
+        </button>
+
+        <div className="h-4 w-[1px] bg-[var(--bn-border)] mx-0.5 hidden sm:block" />
+
         <button
           type="button"
           onClick={onToggleSplitMode}
@@ -862,8 +911,42 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
                 transition={{ duration: 0.14, ease: EASE_OUT }}
                 onMouseLeave={scheduleCloseSubmenu}
-                className="absolute right-0 top-10 w-[316px] overflow-visible bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[12px] py-1.5 text-[var(--bn-text)] rounded-xl origin-top-right"
+                className="absolute right-0 top-10 w-[316px] overflow-visible bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[12px] py-0 text-[var(--bn-text)] rounded-xl origin-top-right"
               >
+                {/* Chrome-style Top Profile Header */}
+                <button
+                  type="button"
+                  onMouseEnter={() => openSubmenu(null)}
+                  onClick={() => {
+                    setShowMainMenu(false);
+                    onOpenBackupModal();
+                  }}
+                  className="w-full px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-[var(--bn-hover)] border-b border-[var(--bn-border)] rounded-t-[11px] text-left transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {googleUser?.photoUrl ? (
+                      <img
+                        src={googleUser.photoUrl}
+                        alt={googleUser.displayName}
+                        referrerPolicy="no-referrer"
+                        className="w-7 h-7 rounded-full object-cover border border-[var(--bn-border-strong)] shrink-0"
+                      />
+                    ) : (
+                      <span className="w-7 h-7 rounded-full bg-[var(--bn-accent)] text-white text-[11px] font-semibold flex items-center justify-center shrink-0">
+                        {googleUser?.displayName?.[0]?.toUpperCase() || <User className="w-3.5 h-3.5" />}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[var(--bn-text-strong)] truncate">
+                        {googleUser ? googleUser.displayName : 'FabiNav'}
+                      </div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)] truncate">
+                        {googleUser ? t(lang, 'menuProfileSignedIn') : t(lang, 'menuProfileSignIn')}
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+                </button>
                 {/* Section 1: Tabs & Windows */}
                 <button
                   type="button"
@@ -1014,7 +1097,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {activeSubmenu === 'history' && (
                     <div
                       onMouseEnter={() => openSubmenu('history')}
-                      className="sm:right-[calc(100%+6px)] right-2 top-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                      className="sm:right-[calc(100%+6px)] right-2 top-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl py-0 z-50 text-[12px]"
                     >
                       <button
                         type="button"
@@ -1112,7 +1195,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {activeSubmenu === 'bookmarks' && (
                     <div
                       onMouseEnter={() => openSubmenu('bookmarks')}
-                      className="sm:right-[calc(100%+6px)] right-2 top-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                      className="sm:right-[calc(100%+6px)] right-2 top-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl py-0 z-50 text-[12px]"
                     >
                       <button
                         type="button"
@@ -1285,7 +1368,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
                 <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
-                {/* Section 5: Print, Find & Edit >, Save & Share >, More Tools > */}
+                {/* Section 5: Print, Translate, Find & Edit >, Save & Share >, More Tools > */}
                 <button
                   type="button"
                   onMouseEnter={() => openSubmenu(null)}
@@ -1300,6 +1383,24 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     <span>{t(lang, 'menuPrint')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+P</span>
+                </button>
+
+                <button
+                  type="button"
+                  onMouseEnter={() => openSubmenu(null)}
+                  onClick={() => {
+                    setShowMainMenu(false);
+                    onTranslatePage?.();
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <Languages className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>{t(lang, 'menuTranslate')}</span>
+                  </span>
+                  <span className="text-[10px] text-[var(--bn-text-muted)] uppercase">
+                    {(settings.translateTargetLang || lang).toUpperCase()}
+                  </span>
                 </button>
 
                 {/* Cascading Row: Buscar y editar > */}
@@ -1326,7 +1427,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {activeSubmenu === 'findEdit' && (
                     <div
                       onMouseEnter={() => openSubmenu('findEdit')}
-                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[250px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[250px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl py-0 z-50 text-[12px]"
                     >
                       <button
                         type="button"
@@ -1421,7 +1522,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {activeSubmenu === 'saveShare' && (
                     <div
                       onMouseEnter={() => openSubmenu('saveShare')}
-                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl py-0 z-50 text-[12px]"
                     >
                       <button
                         type="button"
@@ -1510,7 +1611,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {activeSubmenu === 'moreTools' && (
                     <div
                       onMouseEnter={() => openSubmenu('moreTools')}
-                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[290px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[290px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl py-0 z-50 text-[12px]"
                     >
                       <button
                         type="button"
@@ -1682,7 +1783,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   {activeSubmenu === 'help' && (
                     <div
                       onMouseEnter={() => openSubmenu('help')}
-                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[250px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
+                      className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[250px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl py-0 z-50 text-[12px]"
                     >
                       <button
                         type="button"
@@ -1733,6 +1834,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   type="button"
                   onMouseEnter={() => openSubmenu(null)}
                   onClick={() => {
+                    onNavigate('fabinav://extensions');
+                    setShowMainMenu(false);
+                  }}
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center justify-between transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <Puzzle className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
+                    <span>{t(lang, 'menuManageExtensions')}</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onMouseEnter={() => openSubmenu(null)}
+                  onClick={() => {
                     onNavigate('fabinav://settings');
                     setShowMainMenu(false);
                   }}
@@ -1751,7 +1867,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                     setShowMainMenu(false);
                     onCloseWindow();
                   }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-danger-text)] flex items-center justify-between transition-colors"
+                  className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-danger-text)] flex items-center justify-between rounded-b-[11px] transition-colors"
                 >
                   <span className="flex items-center gap-3">
                     <LogOut className="w-3.5 h-3.5" />

@@ -73,6 +73,8 @@ export interface WebTab {
   isMuted: boolean;
   isBookmarked?: boolean;
   createdAt: number;
+  lastActiveAt?: number;
+  isDiscarded?: boolean;
   tabMode?: TabMode;
 }
 
@@ -132,9 +134,14 @@ export interface DevToolNetworkReq {
 
 export type AppLanguage = 'es' | 'en' | 'ja';
 
+export type StartupMode = 'newtab' | 'continue' | 'specific';
+export type MemorySaverLevel = 'moderate' | 'balanced' | 'maximum';
+
 export interface BrowserSettings {
   defaultSearchEngine: 'fabinav' | 'google' | 'duckduckgo' | 'bing' | 'ecosia' | 'brave';
   homepage: string;
+  startupMode?: StartupMode;
+  startupUrls?: string;
   theme: BrowserTheme;
   language: AppLanguage;
   showSidebar: boolean;
@@ -144,6 +151,47 @@ export interface BrowserSettings {
   useVerticalTabs: boolean;
   showHomeButton: boolean;
   zoomLevel: number;
+  memorySaver?: boolean;
+  memorySaverMode?: MemorySaverLevel;
+  alwaysActiveDomains?: string[];
+  preloadPages?: boolean;
+  spellCheck?: boolean;
+  translateOffer?: boolean;
+  translateTargetLang?: AppLanguage;
+  reduceMotion?: boolean;
+  pinNewExtensions?: boolean;
+  extensionsDevMode?: boolean;
+}
+
+export type ExtensionMode =
+  | 'dark-web'
+  | 'reader'
+  | 'stylus'
+  | 'ad-cosmetic'
+  | 'custom-css';
+
+export interface BrowserExtension {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  enabled: boolean;
+  pinned: boolean;
+  permissions: string[];
+  accentColor: string;
+  mode: ExtensionMode;
+  customCss?: string;
+  builtIn?: boolean;
+}
+
+export interface AutofillEntry {
+  id: string;
+  category: 'address' | 'payment' | 'contact';
+  label: string;
+  value: string;
+  secondary?: string;
+  createdAt: number;
 }
 
 export interface CommandItem {

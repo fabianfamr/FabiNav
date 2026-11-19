@@ -28,7 +28,17 @@ import {
   X,
   Compass,
   Languages,
-  Filter
+  Filter,
+  Puzzle,
+  KeyRound,
+  Gauge,
+  Keyboard,
+  Code2,
+  Copy,
+  ShieldAlert,
+  CreditCard,
+  MapPin,
+  Phone
 } from 'lucide-react';
 import {
   FabiShieldState,
@@ -40,7 +50,11 @@ import {
   StoredCookieItem,
   GoogleUserProfile,
   TlsInspectionResult,
-  CacheStatusInfo
+  CacheStatusInfo,
+  BrowserExtension,
+  AutofillEntry,
+  StartupMode,
+  MemorySaverLevel
 } from '../types';
 import { APP_VERSION } from '../constants/initialData';
 import { FabiSwitch } from './FabiSwitch';
@@ -70,11 +84,22 @@ interface FabiInternalsViewProps {
   onResetSettings?: () => void;
   onOpenElectronModal: () => void;
   onNavigate: (url: string) => void;
+  extensions?: BrowserExtension[];
+  onUpdateExtension?: (id: string, updates: Partial<BrowserExtension>) => void;
+  onAddExtension?: (ext: Omit<BrowserExtension, 'id'>) => void;
+  onRemoveExtension?: (id: string) => void;
+  onResetExtensions?: () => void;
+  autofillEntries?: AutofillEntry[];
+  onAddAutofill?: (entry: Omit<AutofillEntry, 'id' | 'createdAt'>) => void;
+  onRemoveAutofill?: (id: string) => void;
+  onOpenNewTab?: (url?: string) => void;
 }
 
 type SettingsSection =
   | 'tu-google'
+  | 'autocompletar'
   | 'escudos'
+  | 'rendimiento'
   | 'apariencia'
   | 'idiomas'
   | 'buscador'
@@ -109,7 +134,16 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   onClearBrowsingData,
   onResetSettings,
   onOpenElectronModal,
-  onNavigate
+  onNavigate,
+  extensions = [],
+  onUpdateExtension,
+  onAddExtension,
+  onRemoveExtension,
+  onResetExtensions,
+  autofillEntries = [],
+  onAddAutofill,
+  onRemoveAutofill,
+  onOpenNewTab
 }) => {
   const [historyFilter, setHistoryFilter] = useState('');
   const [bookmarkFilter, setBookmarkFilter] = useState('');
@@ -133,6 +167,25 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [loadingCache, setLoadingCache] = useState(false);
   const [cacheNotice, setCacheNotice] = useState<string | null>(null);
   const [customRuleInput, setCustomRuleInput] = useState('');
+
+  // Extensions view states
+  const [extSearch, setExtSearch] = useState('');
+  const [extTab, setExtTab] = useState<'mine' | 'shortcuts'>('mine');
+  const [detailExtId, setDetailExtId] = useState<string | null>(null);
+  const [detailCssDraft, setDetailCssDraft] = useState('');
+  const [showDevCreator, setShowDevCreator] = useState(false);
+  const [newExtName, setNewExtName] = useState('');
+  const [newExtDesc, setNewExtDesc] = useState('');
+  const [newExtCss, setNewExtCss] = useState('body {\n  scroll-behavior: smooth;\n}');
+  const [newExtColor, setNewExtColor] = useState('#7c6bf2');
+
+  // Autofill & Performance local form states
+  const [afCategory, setAfCategory] = useState<AutofillEntry['category']>('contact');
+  const [afLabel, setAfLabel] = useState('');
+  const [afValue, setAfValue] = useState('');
+  const [afSecondary, setAfSecondary] = useState('');
+  const [copiedAfId, setCopiedAfId] = useState<string | null>(null);
+  const [alwaysActiveInput, setAlwaysActiveInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filtersSectionRef = useRef<HTMLDivElement>(null);
@@ -240,7 +293,9 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       const hashPart = cleanUrl.split('#')[1] || '';
       const validSections: SettingsSection[] = [
         'tu-google',
+        'autocompletar',
         'escudos',
+        'rendimiento',
         'apariencia',
         'idiomas',
         'buscador',
@@ -609,7 +664,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl divide-y divide-[var(--bn-border)]">
+          <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl overflow-hidden divide-y divide-[var(--bn-border)]">
             <div className="flex items-center justify-between p-4 gap-4">
               <div>
                 <div className="text-xs font-medium text-[var(--bn-text-strong)]">
@@ -1200,6 +1255,427 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     );
   }
 
+  // 5B. EXTENSIONES (fabinav://extensions)
+  if (cleanUrl.includes('extensions')) {
+    const filteredExtensions = extensions.filter(
+      (ext) =>
+        ext.name.toLowerCase().includes(extSearch.trim().toLowerCase()) ||
+        ext.description.toLowerCase().includes(extSearch.trim().toLowerCase()) ||
+        ext.author.toLowerCase().includes(extSearch.trim().toLowerCase())
+    );
+    const detailExt = detailExtId ? extensions.find((e) => e.id === detailExtId) || null : null;
+
+    const handleCreateCustomExt = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newExtName.trim() || !onAddExtension) return;
+      onAddExtension({
+        name: newExtName.trim(),
+        description:
+          newExtDesc.trim() || 'Extensión de estilos CSS creada en Modo de desarrollador.',
+        version: '1.0.0',
+        author: 'Desarrollador local',
+        enabled: true,
+        pinned: settings.pinNewExtensions !== false,
+        permissions: ['Inyectar reglas CSS personalizadas en páginas externas'],
+        accentColor: newExtColor,
+        mode: 'custom-css',
+        customCss: newExtCss,
+        builtIn: false
+      });
+      setNewExtName('');
+      setNewExtDesc('');
+      setShowDevCreator(false);
+    };
+
+    const extShortcuts = [
+      { keys: 'Ctrl + K', desc: 'Paleta de comandos rápidos de FabiNav' },
+      { keys: 'Ctrl + Shift + A', desc: 'Buscar entre pestañas abiertas' },
+      { keys: 'Ctrl + Shift + N', desc: 'Nueva ventana / pestaña privada' },
+      { keys: 'Ctrl + Shift + T', desc: 'Reabrir última pestaña cerrada' },
+      { keys: 'Ctrl + F', desc: 'Buscar texto dentro de la página' },
+      { keys: 'F12', desc: 'Herramientas del desarrollador y consola' }
+    ];
+
+    return (
+      <div className="w-full h-full overflow-hidden bg-[var(--bn-surface)] text-[var(--bn-text)] flex flex-col">
+        {/* Top bar */}
+        <div className="h-14 px-4 sm:px-6 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)]/75 flex items-center justify-between gap-4 shrink-0">
+          <div className="md:w-56 flex items-center gap-2.5 shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] flex items-center justify-center shrink-0">
+              <Puzzle className="w-4 h-4" />
+            </div>
+            <h1 className="text-[16px] font-semibold text-[var(--bn-text-strong)] tracking-tight">
+              {t(lang, 'extensionsTitle')}
+            </h1>
+          </div>
+
+          <div className="flex-1 flex justify-center">
+            <div className="relative w-full max-w-md">
+              <Search className="w-4 h-4 text-[var(--bn-text-muted)] absolute left-3.5 top-2.5 pointer-events-none" />
+              <input
+                type="text"
+                value={extSearch}
+                onChange={(e) => setExtSearch(e.target.value)}
+                placeholder={t(lang, 'extensionsSearchPlaceholder')}
+                className="w-full h-9 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-full pl-10 pr-8 text-xs text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none focus:border-[var(--bn-accent)]"
+              />
+              {extSearch && (
+                <button
+                  type="button"
+                  onClick={() => setExtSearch('')}
+                  className="absolute right-2.5 top-2 p-0.5 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span className="text-xs text-[var(--bn-text)] hidden sm:inline">
+              {t(lang, 'developerMode')}
+            </span>
+            <FabiSwitch
+              size="md"
+              checked={!!settings.extensionsDevMode}
+              onChange={(v) => onUpdateSettings({ extensionsDevMode: v })}
+              ariaLabel={t(lang, 'developerMode')}
+            />
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          <aside className="w-full md:w-60 bg-[var(--bn-surface)] border-b md:border-b-0 md:border-r border-[var(--bn-border)] px-3 py-3 flex md:flex-col justify-between gap-2 shrink-0">
+            <div className="flex md:flex-col gap-1 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setExtTab('mine')}
+                className={`flex items-center gap-3 px-3.5 py-2 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
+                  extTab === 'mine'
+                    ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
+                    : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                }`}
+              >
+                <Puzzle className="w-4 h-4 shrink-0" />
+                <span>{t(lang, 'myExtensions')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExtTab('shortcuts')}
+                className={`flex items-center gap-3 px-3.5 py-2 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
+                  extTab === 'shortcuts'
+                    ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
+                    : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                }`}
+              >
+                <Keyboard className="w-4 h-4 shrink-0" />
+                <span>{t(lang, 'shortcutsTab')}</span>
+              </button>
+            </div>
+
+            <div className="hidden md:block p-3.5 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
+              Las extensiones de FabiNav aplican hojas CSS y filtrado cosmético en vivo sobre páginas externas sin recargar la pestaña.
+            </div>
+          </aside>
+
+          <div className="flex-1 overflow-y-auto p-5 sm:p-8">
+            <div className="max-w-4xl mx-auto space-y-5">
+              {extTab === 'mine' ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-[var(--bn-border)]">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-sm font-semibold text-[var(--bn-text-strong)]">
+                        {t(lang, 'allExtensions')}
+                      </h2>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[var(--bn-text-muted)] tabular-nums">
+                        {filteredExtensions.length}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 text-xs text-[var(--bn-text)]">
+                      <span>{t(lang, 'pinNewExtensions')}</span>
+                      <FabiSwitch
+                        size="sm"
+                        checked={settings.pinNewExtensions !== false}
+                        onChange={(v) => onUpdateSettings({ pinNewExtensions: v })}
+                        ariaLabel={t(lang, 'pinNewExtensions')}
+                      />
+                    </div>
+                  </div>
+
+                  {settings.extensionsDevMode && (
+                    <div className="rounded-2xl overflow-hidden border border-[var(--bn-accent)]/40 bg-[var(--bn-surface-alt)] p-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-[var(--bn-text-strong)]">
+                          <Code2 className="w-4 h-4 text-[var(--bn-accent)]" />
+                          <span>Herramientas de desarrollador de extensiones</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowDevCreator((v) => !v)}
+                            className="px-3.5 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Nueva extensión CSS</span>
+                          </button>
+                          {onResetExtensions && (
+                            <button
+                              type="button"
+                              onClick={onResetExtensions}
+                              className="px-3.5 py-1.5 rounded-full border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-xs text-[var(--bn-text)]"
+                            >
+                              Restaurar predeterminadas
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {showDevCreator && (
+                        <form onSubmit={handleCreateCustomExt} className="pt-3 border-t border-[var(--bn-border)] space-y-2.5 text-xs">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <input
+                              type="text"
+                              value={newExtName}
+                              onChange={(e) => setNewExtName(e.target.value)}
+                              placeholder="Nombre de la extensión"
+                              required
+                              className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                            />
+                            <input
+                              type="text"
+                              value={newExtDesc}
+                              onChange={(e) => setNewExtDesc(e.target.value)}
+                              placeholder="Descripción corta"
+                              className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                            />
+                            <div className="flex items-center gap-2 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5">
+                              <span className="text-[var(--bn-text-muted)]">Color:</span>
+                              <input
+                                type="color"
+                                value={newExtColor}
+                                onChange={(e) => setNewExtColor(e.target.value)}
+                                className="w-6 h-6 rounded cursor-pointer bg-transparent border-0"
+                              />
+                              <span className="font-mono text-[11px]">{newExtColor}</span>
+                            </div>
+                          </div>
+                          <textarea
+                            rows={3}
+                            value={newExtCss}
+                            onChange={(e) => setNewExtCss(e.target.value)}
+                            placeholder="Reglas CSS a inyectar en sitios web externos..."
+                            className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowDevCreator(false)}
+                              className="px-3.5 py-1.5 rounded-full border border-[var(--bn-border)] hover:bg-[var(--bn-hover)]"
+                            >
+                              {t(lang, 'cancel')}
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium"
+                            >
+                              Crear e instalar
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  )}
+
+                  {filteredExtensions.length === 0 ? (
+                    <div className="p-10 text-center bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl overflow-hidden text-xs text-[var(--bn-text-muted)]">
+                      No se encontraron extensiones que coincidan con tu búsqueda.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {filteredExtensions.map((ext) => (
+                        <div
+                          key={ext.id}
+                          className="rounded-2xl overflow-hidden border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] flex flex-col justify-between transition-colors hover:border-[var(--bn-border-strong)]"
+                        >
+                          <div className="p-4 flex items-start gap-3.5">
+                            <div
+                              className="w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs"
+                              style={{ backgroundColor: ext.accentColor }}
+                            >
+                              {ext.name[0]?.toUpperCase() || 'E'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-xs font-semibold text-[var(--bn-text-strong)] truncate">
+                                  {ext.name}
+                                </h3>
+                                <span className="text-[10px] font-mono text-[var(--bn-text-muted)] shrink-0">
+                                  v{ext.version}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                                {ext.author}
+                              </div>
+                              <p className="text-[11px] text-[var(--bn-text)] mt-2 leading-relaxed line-clamp-2">
+                                {ext.description}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="px-4 py-3 border-t border-[var(--bn-border)] bg-[var(--bn-surface)]/45 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailExtId(ext.id);
+                                  setDetailCssDraft(ext.customCss || '');
+                                }}
+                                className="px-3.5 py-1 rounded-full border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-[11px] font-medium text-[var(--bn-accent)] transition-colors"
+                              >
+                                {t(lang, 'detailsBtn')}
+                              </button>
+                              {!ext.builtIn && onRemoveExtension && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRemoveExtension(ext.id)}
+                                  className="px-3.5 py-1 rounded-full border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-[11px] font-medium text-[var(--bn-danger-text)] transition-colors"
+                                >
+                                  {t(lang, 'removeBtn')}
+                                </button>
+                              )}
+                            </div>
+
+                            <FabiSwitch
+                              size="md"
+                              checked={ext.enabled}
+                              onChange={(v) => onUpdateExtension?.(ext.id, { enabled: v })}
+                              ariaLabel={ext.name}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="rounded-2xl overflow-hidden border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] divide-y divide-[var(--bn-border)]">
+                  <div className="px-5 py-3.5">
+                    <h2 className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                      {t(lang, 'shortcutsTab')}
+                    </h2>
+                    <p className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                      Combinaciones rápidas activas en el navegador y extensiones
+                    </p>
+                  </div>
+                  {extShortcuts.map((s) => (
+                    <div key={s.keys} className="px-5 py-3 flex items-center justify-between text-xs">
+                      <span className="text-[var(--bn-text)]">{s.desc}</span>
+                      <kbd className="font-mono text-[11px] px-2.5 py-0.5 rounded-md bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] text-[var(--bn-text-strong)]">
+                        {s.keys}
+                      </kbd>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Details Modal */}
+        {detailExt && (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setDetailExtId(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg rounded-2xl overflow-hidden bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-xs"
+            >
+              <div className="px-5 py-4 border-b border-[var(--bn-border)] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-9 h-9 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0"
+                    style={{ backgroundColor: detailExt.accentColor }}
+                  >
+                    {detailExt.name[0]?.toUpperCase() || 'E'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm text-[var(--bn-text-strong)] truncate">
+                      {detailExt.name}
+                    </div>
+                    <div className="text-[11px] text-[var(--bn-text-muted)]">
+                      v{detailExt.version} · {detailExt.author}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailExtId(null)}
+                  className="p-1.5 rounded-full hover:bg-[var(--bn-hover)] text-[var(--bn-text-muted)]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                <p className="text-[var(--bn-text)] leading-relaxed">{detailExt.description}</p>
+
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)]">
+                  <span>Fijar en la barra de herramientas</span>
+                  <FabiSwitch
+                    size="sm"
+                    checked={detailExt.pinned}
+                    onChange={(v) => onUpdateExtension?.(detailExt.id, { pinned: v })}
+                    ariaLabel="Fijar extensión"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-semibold text-[var(--bn-text-strong)] uppercase tracking-wider">
+                    Permisos
+                  </div>
+                  <ul className="space-y-1 text-[11px] text-[var(--bn-text-muted)] list-disc list-inside">
+                    {detailExt.permissions.map((perm) => (
+                      <li key={perm}>{perm}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {(detailExt.mode === 'stylus' || detailExt.mode === 'custom-css') && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold text-[var(--bn-text-strong)]">
+                      Hoja CSS inyectada en páginas externas
+                    </div>
+                    <textarea
+                      rows={6}
+                      value={detailCssDraft}
+                      onChange={(e) => setDetailCssDraft(e.target.value)}
+                      className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateExtension?.(detailExt.id, { customCss: detailCssDraft });
+                          setDetailExtId(null);
+                        }}
+                        className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium"
+                      >
+                        Guardar CSS y aplicar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // 6. CONFIGURACIÓN DE FABINAV (fabinav://settings — estilo escritorio Chrome)
   const navGroups: Array<
     Array<{
@@ -1210,18 +1686,19 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   > = [
     [
       { id: 'tu-google', label: t(lang, 'secYouAndGoogle'), icon: User },
+      { id: 'autocompletar', label: t(lang, 'secAutofill'), icon: KeyRound },
       { id: 'escudos', label: t(lang, 'secPrivacy'), icon: ShieldCheck },
+      { id: 'rendimiento', label: t(lang, 'secPerformance'), icon: Gauge },
       { id: 'apariencia', label: t(lang, 'secDesign'), icon: Palette },
-      { id: 'idiomas', label: t(lang, 'secLanguages'), icon: Languages },
       { id: 'buscador', label: t(lang, 'secSearchEngine'), icon: Search },
       { id: 'al-iniciar', label: t(lang, 'secOnStartup'), icon: Power }
     ],
     [
+      { id: 'idiomas', label: t(lang, 'secLanguages'), icon: Languages },
       { id: 'descargas', label: t(lang, 'secDownloads'), icon: Download },
       { id: 'datos', label: t(lang, 'secSystemCache'), icon: HardDrive },
       { id: 'restablecer', label: t(lang, 'secReset'), icon: RotateCcw }
-    ],
-    [{ id: 'acerca', label: t(lang, 'secAbout'), icon: Info }]
+    ]
   ];
 
   const themeOptions: Array<{ id: BrowserTheme; label: string; desc: string }> = [
@@ -1246,6 +1723,10 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       'sincronizacion',
       'importar',
       'favoritos',
+      'autocompletar',
+      'contraseñas',
+      'direcciones',
+      'pagos',
       'escudos',
       'privacidad',
       'seguridad',
@@ -1255,6 +1736,10 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       'cookies',
       'huellas',
       'borrar',
+      'rendimiento',
+      'memoria',
+      'ahorro',
+      'precargar',
       'diseño',
       'apariencia',
       'tema',
@@ -1266,6 +1751,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       'barra lateral',
       'idioma',
       'idiomas',
+      'ortografia',
+      'traducir',
       'language',
       'languages',
       'español',
@@ -1276,12 +1763,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       'buscador',
       'motor',
       'al iniciar',
+      'sesion',
       'homepage',
       'descargas',
       'respaldo',
       'json',
       'electron',
       'sistema',
+      'animaciones',
       'cache',
       'caché',
       'restablecer',
@@ -1379,6 +1868,37 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               })}
             </React.Fragment>
           ))}
+          <div className="hidden md:block h-[1px] bg-[var(--bn-border)] my-1.5 mx-2" />
+          <button
+            type="button"
+            onClick={() =>
+              onOpenNewTab ? onOpenNewTab('fabinav://extensions') : onNavigate('fabinav://extensions')
+            }
+            className="flex items-center justify-between gap-2 px-3.5 py-2 rounded-full text-[13px] font-medium whitespace-nowrap text-[var(--bn-text)] hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] transition-colors"
+            title="Se abre en una pestaña nueva"
+          >
+            <span className="flex items-center gap-3">
+              <Puzzle className="w-4 h-4 shrink-0" />
+              <span>{t(lang, 'secExtensions')}</span>
+            </span>
+            <ExternalLink className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSettingsSearch('');
+              setConfirmReset(false);
+              setSettingsSection('acerca');
+            }}
+            className={`relative flex items-center gap-3 px-3.5 py-2 rounded-full text-[13px] font-medium whitespace-nowrap transition-colors ${
+              !queryNorm && settingsSection === 'acerca'
+                ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
+                : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)]'
+            }`}
+          >
+            <Info className="w-4 h-4 shrink-0" />
+            <span>{t(lang, 'secAbout')}</span>
+          </button>
         </aside>
 
         <div className="flex-1 overflow-y-auto p-5 sm:p-8">
@@ -1541,12 +2061,177 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 </section>
               )}
 
+              {/* 1B. AUTOCOMPLETAR Y CONTRASEÑAS */}
+              {showSection(
+                'autocompletar',
+                'autocompletar',
+                'contraseñas',
+                'direcciones',
+                'pagos',
+                'perfil',
+                'correo'
+              ) && (
+                <section className="space-y-3">
+                  <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
+                    {t(lang, 'secAutofill')}
+                  </h2>
+
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl divide-y divide-[var(--bn-border)] text-xs overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('https://passwords.google.com')}
+                      className="w-full px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-[var(--bn-hover)] text-left transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <KeyRound className="w-4 h-4 text-[var(--bn-accent)] shrink-0" />
+                        <div>
+                          <div className="font-medium text-[var(--bn-text-strong)]">
+                            Gestor de contraseñas de Google
+                          </div>
+                          <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                            Consulta y administra tus credenciales guardadas en passwords.google.com
+                          </div>
+                        </div>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
+                    </button>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!afLabel.trim() || !afValue.trim() || !onAddAutofill) return;
+                        onAddAutofill({
+                          category: afCategory,
+                          label: afLabel.trim(),
+                          value: afValue.trim(),
+                          secondary: afSecondary.trim() || undefined
+                        });
+                        setAfLabel('');
+                        setAfValue('');
+                        setAfSecondary('');
+                      }}
+                      className="p-4 space-y-2.5 bg-[var(--bn-surface)]/40"
+                    >
+                      <div className="text-[11px] font-semibold text-[var(--bn-text-strong)]">
+                        Añadir dato de autocompletado local (dirección, contacto o tarjeta)
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                        <select
+                          value={afCategory}
+                          onChange={(e) => setAfCategory(e.target.value as AutofillEntry['category'])}
+                          className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-2.5 py-2 text-xs text-[var(--bn-text-strong)]"
+                        >
+                          <option value="contact">Contacto / Correo</option>
+                          <option value="address">Dirección</option>
+                          <option value="payment">Método de pago</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={afLabel}
+                          onChange={(e) => setAfLabel(e.target.value)}
+                          placeholder="Etiqueta (ej. Casa, Trabajo)"
+                          className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                        />
+                        <input
+                          type="text"
+                          value={afValue}
+                          onChange={(e) => setAfValue(e.target.value)}
+                          placeholder="Valor principal (correo, calle, alias...)"
+                          className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                        />
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Guardar</span>
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={afSecondary}
+                        onChange={(e) => setAfSecondary(e.target.value)}
+                        placeholder="Nota o detalle opcional (ej. código postal, teléfono)"
+                        className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                      />
+                    </form>
+
+                    {autofillEntries.length === 0 ? (
+                      <div className="px-5 py-6 text-center text-[11px] text-[var(--bn-text-muted)]">
+                        No hay perfiles de autocompletado guardados localmente todavía.
+                      </div>
+                    ) : (
+                      autofillEntries.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-[var(--bn-hover)]/45 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-[var(--bn-toolbar)] border border-[var(--bn-border)] flex items-center justify-center text-[var(--bn-accent)] shrink-0">
+                              {entry.category === 'address' ? (
+                                <MapPin className="w-3.5 h-3.5" />
+                              ) : entry.category === 'payment' ? (
+                                <CreditCard className="w-3.5 h-3.5" />
+                              ) : (
+                                <Phone className="w-3.5 h-3.5" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium text-[var(--bn-text-strong)] truncate">
+                                {entry.label}
+                              </div>
+                              <div className="text-[11px] text-[var(--bn-text-muted)] truncate">
+                                {entry.value}
+                                {entry.secondary ? ` · ${entry.secondary}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(entry.value);
+                                  setCopiedAfId(entry.id);
+                                  setTimeout(() => setCopiedAfId(null), 1500);
+                                } catch {
+                                  // Ignore clipboard errors
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-full border border-[var(--bn-border)] hover:bg-[var(--bn-hover)] text-[11px] text-[var(--bn-text)] inline-flex items-center gap-1"
+                            >
+                              {copiedAfId === entry.id ? (
+                                <Check className="w-3 h-3 text-[var(--bn-success-text)]" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                              <span>{copiedAfId === entry.id ? 'Copiado' : 'Copiar'}</span>
+                            </button>
+                            {onRemoveAutofill && (
+                              <button
+                                type="button"
+                                onClick={() => onRemoveAutofill(entry.id)}
+                                className="p-1.5 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)]"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+              )}
+
               {/* 2. PRIVACIDAD Y SEGURIDAD (ESCUDOS) */}
               {showSection(
                 'escudos',
                 'escudos',
                 'privacidad',
                 'seguridad',
+                'verificacion',
                 'rastreadores',
                 'tls',
                 'https',
@@ -1554,10 +2239,10 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 'huellas',
                 'borrar'
               ) && (
-                <section className="space-y-2.5">
+                <section className="space-y-3">
                   <div className="flex items-center justify-between px-1">
                     <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)]">
-                      Privacidad y seguridad
+                      {t(lang, 'secPrivacy')}
                     </h2>
                     <button
                       type="button"
@@ -1566,6 +2251,42 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     >
                       <span>Administrar cookies, caché y TLS</span>
                       <ExternalLink className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Chrome-style Security Checkup Banner */}
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl overflow-hidden px-5 py-4 flex flex-wrap items-center justify-between gap-4 text-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                          shieldState.enabled && shieldState.strictTls
+                            ? 'bg-[var(--bn-accent-soft)] text-[var(--bn-accent)]'
+                            : 'bg-amber-500/15 text-amber-400'
+                        }`}
+                      >
+                        {shieldState.enabled && shieldState.strictTls ? (
+                          <ShieldCheck className="w-4 h-4" />
+                        ) : (
+                          <ShieldAlert className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-[var(--bn-text-strong)]">
+                          Verificación de seguridad de FabiNav
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          {shieldState.enabled && shieldState.strictTls
+                            ? `Protección activa · ${shieldState.trackersBlockedCount} rastreadores bloqueados · TLS estricto activado`
+                            : 'Escudos pausados o TLS estricto desactivado. Revisa la configuración.'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('fabinav://shields')}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium shrink-0 transition-colors"
+                    >
+                      Ir a la Verificación de seguridad
                     </button>
                   </div>
 
@@ -1669,6 +2390,22 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                       />
                     </div>
 
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('fabinav://shields#filtros')}
+                      className="w-full px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-[var(--bn-hover)] text-left transition-colors"
+                    >
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Listas de filtros y bloqueo personalizado
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Gestiona reglas EasyList, avisos de cookies y filtros propios
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
+                    </button>
+
                     {onClearBrowsingData && (
                       <button
                         type="button"
@@ -1686,6 +2423,159 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         <ChevronRight className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
                       </button>
                     )}
+                  </div>
+                </section>
+              )}
+
+              {/* 2B. RENDIMIENTO (AHORRO DE MEMORIA Y PRECARGA) */}
+              {showSection(
+                'rendimiento',
+                'rendimiento',
+                'memoria',
+                'ahorro',
+                'pestañas inactivas',
+                'precargar',
+                'velocidad'
+              ) && (
+                <section className="space-y-3">
+                  <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
+                    {t(lang, 'secPerformance')}
+                  </h2>
+
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl divide-y divide-[var(--bn-border)] text-xs overflow-hidden">
+                    <div className="px-5 py-4 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Ahorro de memoria
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          FabiNav libera la memoria de pestañas externas inactivas para mantener fluido el navegador
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={!!settings.memorySaver}
+                        onChange={(v) => onUpdateSettings({ memorySaver: v })}
+                        ariaLabel="Ahorro de memoria"
+                      />
+                    </div>
+
+                    {settings.memorySaver && (
+                      <div className="px-5 py-3.5 space-y-2.5 bg-[var(--bn-surface)]/35">
+                        <div className="text-[11px] font-medium text-[var(--bn-text-muted)]">
+                          Nivel de suspensión automática
+                        </div>
+                        {(
+                          [
+                            { id: 'moderate', label: 'Moderado', desc: 'Suspende tras 5 minutos de inactividad' },
+                            { id: 'balanced', label: 'Equilibrado (Recomendado)', desc: 'Suspende tras 2 minutos de inactividad' },
+                            { id: 'maximum', label: 'Máximo', desc: 'Suspende tras 45 segundos de inactividad' }
+                          ] as Array<{ id: MemorySaverLevel; label: string; desc: string }>
+                        ).map((opt) => (
+                          <label
+                            key={opt.id}
+                            className="flex items-start gap-3 cursor-pointer py-1"
+                          >
+                            <input
+                              type="radio"
+                              name="memorySaverMode"
+                              checked={(settings.memorySaverMode || 'balanced') === opt.id}
+                              onChange={() => onUpdateSettings({ memorySaverMode: opt.id })}
+                              className="mt-0.5 accent-[var(--bn-accent)]"
+                            />
+                            <div>
+                              <div className="font-medium text-[var(--bn-text-strong)]">{opt.label}</div>
+                              <div className="text-[11px] text-[var(--bn-text-muted)]">{opt.desc}</div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="px-5 py-4 space-y-3">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Mantener estos sitios siempre activos
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Estas webs nunca se suspenderán por Ahorro de memoria
+                        </div>
+                      </div>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const clean = alwaysActiveInput
+                            .trim()
+                            .toLowerCase()
+                            .replace(/^https?:\/\//, '')
+                            .split('/')[0];
+                          if (!clean) return;
+                          const prev = settings.alwaysActiveDomains || [];
+                          if (!prev.includes(clean)) {
+                            onUpdateSettings({ alwaysActiveDomains: [...prev, clean] });
+                          }
+                          setAlwaysActiveInput('');
+                        }}
+                        className="flex gap-2"
+                      >
+                        <input
+                          type="text"
+                          value={alwaysActiveInput}
+                          onChange={(e) => setAlwaysActiveInput(e.target.value)}
+                          placeholder="Ej. github.com o docs.google.com"
+                          className="flex-1 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                        />
+                        <button
+                          type="submit"
+                          className="px-3.5 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium"
+                        >
+                          Añadir
+                        </button>
+                      </form>
+
+                      {(settings.alwaysActiveDomains || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {(settings.alwaysActiveDomains || []).map((domain) => (
+                            <span
+                              key={domain}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--bn-toolbar)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-text-strong)]"
+                            >
+                              <span className="font-mono">{domain}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onUpdateSettings({
+                                    alwaysActiveDomains: (settings.alwaysActiveDomains || []).filter(
+                                      (d) => d !== domain
+                                    )
+                                  })
+                                }
+                                className="text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)]"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="px-5 py-4 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Precargar páginas para acelerar búsquedas y navegación
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Almacena temporalmente páginas recientes y resultados en caché local
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={settings.preloadPages !== false}
+                        onChange={(v) => onUpdateSettings({ preloadPages: v })}
+                        ariaLabel="Precargar páginas"
+                      />
+                    </div>
                   </div>
                 </section>
               )}
@@ -1857,11 +2747,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 </section>
               )}
 
-              {/* 3B. IDIOMAS (ES / EN / JA) */}
+              {/* 3B. IDIOMAS (ES / EN / JA + ORTOGRAFÍA + TRADUCTOR) */}
               {showSection(
                 'idiomas',
                 'idioma',
                 'idiomas',
+                'ortografia',
+                'traducir',
+                'traductor',
                 'language',
                 'languages',
                 'español',
@@ -1870,7 +2763,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 '日本語',
                 '言語'
               ) && (
-                <section className="space-y-2.5">
+                <section className="space-y-3">
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
                     {t(lang, 'secLanguages')}
                   </h2>
@@ -1928,6 +2821,66 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         );
                       })}
                     </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Revisar ortografía al escribir
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Activa el corrector ortográfico del navegador en formularios y notas
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={settings.spellCheck !== false}
+                        onChange={(v) => onUpdateSettings({ spellCheck: v })}
+                        ariaLabel="Corrector ortográfico"
+                      />
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Traductor integrado de páginas
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Permite traducir sitios web externos desde el menú principal («Traducir...»)
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={settings.translateOffer !== false}
+                        onChange={(v) => onUpdateSettings({ translateOffer: v })}
+                        ariaLabel="Traductor de páginas"
+                      />
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Idioma destino de traducción
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Idioma al que se traducen las páginas externas al pulsar Traducir
+                        </div>
+                      </div>
+                      <select
+                        value={settings.translateTargetLang || lang}
+                        onChange={(e) =>
+                          onUpdateSettings({
+                            translateTargetLang: e.target.value as BrowserSettings['translateTargetLang']
+                          })
+                        }
+                        className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                      >
+                        {LANGUAGE_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.nativeName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </section>
               )}
@@ -1938,52 +2891,110 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
                     Motor de búsqueda
                   </h2>
-                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl px-5 py-4 flex items-center justify-between gap-4 text-xs">
-                    <div>
-                      <div className="font-medium text-[var(--bn-text-strong)]">
-                        Buscador utilizado en la barra de direcciones
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl overflow-hidden divide-y divide-[var(--bn-border)] text-xs">
+                    <div className="px-5 py-4 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Buscador utilizado en la barra de direcciones
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Se usa también en la barra de búsqueda de Nueva pestaña. Solo se modifica aquí.
+                        </div>
                       </div>
-                      <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                        Se usa también en la barra de búsqueda de Nueva pestaña
-                      </div>
+                      <select
+                        value={
+                          settings.defaultSearchEngine === 'brave'
+                            ? 'fabinav'
+                            : settings.defaultSearchEngine
+                        }
+                        onChange={(e) =>
+                          onUpdateSettings({
+                            defaultSearchEngine: e.target.value as BrowserSettings['defaultSearchEngine']
+                          })
+                        }
+                        className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                      >
+                        <option value="fabinav">FabiNav Search</option>
+                        <option value="google">Google</option>
+                        <option value="duckduckgo">DuckDuckGo</option>
+                        <option value="bing">Bing</option>
+                        <option value="ecosia">Ecosia</option>
+                      </select>
                     </div>
-                    <select
-                      value={
-                        settings.defaultSearchEngine === 'brave'
-                          ? 'fabinav'
-                          : settings.defaultSearchEngine
-                      }
-                      onChange={(e) =>
-                        onUpdateSettings({
-                          defaultSearchEngine: e.target.value as BrowserSettings['defaultSearchEngine']
-                        })
-                      }
-                      className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
-                    >
-                      <option value="fabinav">FabiNav Search</option>
-                      <option value="google">Google</option>
-                      <option value="duckduckgo">DuckDuckGo</option>
-                      <option value="bing">Bing</option>
-                      <option value="ecosia">Ecosia</option>
-                    </select>
                   </div>
                 </section>
               )}
 
               {/* 5. AL INICIAR */}
-              {showSection('al-iniciar', 'al iniciar', 'inicio', 'homepage', 'nueva pestaña') && (
+              {showSection('al-iniciar', 'al iniciar', 'inicio', 'sesion', 'homepage', 'nueva pestaña') && (
                 <section className="space-y-2.5">
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
-                    Al iniciar
+                    {t(lang, 'secOnStartup')}
                   </h2>
                   <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl divide-y divide-[var(--bn-border)] text-xs overflow-hidden">
+                    <label className="px-5 py-3.5 flex items-center gap-3.5 hover:bg-[var(--bn-hover)] cursor-pointer transition-colors">
+                      <input
+                        type="radio"
+                        name="startupMode"
+                        checked={settings.startupMode === 'newtab'}
+                        onChange={() => onUpdateSettings({ startupMode: 'newtab' as StartupMode })}
+                        className="accent-[var(--bn-accent)]"
+                      />
+                      <span className="font-medium text-[var(--bn-text-strong)]">
+                        Abrir la página Nueva pestaña
+                      </span>
+                    </label>
+
+                    <label className="px-5 py-3.5 flex items-center gap-3.5 hover:bg-[var(--bn-hover)] cursor-pointer transition-colors">
+                      <input
+                        type="radio"
+                        name="startupMode"
+                        checked={(settings.startupMode || 'continue') === 'continue'}
+                        onChange={() => onUpdateSettings({ startupMode: 'continue' as StartupMode })}
+                        className="accent-[var(--bn-accent)]"
+                      />
+                      <span className="font-medium text-[var(--bn-text-strong)]">
+                        Continuar la sesión desde donde la dejaste
+                      </span>
+                    </label>
+
+                    <div className="px-5 py-3.5 space-y-2.5">
+                      <label className="flex items-center gap-3.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="startupMode"
+                          checked={settings.startupMode === 'specific'}
+                          onChange={() => onUpdateSettings({ startupMode: 'specific' as StartupMode })}
+                          className="accent-[var(--bn-accent)]"
+                        />
+                        <span className="font-medium text-[var(--bn-text-strong)]">
+                          Abrir una página específica o un conjunto de páginas
+                        </span>
+                      </label>
+
+                      {settings.startupMode === 'specific' && (
+                        <div className="pl-6 space-y-1.5">
+                          <textarea
+                            rows={3}
+                            value={settings.startupUrls || ''}
+                            onChange={(e) => onUpdateSettings({ startupUrls: e.target.value })}
+                            placeholder={'https://es.wikipedia.org/wiki/Wikipedia:Portada\nhttps://github.com'}
+                            className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-2.5 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                          />
+                          <div className="text-[11px] text-[var(--bn-text-muted)]">
+                            Escribe una URL por línea. Se abrirán al iniciar FabiNav.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-4">
                       <div>
                         <div className="font-medium text-[var(--bn-text-strong)]">
-                          Página de inicio
+                          Página de inicio (botón Inicio)
                         </div>
                         <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                          Dirección que se abre al pulsar el botón Inicio o abrir una nueva sesión
+                          Dirección que se abre al pulsar el icono de Inicio en la barra superior
                         </div>
                       </div>
                       <input
@@ -2081,12 +3092,29 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               )}
 
               {/* 7. SISTEMA Y CACHÉ */}
-              {showSection('datos', 'sistema', 'cache', 'caché', 'memoria', 'almacenamiento') && (
+              {showSection('datos', 'sistema', 'animaciones', 'cache', 'caché', 'memoria', 'almacenamiento') && (
                 <section className="space-y-2.5">
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
-                    Sistema y caché
+                    {t(lang, 'secSystemCache')}
                   </h2>
                   <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl divide-y divide-[var(--bn-border)] text-xs overflow-hidden">
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Reducir animaciones de interfaz (modo ligero)
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Desactiva transiciones suaves para priorizar velocidad de respuesta
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={!!settings.reduceMotion}
+                        onChange={(v) => onUpdateSettings({ reduceMotion: v })}
+                        ariaLabel="Reducir animaciones"
+                      />
+                    </div>
+
                     <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="font-medium text-[var(--bn-text-strong)]">
@@ -2122,6 +3150,38 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         {cacheNotice}
                       </div>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('fabinav://shields')}
+                      className="w-full px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-[var(--bn-hover)] text-left transition-colors"
+                    >
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Inspector TLS, Cookies y detalle de caché
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Inspecciona certificados SSL/TLS y las cookies guardadas por dominio
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={onOpenElectronModal}
+                      className="w-full px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-[var(--bn-hover)] text-left transition-colors"
+                    >
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Empaquetado de escritorio Electron
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Exportar archivos main.js, preload.js y configuración de instalador
+                        </div>
+                      </div>
+                      <Laptop className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
+                    </button>
                   </div>
                 </section>
               )}
@@ -2132,7 +3192,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
                     {t(lang, 'secReset')}
                   </h2>
-                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl px-5 py-4 flex flex-wrap items-center justify-between gap-4 text-xs">
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl overflow-hidden px-5 py-4 flex flex-wrap items-center justify-between gap-4 text-xs">
                     <div>
                       <div className="font-medium text-[var(--bn-text-strong)]">
                         Restaurar valores predeterminados originales
@@ -2183,7 +3243,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
                     {t(lang, 'secAbout')}
                   </h2>
-                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl p-5 space-y-4 text-xs">
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl overflow-hidden p-5 space-y-4 text-xs">
                     <div className="flex items-center gap-3.5">
                       <div
                         className="w-11 h-11 rounded-2xl text-white flex items-center justify-center font-bold text-base shrink-0"

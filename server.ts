@@ -1506,6 +1506,26 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function buildBuiltInExtensionCss(extModes: string[]): string {
+  const chunks: string[] = [];
+  if (extModes.includes('dark-web')) {
+    chunks.push(
+      'html{filter:invert(0.92) hue-rotate(180deg);background:#121316!important;}img,video,picture,canvas,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important;}'
+    );
+  }
+  if (extModes.includes('reader')) {
+    chunks.push(
+      'body{max-width:740px!important;margin:0 auto!important;padding:32px 24px!important;font-size:18px!important;line-height:1.72!important;font-family:Georgia,"Times New Roman",serif!important;}nav,aside,.sidebar,[role="complementary"],.ad,[class*="sidebar"],[class*="banner"]{opacity:0.25!important;}'
+    );
+  }
+  if (extModes.includes('ad-cosmetic')) {
+    chunks.push(
+      '[class*="newsletter"],[id*="newsletter"],[class*="subscribe-modal"],[class*="paywall-banner"],[class*="sticky-footer"],.fc-ab-root{display:none!important;}'
+    );
+  }
+  return chunks.join('\n');
+}
+
 function sanitizeAndEnhanceHtml(
   rawHtml: string,
   finalUrl: string,
@@ -1518,6 +1538,7 @@ function sanitizeAndEnhanceHtml(
     upgradedHttps: boolean;
     filterLists: string[];
     customRules: string[];
+    extModes?: string[];
   }
 ): { html: string; trackersBlocked: number; blockedTrackerUrls: string[] } {
   let html = rawHtml;
@@ -1661,20 +1682,24 @@ function sanitizeAndEnhanceHtml(
       ? `<style data-fabinav-annoyances="1">[id*="cookie-banner"],[class*="cookie-banner"],[id*="onetrust-banner"],.fc-consent-root,#CybotCookiebotDialog{display:none!important;}</style>`
       : '';
 
-  // Insert <base href="..."> + Fingerprint guard + Cookie annoyances guard
-  const baseTag = `<base href="${escapeHtml(finalUrl)}">${cookieBannerGuard}${fingerprintGuard}`;
+  const initialExtCss = buildBuiltInExtensionCss(options.extModes || []);
+  const extStyleTag = `<style id="fabinav-extensions-style">${initialExtCss}</style><style id="fabinav-custom-css"></style>`;
+
+  // Insert <base href="..."> + Fingerprint guard + Cookie annoyances + Extensions style
+  const baseTag = `<base href="${escapeHtml(finalUrl)}">${cookieBannerGuard}${extStyleTag}${fingerprintGuard}`;
   if (/<head[^>]*>/i.test(html)) {
     html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${baseTag}`);
   } else {
     html = `<head>${baseTag}</head>\n${html}`;
   }
 
-  // Inject lightweight FabiNav bridge (links + forms + find-in-page + audio mute + real telemetry via postMessage)
+  // Inject lightweight FabiNav bridge (links + forms + find-in-page + extensions + translate + audio mute + real telemetry via postMessage)
   const bridgeScript = `
 <script data-fabinav-bridge="1">
 (function () {
   var currentUrl = ${JSON.stringify(finalUrl)};
   var isTabMuted = false;
+  var translatedNodes = [];
   var applyMute = function (muted) {
     isTabMuted = !!muted;
     try {
@@ -1683,6 +1708,58 @@ function sanitizeAndEnhanceHtml(
         els[i].muted = isTabMuted;
       }
     } catch (e) {}
+  };
+  var applyExtensions = function (modes, customCss) {
+    try {
+      var builtInEl = document.getElementById('fabinav-extensions-style');
+      if (!builtInEl && document.head) {
+        builtInEl = document.createElement('style');
+        builtInEl.id = 'fabinav-extensions-style';
+        document.head.appendChild(builtInEl);
+      }
+      if (builtInEl) {
+        var chunks = [];
+        if (Array.isArray(modes)) {
+          if (modes.indexOf('dark-web') !== -1) {
+            chunks.push('html{filter:invert(0.92) hue-rotate(180deg);background:#121316!important;}img,video,picture,canvas,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important;}');
+          }
+          if (modes.indexOf('reader') !== -1) {
+            chunks.push('body{max-width:740px!important;margin:0 auto!important;padding:32px 24px!important;font-size:18px!important;line-height:1.72!important;font-family:Georgia,"Times New Roman",serif!important;}nav,aside,.sidebar,[role="complementary"],.ad,[class*="sidebar"],[class*="banner"]{opacity:0.25!important;}');
+          }
+          if (modes.indexOf('ad-cosmetic') !== -1) {
+            chunks.push('[class*="newsletter"],[id*="newsletter"],[class*="subscribe-modal"],[class*="paywall-banner"],[class*="sticky-footer"],.fc-ab-root{display:none!important;}');
+          }
+        }
+        builtInEl.textContent = chunks.join('\\n');
+      }
+      var customEl = document.getElementById('fabinav-custom-css');
+      if (!customEl && document.head) {
+        customEl = document.createElement('style');
+        customEl.id = 'fabinav-custom-css';
+        document.head.appendChild(customEl);
+      }
+      if (customEl) {
+        customEl.textContent = typeof customCss === 'string' ? customCss : '';
+      }
+    } catch (e) {}
+  };
+  var collectTranslatableNodes = function () {
+    translatedNodes = [];
+    var texts = [];
+    try {
+      var walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, null);
+      var node;
+      while ((node = walker.nextNode()) && texts.length < 65) {
+        var parentTag = node.parentElement ? node.parentElement.tagName : '';
+        if (parentTag === 'SCRIPT' || parentTag === 'STYLE' || parentTag === 'NOSCRIPT' || parentTag === 'CODE' || parentTag === 'PRE') continue;
+        var val = (node.nodeValue || '').trim();
+        if (val.length >= 4 && /[a-zA-Z\\u00C0-\\u024F\\u3040-\\u30FF\\u4E00-\\u9FFF]/.test(val)) {
+          translatedNodes.push(node);
+          texts.push(val.slice(0, 420));
+        }
+      }
+    } catch (e) {}
+    return texts;
   };
   try {
     var obs = new MutationObserver(function () {
@@ -1697,6 +1774,23 @@ function sanitizeAndEnhanceHtml(
     if (!d || typeof d !== 'object') return;
     if (d.type === 'fabinav:set-muted') {
       applyMute(!!d.muted);
+    } else if (d.type === 'fabinav:apply-extensions') {
+      applyExtensions(d.modes, d.customCss);
+    } else if (d.type === 'fabinav:translate-request') {
+      var collected = collectTranslatableNodes();
+      try {
+        window.parent.postMessage({
+          type: 'fabinav:translate-collected',
+          texts: collected,
+          targetLang: d.targetLang || 'es'
+        }, '*');
+      } catch (e) {}
+    } else if (d.type === 'fabinav:translate-apply' && Array.isArray(d.translatedTexts)) {
+      for (var j = 0; j < translatedNodes.length && j < d.translatedTexts.length; j++) {
+        if (typeof d.translatedTexts[j] === 'string' && d.translatedTexts[j]) {
+          translatedNodes[j].nodeValue = d.translatedTexts[j];
+        }
+      }
     } else if (d.type === 'fabinav:find' && typeof d.query === 'string') {
       var found = false;
       try {
@@ -1843,6 +1937,44 @@ function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): strin
 async function startServer() {
   loadNormalCookiesFromDisk();
   const app = express();
+  app.use(express.json({ limit: '512kb' }));
+
+  // 0a. Page Text Translation Endpoint (real free Google web translate endpoint)
+  app.post('/api/translate', async (req, res) => {
+    const body = req.body as { texts?: unknown; targetLang?: unknown } | undefined;
+    const rawTexts = Array.isArray(body?.texts) ? body.texts.slice(0, 65) : [];
+    const targetLang =
+      body?.targetLang === 'en' || body?.targetLang === 'ja' ? body.targetLang : 'es';
+    const texts = rawTexts.map((x) => (typeof x === 'string' ? x.slice(0, 420) : ''));
+
+    if (texts.length === 0) {
+      res.json({ translatedTexts: [] });
+      return;
+    }
+
+    const SEP = '\n[[[FN_SEP]]]\n';
+    const joined = texts.join(SEP);
+    try {
+      const apiUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(
+        targetLang
+      )}&dt=t&q=${encodeURIComponent(joined)}`;
+      const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) {
+        res.status(502).json({ error: 'Translation upstream unavailable', translatedTexts: texts });
+        return;
+      }
+      const parsed = (await resp.json()) as unknown[];
+      const segments = Array.isArray(parsed?.[0]) ? (parsed[0] as unknown[][]) : [];
+      const fullOut = segments
+        .map((seg) => (Array.isArray(seg) && typeof seg[0] === 'string' ? seg[0] : ''))
+        .join('');
+      const parts = fullOut.split(/\s*\[\[\[FN_SEP\]\]\]\s*/);
+      const translatedTexts = texts.map((orig, idx) => (parts[idx] ? parts[idx].trim() : orig));
+      res.json({ translatedTexts });
+    } catch {
+      res.json({ translatedTexts: texts });
+    }
+  });
 
   // 0. Live Autocomplete Suggestions API
   app.get('/api/suggest', async (req, res) => {
@@ -2172,6 +2304,10 @@ async function startServer() {
       .map((s) => s.trim())
       .filter(Boolean)
       .slice(0, 30);
+    const extModes = String(req.query.ext || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     const requestTargetUrl =
       shields && filterLists.includes('url-tracking')
@@ -2180,7 +2316,7 @@ async function startServer() {
 
     const cacheKey = `${requestTargetUrl}::s${shields ? 1 : 0}::t${blockTrackers}::js${
       blockScripts ? 1 : 0
-    }::fp${blockFingerprinting}::l[${filterLists.join('|')}]::r[${customRules.join('|')}]`;
+    }::fp${blockFingerprinting}::l[${filterLists.join('|')}]::r[${customRules.join('|')}]::e[${extModes.join('|')}]`;
 
     if (partition === 'normal' && !rawDownload && !refresh) {
       const hit = proxyCache.get(cacheKey);
@@ -2220,7 +2356,8 @@ async function startServer() {
           cookiesBlocked: outcome.cookiesBlocked,
           upgradedHttps: outcome.upgradedHttps,
           filterLists,
-          customRules
+          customRules,
+          extModes
         });
 
         const upstreamCacheControl = String(outcome.headers['cache-control'] || '').toLowerCase();

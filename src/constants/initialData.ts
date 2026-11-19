@@ -6,10 +6,11 @@ import {
   WallpaperItem,
   FabiShieldState,
   FabiNewTabCustomization,
-  LocalBackupMeta
+  LocalBackupMeta,
+  BrowserExtension
 } from '../types';
 
-export const APP_VERSION = '1.13.0';
+export const APP_VERSION = '1.14.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -168,6 +169,8 @@ export const INITIAL_BOOKMARKS: Bookmark[] = [
 export const DEFAULT_SETTINGS: BrowserSettings = {
   defaultSearchEngine: 'fabinav',
   homepage: 'fabinav://newtab',
+  startupMode: 'continue',
+  startupUrls: 'https://es.wikipedia.org/wiki/Wikipedia:Portada',
   theme: 'fabi-dark',
   language: 'es',
   showSidebar: true,
@@ -176,8 +179,79 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   showBookmarksBar: true,
   useVerticalTabs: false,
   showHomeButton: false,
-  zoomLevel: 100
+  zoomLevel: 100,
+  memorySaver: false,
+  memorySaverMode: 'balanced',
+  alwaysActiveDomains: [],
+  preloadPages: true,
+  spellCheck: true,
+  translateOffer: true,
+  translateTargetLang: 'es',
+  reduceMotion: false,
+  pinNewExtensions: true,
+  extensionsDevMode: false
 };
+
+export const INITIAL_EXTENSIONS: BrowserExtension[] = [
+  {
+    id: 'ext-dark-web',
+    name: 'Dark Web Reader',
+    description:
+      'Aplica modo oscuro inteligente sobre páginas externas claras, conservando imágenes y videos sin invertir.',
+    version: '1.4.2',
+    author: 'FabiNav Labs',
+    enabled: false,
+    pinned: true,
+    permissions: ['Leer y modificar CSS de sitios web visitados'],
+    accentColor: '#7c6bf2',
+    mode: 'dark-web',
+    builtIn: true
+  },
+  {
+    id: 'ext-reader-zen',
+    name: 'Modo Lectura Zen',
+    description:
+      'Optimiza el ancho de columna, contraste tipográfico e interlineado de artículos para leer sin distracciones.',
+    version: '1.2.0',
+    author: 'FabiNav Labs',
+    enabled: false,
+    pinned: true,
+    permissions: ['Modificar estilos visuales de artículos externos'],
+    accentColor: '#10b981',
+    mode: 'reader',
+    builtIn: true
+  },
+  {
+    id: 'ext-stylus',
+    name: 'Stylus — Estilos de Usuario',
+    description:
+      'Administrador de hojas de estilo CSS personalizadas para ajustar fuentes, colores y diseño de cualquier sitio.',
+    version: '2.1.0',
+    author: 'FabiNav Community',
+    enabled: false,
+    pinned: true,
+    permissions: ['Inyectar reglas CSS personalizadas en páginas externas'],
+    accentColor: '#14b8a6',
+    mode: 'stylus',
+    customCss:
+      '/* CSS personalizado de Stylus */\nbody {\n  scroll-behavior: smooth;\n}\na:hover {\n  text-decoration-thickness: 2px;\n}',
+    builtIn: true
+  },
+  {
+    id: 'ext-cleanweb',
+    name: 'CleanWeb Banners & Popups',
+    description:
+      'Oculta superposiciones invasivas de boletines, carteles flotantes y barras pegajosas molestas en páginas externas.',
+    version: '1.1.5',
+    author: 'FabiNav Privacy',
+    enabled: true,
+    pinned: false,
+    permissions: ['Filtrado cosmético del DOM en páginas externas'],
+    accentColor: '#f97316',
+    mode: 'ad-cosmetic',
+    builtIn: true
+  }
+];
 
 export const ELECTRON_MAIN_JS = `const { app, BrowserWindow, session } = require('electron');
 const path = require('path');

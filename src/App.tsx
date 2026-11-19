@@ -14,7 +14,9 @@ import {
   LocalBackupMeta,
   HistoryEntry,
   TopSiteItem,
-  GoogleUserProfile
+  GoogleUserProfile,
+  BrowserExtension,
+  AutofillEntry
 } from './types';
 import {
   INITIAL_TABS,
@@ -24,6 +26,7 @@ import {
   INITIAL_SHIELD_STATE,
   INITIAL_NEWTAB_CUSTOMIZATION,
   INITIAL_BACKUP_META,
+  INITIAL_EXTENSIONS,
   APP_VERSION
 } from './constants/initialData';
 import { initGoogleAuth, signInWithGoogle, signOutGoogle, setAuthLanguage } from './services/googleAuth';
@@ -104,18 +107,87 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Tabs & Navigation
-  const [tabs, setTabs] = useState<WebTab[]>(() => loadStored('tabs', INITIAL_TABS));
-  const [activeTabId, setActiveTabId] = useState<string>(() => {
-    const storedTabs = loadStored('tabs', INITIAL_TABS);
-    return storedTabs[0]?.id || INITIAL_TABS[0].id;
+  // Initial session hydration honoring startupMode ('newtab' | 'continue' | 'specific')
+  const [initialSession] = useState(() => {
+    const loadedSettings = normalizeLoadedSettings(loadStored('settings', DEFAULT_SETTINGS));
+    const loadedBookmarks = loadStored<Bookmark[]>('bookmarks', INITIAL_BOOKMARKS);
+    const now = Date.now();
+    let startupTabs: WebTab[];
+
+    if (loadedSettings.startupMode === 'newtab') {
+      startupTabs = [
+        {
+          ...INITIAL_TABS[0],
+          id: `tab-${now}`,
+          createdAt: now,
+          lastActiveAt: now,
+          isDiscarded: false
+        }
+      ];
+    } else if (loadedSettings.startupMode === 'specific') {
+      const rawLines = (loadedSettings.startupUrls || '')
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const targets = rawLines.length > 0 ? rawLines : [loadedSettings.homepage || 'fabinav://newtab'];
+      startupTabs = targets.map((raw, idx) => {
+        const url =
+          raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('fabinav://')
+            ? raw
+            : `https://${raw}`;
+        const isInternal = url.startsWith('fabinav://');
+        return {
+          id: `tab-${now}-${idx}`,
+          title: isInternal
+            ? 'Nueva pestaña'
+            : url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] || url,
+          url,
+          displayUrl: url,
+          isLoading: false,
+          canGoBack: false,
+          canGoForward: false,
+          history: [url],
+          historyIndex: 0,
+          isPinned: false,
+          isMuted: false,
+          isBookmarked: loadedBookmarks.some((b) => b.url === url),
+          createdAt: now,
+          lastActiveAt: now,
+          isDiscarded: false,
+          tabMode: 'normal' as const
+        };
+      });
+    } else {
+      const stored = loadStored<WebTab[]>('tabs', INITIAL_TABS);
+      startupTabs = (stored.length > 0 ? stored : INITIAL_TABS).map((tab) => ({
+        ...tab,
+        url: tab.url.startsWith('brave://') ? tab.url.replace(/^brave:\/\//, 'fabinav://') : tab.url,
+        displayUrl: tab.displayUrl.startsWith('brave://')
+          ? tab.displayUrl.replace(/^brave:\/\//, 'fabinav://')
+          : tab.displayUrl,
+        lastActiveAt: now,
+        isDiscarded: false
+      }));
+    }
+
+    return { loadedSettings, loadedBookmarks, startupTabs };
   });
+
+  // Tabs & Navigation
+  const [tabs, setTabs] = useState<WebTab[]>(initialSession.startupTabs);
+  const [activeTabId, setActiveTabId] = useState<string>(
+    initialSession.startupTabs[0]?.id || INITIAL_TABS[0].id
+  );
   const [splitTabId, setSplitTabId] = useState<string | null>(null);
   const [closedTabs, setClosedTabs] = useState<ClosedTabRecord[]>([]);
 
-  // Settings, Theme & Customization
-  const [settings, setSettings] = useState<BrowserSettings>(() =>
-    normalizeLoadedSettings(loadStored('settings', DEFAULT_SETTINGS))
+  // Settings, Theme, Extensions & Autofill
+  const [settings, setSettings] = useState<BrowserSettings>(initialSession.loadedSettings);
+  const [extensions, setExtensions] = useState<BrowserExtension[]>(() =>
+    loadStored('extensions', INITIAL_EXTENSIONS)
+  );
+  const [autofillEntries, setAutofillEntries] = useState<AutofillEntry[]>(() =>
+    loadStored('autofill_entries', [])
   );
   const [shieldState, setShieldState] = useState<FabiShieldState>(() =>
     loadStored('shields', INITIAL_SHIELD_STATE)
@@ -131,9 +203,7 @@ export default function App() {
   const [backupMeta, setBackupMeta] = useState<LocalBackupMeta>(() =>
     loadStored('backup_meta', INITIAL_BACKUP_META)
   );
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() =>
-    loadStored('bookmarks', INITIAL_BOOKMARKS)
-  );
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialSession.loadedBookmarks);
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(() =>
     loadStored('history', [])
   );
@@ -289,12 +359,17 @@ export default function App() {
     }
   };
 
-  // Sync HTML lang attribute and Firebase Auth language with user preference
+  // Sync HTML lang attribute, spellcheck, reduceMotion & Firebase Auth language
   useEffect(() => {
     const lang = settings.language || 'es';
     document.documentElement.lang = lang;
     setAuthLanguage(lang);
   }, [settings.language]);
+
+  useEffect(() => {
+    document.documentElement.spellcheck = settings.spellCheck !== false;
+    document.documentElement.classList.toggle('fabi-reduce-motion', !!settings.reduceMotion);
+  }, [settings.spellCheck, settings.reduceMotion]);
 
   // Persist workspace state to localStorage (never persisting OAuth tokens)
   useEffect(() => {
@@ -304,6 +379,8 @@ export default function App() {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}history`, JSON.stringify(historyEntries.slice(0, 100)));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}downloads`, JSON.stringify(downloads.slice(0, 50)));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}settings`, JSON.stringify(settings));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}extensions`, JSON.stringify(extensions));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}autofill_entries`, JSON.stringify(autofillEntries));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}shields`, JSON.stringify(shieldState));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}newtab`, JSON.stringify(newTabCustomization));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}top_sites`, JSON.stringify(topSites));
@@ -319,6 +396,8 @@ export default function App() {
     historyEntries,
     downloads,
     settings,
+    extensions,
+    autofillEntries,
     shieldState,
     newTabCustomization,
     topSites,
@@ -377,6 +456,7 @@ export default function App() {
   const resolveInternalTitle = (targetUrl: string): string => {
     const baseUrl = targetUrl.split('#')[0];
     if (baseUrl === 'fabinav://newtab') return 'Nueva pestaña';
+    if (baseUrl === 'fabinav://extensions') return 'Extensiones';
     if (baseUrl === 'fabinav://bookmarks') return 'Marcadores';
     if (baseUrl === 'fabinav://history') return 'Historial';
     if (baseUrl === 'fabinav://downloads') return 'Descargas';
@@ -505,8 +585,24 @@ export default function App() {
   }, []);
 
   const handleSelectTab = (tabId: string) => {
+    const now = Date.now();
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id === tabId) return { ...t, lastActiveAt: now, isDiscarded: false };
+        if (t.id === activeTabId) return { ...t, lastActiveAt: now };
+        return t;
+      })
+    );
     setActiveTabId(tabId);
     setIsShieldsModalOpen(false);
+  };
+
+  const handleWakeTab = (tabId: string) => {
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === tabId ? { ...t, isDiscarded: false, lastActiveAt: Date.now() } : t
+      )
+    );
   };
 
   const handleNewTab = (
@@ -577,6 +673,51 @@ export default function App() {
       return null;
     }
   };
+
+  // Memory Saver auto-discard timer for inactive external tabs
+  useEffect(() => {
+    if (!settings.memorySaver) return;
+    const mode = settings.memorySaverMode || 'balanced';
+    const thresholdMs = mode === 'maximum' ? 45_000 : mode === 'moderate' ? 300_000 : 120_000;
+    const alwaysDomains = (settings.alwaysActiveDomains || []).map((d) => d.toLowerCase());
+
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setTabs((prev) => {
+        let changed = false;
+        const next = prev.map((t) => {
+          if (
+            t.id === activeTabId ||
+            t.id === splitTabId ||
+            t.isPinned ||
+            t.isDiscarded ||
+            t.url.startsWith('fabinav://')
+          ) {
+            return t;
+          }
+          const host = extractHost(t.url);
+          if (host && alwaysDomains.some((d) => host === d || host.endsWith(`.${d}`))) {
+            return t;
+          }
+          const lastActive = t.lastActiveAt || t.createdAt;
+          if (now - lastActive >= thresholdMs) {
+            changed = true;
+            return { ...t, isDiscarded: true };
+          }
+          return t;
+        });
+        return changed ? next : prev;
+      });
+    }, 15_000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    settings.memorySaver,
+    settings.memorySaverMode,
+    settings.alwaysActiveDomains,
+    activeTabId,
+    splitTabId
+  ]);
 
   const forgetDomainsIfClosed = (closedList: WebTab[], remainingTabs: WebTab[]) => {
     const forgetSet = new Set(
@@ -1042,6 +1183,72 @@ export default function App() {
     setWindowMode('maximized');
     handleNewTab('fabinav://newtab');
     showToast('Nueva sesión lista en FabiNav');
+  };
+
+  // Extensions management handlers
+  const handleToggleExtension = (id: string) => {
+    setExtensions((prev) =>
+      prev.map((ext) => {
+        if (ext.id !== id) return ext;
+        const nextEnabled = !ext.enabled;
+        showToast(`${ext.name}: ${nextEnabled ? 'activada' : 'desactivada'}`);
+        return { ...ext, enabled: nextEnabled };
+      })
+    );
+  };
+
+  const handleUpdateExtension = (id: string, updates: Partial<BrowserExtension>) => {
+    setExtensions((prev) => prev.map((ext) => (ext.id === id ? { ...ext, ...updates } : ext)));
+  };
+
+  const handleAddExtension = (ext: Omit<BrowserExtension, 'id'>) => {
+    const created: BrowserExtension = {
+      ...ext,
+      id: `ext-custom-${Date.now()}`
+    };
+    setExtensions((prev) => [created, ...prev]);
+    showToast(`Extensión "${created.name}" instalada`);
+  };
+
+  const handleRemoveExtension = (id: string) => {
+    setExtensions((prev) => prev.filter((ext) => ext.id !== id));
+    showToast('Extensión eliminada');
+  };
+
+  const handleResetExtensions = () => {
+    setExtensions(INITIAL_EXTENSIONS);
+    showToast('Extensiones restauradas');
+  };
+
+  // Autofill management handlers
+  const handleAddAutofill = (entry: Omit<AutofillEntry, 'id' | 'createdAt'>) => {
+    setAutofillEntries((prev) => [
+      { ...entry, id: `af-${Date.now()}`, createdAt: Date.now() },
+      ...prev
+    ]);
+    showToast('Perfil de autocompletado guardado');
+  };
+
+  const handleRemoveAutofill = (id: string) => {
+    setAutofillEntries((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  // Live Page Translation trigger
+  const handleTranslatePage = () => {
+    if (!activeTab) return;
+    if (activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://')) {
+      window.dispatchEvent(
+        new CustomEvent('fabinav:dispatch-translate', {
+          detail: {
+            tabId: activeTab.id,
+            targetLang: settings.translateTargetLang || settings.language || 'es'
+          }
+        })
+      );
+      showToast('Traduciendo página...');
+    } else {
+      showToast('Abre una página web externa para traducirla');
+    }
   };
 
   // Safe DevTools Console Evaluator
@@ -1517,11 +1724,39 @@ export default function App() {
       action: () => setIsTaskManagerOpen(true)
     },
     {
+      id: 'cmd-extensions',
+      title: 'Administrar extensiones',
+      subtitle: 'Activar estilos CSS, modo lectura o crear extensiones',
+      category: 'Herramientas',
+      action: () => handleNavigate(activeTab.id, 'fabinav://extensions')
+    },
+    {
+      id: 'cmd-translate',
+      title: 'Traducir página actual',
+      subtitle: 'Traduce el contenido web externo al idioma elegido',
+      category: 'Herramientas',
+      action: handleTranslatePage
+    },
+    {
       id: 'cmd-settings',
       title: 'Configuración de FabiNav',
-      subtitle: 'Apariencia, barra lateral y buscador',
+      subtitle: 'Apariencia, rendimiento, autocompletar y buscador',
       category: 'Ajustes',
       action: () => handleNavigate(activeTab.id, 'fabinav://settings')
+    },
+    {
+      id: 'cmd-performance',
+      title: 'Rendimiento y ahorro de memoria',
+      subtitle: 'Configurar suspensión de pestañas inactivas',
+      category: 'Ajustes',
+      action: () => handleNavigate(activeTab.id, 'fabinav://settings#rendimiento')
+    },
+    {
+      id: 'cmd-autofill',
+      title: 'Autocompletar y contraseñas',
+      subtitle: 'Gestionar perfiles locales de autocompletado',
+      category: 'Ajustes',
+      action: () => handleNavigate(activeTab.id, 'fabinav://settings#autocompletar')
     },
     {
       id: 'cmd-theme-dark',
@@ -1730,6 +1965,7 @@ export default function App() {
         historyEntries={historyEntries}
         closedTabs={closedTabs}
         settings={settings}
+        extensions={extensions}
         omniboxRef={omniboxRef}
         onNavigate={(url) => handleNavigate(activeTab.id, url)}
         onGoBack={handleGoBack}
@@ -1737,6 +1973,8 @@ export default function App() {
         onReload={handleReload}
         onGoHome={handleGoHome}
         onUpdateSettings={handleUpdateSettings}
+        onToggleExtension={handleToggleExtension}
+        onTranslatePage={handleTranslatePage}
         onResetZoom={() => {
           handleUpdateSettings({ zoomLevel: 100 });
           showToast('Zoom restablecido al 100%');
@@ -2011,6 +2249,17 @@ export default function App() {
           googleUser={googleUser}
           onGoogleSignIn={handleGoogleSignIn}
           onGoogleSignOut={handleGoogleSignOut}
+          extensions={extensions}
+          onUpdateExtension={handleUpdateExtension}
+          onAddExtension={handleAddExtension}
+          onRemoveExtension={handleRemoveExtension}
+          onResetExtensions={handleResetExtensions}
+          autofillEntries={autofillEntries}
+          onAddAutofill={handleAddAutofill}
+          onRemoveAutofill={handleRemoveAutofill}
+          onOpenNewTab={(url) => handleNewTab(url)}
+          onWakeTab={handleWakeTab}
+          onTranslateStatus={(msg) => showToast(msg)}
         />
 
         {/* Right FabiNav Sidebar */}

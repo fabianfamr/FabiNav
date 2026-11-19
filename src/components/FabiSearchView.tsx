@@ -343,29 +343,6 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
       ? `${(data.durationMs / 1000).toFixed(2)} s`
       : null;
 
-  const externalEngines = [
-    {
-      id: 'google',
-      name: 'Google',
-      href: `https://www.google.com/search?q=${encodeURIComponent(query)}`
-    },
-    {
-      id: 'duckduckgo',
-      name: 'DuckDuckGo',
-      href: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`
-    },
-    {
-      id: 'bing',
-      name: 'Bing',
-      href: `https://www.bing.com/search?q=${encodeURIComponent(query)}`
-    },
-    {
-      id: 'ecosia',
-      name: 'Ecosia',
-      href: `https://www.ecosia.org/search?q=${encodeURIComponent(query)}`
-    }
-  ];
-
   const tabs: Array<{
     id: SearchFilterTab;
     label: string;
@@ -679,7 +656,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
             <div className="space-y-2.5">
               <div className="text-sm font-semibold text-[var(--bn-text-strong)]">{errorMsg}</div>
               <p className="text-xs text-[var(--bn-text-muted)] leading-relaxed">
-                Puedes reintentar la consulta o abrirla directamente en un buscador externo.
+                Puedes reintentar la consulta o revisar tu buscador predeterminado en Configuración.
               </p>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
@@ -689,18 +666,13 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 >
                   Reintentar
                 </button>
-                {externalEngines.slice(0, 3).map((eng) => (
-                  <a
-                    key={eng.id}
-                    href={eng.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3.5 py-1.5 rounded-full bg-[var(--bn-toolbar)] border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-xs font-medium text-[var(--bn-text-strong)] inline-flex items-center gap-1.5"
-                  >
-                    <span>{eng.name}</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => onNavigate('fabinav://settings#buscador')}
+                  className="px-3.5 py-1.5 rounded-full bg-[var(--bn-toolbar)] border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-xs font-medium text-[var(--bn-text-strong)]"
+                >
+                  Motor de búsqueda en Ajustes
+                </button>
               </div>
             </div>
           </div>
@@ -1511,41 +1483,6 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 </div>
               )}
 
-              <div className="p-4 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] space-y-3">
-                <div>
-                  <h3 className="text-xs font-semibold text-[var(--bn-text-strong)]">
-                    Buscar «{query}» en otro motor
-                  </h3>
-                  <p className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                    Abre esta misma consulta en una ventana externa.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  {externalEngines.map((eng) => {
-                    const isDef = eng.id === defaultEngine;
-                    return (
-                      <a
-                        key={eng.id}
-                        href={eng.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`w-full px-3.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors fabi-transition-xs ${
-                          isDef
-                            ? 'bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white'
-                            : 'bg-[var(--bn-surface)] hover:bg-[var(--bn-hover)] text-[var(--bn-text-strong)] border border-[var(--bn-border)]'
-                        }`}
-                      >
-                        <span className="truncate">
-                          {eng.name}
-                          {isDef ? ' · Predeterminado' : ''}
-                        </span>
-                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
             </aside>
           </div>
         )}

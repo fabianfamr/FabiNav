@@ -217,8 +217,8 @@ export const TabBar: React.FC<TabBarProps> = ({
                     tab.isPinned
                       ? 'min-w-[38px] max-w-[38px] justify-center px-1.5'
                       : 'min-w-[135px] max-w-[230px] flex-1'
-                  }`}
-                  title={`${tab.title} (clic derecho para opciones)`}
+                  } ${tab.isDiscarded && !isActive ? 'opacity-65' : ''}`}
+                  title={`${tab.title}${tab.isDiscarded ? ' (Suspendida · Ahorro de memoria)' : ''} (clic derecho para opciones)`}
                 >
                   {/* Subtle divider between consecutive inactive tabs */}
                   {!isActive && index > 0 && tabs[index - 1].id !== activeTabId && (
@@ -489,7 +489,7 @@ export const TabBar: React.FC<TabBarProps> = ({
                 exit={{ opacity: 0, scale: 0.97 }}
                 transition={{ duration: 0.12, ease: EASE_OUT }}
                 style={{ left: contextMenu.x, top: contextMenu.y }}
-                className="fixed w-[268px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl z-[9999] py-1.5 text-[12px] text-[var(--bn-text)] select-none"
+                className="fixed w-[268px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl overflow-hidden shadow-2xl z-[9999] py-0 text-[12px] text-[var(--bn-text)] select-none"
               >
                 <button
                   type="button"
