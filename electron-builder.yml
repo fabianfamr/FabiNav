@@ -17,6 +17,8 @@ files:
 
 publish:
   provider: github
+  owner: fabianfamr
+  repo: FabiNav
   releaseType: release
 
 win:

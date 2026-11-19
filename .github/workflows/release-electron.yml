@@ -1,21 +1,24 @@
-name: Build & Publish FabiNav Electron
+name: Build and Release FabiNav
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
     inputs:
       publish_release:
-        description: "Publicar como Release en GitHub (true/false)"
+        description: 'Crear o actualizar Release en GitHub (true/false)'
         required: false
-        default: "true"
+        default: 'true'
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     name: Build FabiNav (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -24,49 +27,85 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: 20
+          cache: 'npm'
 
-      - name: Install app dependencies
+      - name: Install dependencies
         run: npm ci
 
       - name: Install Electron desktop toolchain
         run: npm run electron:setup
 
-      - name: Build frontend, bundle backend & generate icons
-        run: npm run electron:prepare
-
-      - name: Package & Publish to GitHub Releases (tag push)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Build Web App and Electron Installers
+        run: npm run build:electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --config electron-builder.yml --publish always
 
-      - name: Package & Create Release (manual workflow_dispatch)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') && inputs.publish_release == 'true' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --config electron-builder.yml --publish always
-
-      - name: Package locally without publishing
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') && inputs.publish_release != 'true' }}
-        run: npx electron-builder --config electron-builder.yml --publish never
-
-      - name: Upload installers as workflow artifacts
+      - name: Upload built installers
         uses: actions/upload-artifact@v4
         with:
           name: fabinav-${{ runner.os }}
           path: |
             dist-electron/*.exe
-            dist-electron/*.dmg
-            dist-electron/*.zip
+            dist-electron/*.blockmap
+            dist-electron/*.yml
             dist-electron/*.AppImage
             dist-electron/*.deb
-            dist-electron/*.yml
-          if-no-files-found: ignore
+            dist-electron/*.dmg
+            dist-electron/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create or Update GitHub Release
+    needs: build
+    if: ${{ github.event_name == 'push' || inputs.publish_release == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Download built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FabiNav v${{ steps.pkg.outputs.version }}
+          tag_name: v${{ steps.pkg.outputs.version }}
+          prerelease: false
+          body: |
+            ## FabiNav v${{ steps.pkg.outputs.version }}
+
+            ### Instalación
+            - **Windows**: descarga el instalador `.exe` (`FabiNav-*-win-x64-nsis.exe`) y ejecútalo, o usa la versión portable.
+            - **Linux**: descarga el `.AppImage` o `.deb`.
+            - **macOS**: descarga el `.dmg`.
+
+            ### Actualización desde versión anterior
+            Si ya tienes FabiNav instalado, la app buscará y descargará las actualizaciones automáticamente desde GitHub Releases al abrir una nueva sesión.
+
+            > No necesitas desinstalar la versión anterior para actualizar FabiNav.
+          files: |
+            release-artifacts/*.exe
+            release-artifacts/*.blockmap
+            release-artifacts/*.yml
+            release-artifacts/*.AppImage
+            release-artifacts/*.deb
+            release-artifacts/*.dmg
+            release-artifacts/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

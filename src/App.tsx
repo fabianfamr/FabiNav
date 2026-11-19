@@ -26,7 +26,7 @@ import {
   INITIAL_BACKUP_META,
   APP_VERSION
 } from './constants/initialData';
-import { initGoogleAuth, signInWithGoogle, signOutGoogle } from './services/googleAuth';
+import { initGoogleAuth, signInWithGoogle, signOutGoogle, setAuthLanguage } from './services/googleAuth';
 import { ActivityBar } from './components/ActivityBar';
 import { SidebarPanel } from './components/SidebarPanel';
 import { TitleBar } from './components/TitleBar';
@@ -85,10 +85,15 @@ function normalizeLoadedSettings(raw: BrowserSettings): BrowserSettings {
   const nextTheme = themeMap[raw.theme] || raw.theme || DEFAULT_SETTINGS.theme;
   const nextEngine =
     (raw.defaultSearchEngine as string) === 'brave' ? 'fabinav' : raw.defaultSearchEngine;
+  const nextLang =
+    raw.language === 'en' || raw.language === 'ja' || raw.language === 'es'
+      ? raw.language
+      : DEFAULT_SETTINGS.language;
   return {
     ...DEFAULT_SETTINGS,
     ...raw,
     theme: nextTheme,
+    language: nextLang,
     defaultSearchEngine: nextEngine || 'fabinav'
   };
 }
@@ -155,6 +160,7 @@ export default function App() {
   const [activeSidebarView, setActiveSidebarView] = useState<SidebarPanelView>(null);
   const [isSidebarAutoHovered, setIsSidebarAutoHovered] = useState(false);
   const [isShieldsModalOpen, setIsShieldsModalOpen] = useState(false);
+  const [blockedUrlsByTab, setBlockedUrlsByTab] = useState<Record<string, string[]>>({});
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
@@ -283,6 +289,13 @@ export default function App() {
     }
   };
 
+  // Sync HTML lang attribute and Firebase Auth language with user preference
+  useEffect(() => {
+    const lang = settings.language || 'es';
+    document.documentElement.lang = lang;
+    setAuthLanguage(lang);
+  }, [settings.language]);
+
   // Persist workspace state to localStorage (never persisting OAuth tokens)
   useEffect(() => {
     try {
@@ -362,15 +375,16 @@ export default function App() {
   };
 
   const resolveInternalTitle = (targetUrl: string): string => {
-    if (targetUrl === 'fabinav://newtab') return 'Nueva pestaña';
-    if (targetUrl === 'fabinav://bookmarks') return 'Marcadores';
-    if (targetUrl === 'fabinav://history') return 'Historial';
-    if (targetUrl === 'fabinav://downloads') return 'Descargas';
-    if (targetUrl === 'fabinav://shields') return 'Escudos, Cookies y TLS';
-    if (targetUrl === 'fabinav://settings') return 'Configuración';
-    if (targetUrl === 'fabinav://about') return 'Acerca de FabiNav';
-    if (targetUrl.startsWith('fabinav://search?q=')) {
-      const q = decodeURIComponent(targetUrl.replace('fabinav://search?q=', ''));
+    const baseUrl = targetUrl.split('#')[0];
+    if (baseUrl === 'fabinav://newtab') return 'Nueva pestaña';
+    if (baseUrl === 'fabinav://bookmarks') return 'Marcadores';
+    if (baseUrl === 'fabinav://history') return 'Historial';
+    if (baseUrl === 'fabinav://downloads') return 'Descargas';
+    if (baseUrl === 'fabinav://shields') return 'Escudos, Cookies y TLS';
+    if (baseUrl === 'fabinav://settings') return 'Configuración';
+    if (baseUrl === 'fabinav://about') return 'Acerca de FabiNav';
+    if (baseUrl.startsWith('fabinav://search?q=')) {
+      const q = decodeURIComponent(baseUrl.replace('fabinav://search?q=', ''));
       return `Buscar: ${q}`;
     }
     try {
@@ -456,6 +470,14 @@ export default function App() {
       );
     }
 
+    if (Array.isArray(report.blockedTrackerUrls)) {
+      const nextList = report.blockedTrackerUrls;
+      setBlockedUrlsByTab((prev) => ({
+        ...prev,
+        [tabId]: nextList
+      }));
+    }
+
     const dedupeKey = `${tabId}:${report.url || ''}`;
     if (reportedPageKeysRef.current.has(dedupeKey)) return;
     reportedPageKeysRef.current.add(dedupeKey);
@@ -487,7 +509,11 @@ export default function App() {
     setIsShieldsModalOpen(false);
   };
 
-  const handleNewTab = (url: string = 'fabinav://newtab', mode: 'normal' | 'private' = 'normal') => {
+  const handleNewTab = (
+    url: string = 'fabinav://newtab',
+    mode: 'normal' | 'private' = 'normal',
+    afterTabId?: string
+  ) => {
     const { url: finalUrl, upgradedHttps } = normalizeTargetUrl(url);
     const newId = `tab-${Date.now()}`;
     const isInternal = finalUrl.startsWith('fabinav://');
@@ -510,7 +536,12 @@ export default function App() {
       createdAt: Date.now()
     };
 
-    setTabs((prev) => [...prev, newTab]);
+    setTabs((prev) => {
+      if (!afterTabId) return [...prev, newTab];
+      const idx = prev.findIndex((t) => t.id === afterTabId);
+      if (idx === -1) return [...prev, newTab];
+      return [...prev.slice(0, idx + 1), newTab, ...prev.slice(idx + 1)];
+    });
     setActiveTabId(newId);
 
     if (!isInternal && mode !== 'private') {
@@ -534,6 +565,49 @@ export default function App() {
         setTabs((prev) => prev.map((t) => (t.id === newId ? { ...t, isLoading: false } : t)));
       }, 650);
     }
+
+    return newId;
+  };
+
+  const extractHost = (rawUrl: string): string | null => {
+    if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) return null;
+    try {
+      return new URL(rawUrl).hostname.replace(/^www\./, '').toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+
+  const forgetDomainsIfClosed = (closedList: WebTab[], remainingTabs: WebTab[]) => {
+    const forgetSet = new Set(
+      (shieldState.forgetOnCloseDomains || []).map((d) => d.toLowerCase())
+    );
+    if (forgetSet.size === 0) return;
+
+    const remainingHosts = new Set(
+      remainingTabs.map((t) => extractHost(t.url)).filter((h): h is string => !!h)
+    );
+    const hostsToForget = Array.from(
+      new Set(
+        closedList
+          .map((t) => extractHost(t.url))
+          .filter((h): h is string => !!h && forgetSet.has(h) && !remainingHosts.has(h))
+      )
+    );
+
+    if (hostsToForget.length === 0) return;
+
+    for (const host of hostsToForget) {
+      fetch(`/api/cookies?partition=normal&domain=${encodeURIComponent(host)}`, {
+        method: 'DELETE'
+      }).catch(() => {});
+    }
+    setHistoryEntries((prev) =>
+      prev.filter((entry) => {
+        const h = extractHost(entry.url);
+        return !h || !hostsToForget.includes(h);
+      })
+    );
   };
 
   const handleCloseTab = (tabId: string) => {
@@ -541,6 +615,7 @@ export default function App() {
 
     // Si es la última pestaña abierta, cerramos el navegador completo (y preparamos nueva pestaña limpia por si se reabre)
     if (tabs.length <= 1) {
+      if (target) forgetDomainsIfClosed([target], []);
       if (target?.tabMode === 'private') {
         fetch('/api/cookies?partition=private', { method: 'DELETE' }).catch(() => {});
       }
@@ -578,6 +653,13 @@ export default function App() {
     const tabIndex = tabs.findIndex((t) => t.id === tabId);
     const newTabs = tabs.filter((t) => t.id !== tabId);
     setTabs(newTabs);
+    setBlockedUrlsByTab((prev) => {
+      if (!(tabId in prev)) return prev;
+      const copy = { ...prev };
+      delete copy[tabId];
+      return copy;
+    });
+    if (target) forgetDomainsIfClosed([target], newTabs);
 
     // Si se cierra la última pestaña privada, limpiar partición privada de cookies
     if (target?.tabMode === 'private' && !newTabs.some((t) => t.tabMode === 'private')) {
@@ -593,15 +675,37 @@ export default function App() {
   const handleCloseOtherTabs = (keepTabId: string) => {
     const kept = tabs.filter((t) => t.id === keepTabId || t.isPinned);
     if (kept.length === tabs.length) return;
+    const closed = tabs.filter((t) => t.id !== keepTabId && !t.isPinned);
     if (splitTabId && !kept.some((t) => t.id === splitTabId)) {
       setSplitTabId(null);
     }
     setTabs(kept);
     setActiveTabId(keepTabId);
+    forgetDomainsIfClosed(closed, kept);
     if (!kept.some((t) => t.tabMode === 'private')) {
       fetch('/api/cookies?partition=private', { method: 'DELETE' }).catch(() => {});
     }
     showToast('Otras pestañas cerradas');
+  };
+
+  const handleCloseTabsToRight = (tabId: string) => {
+    const idx = tabs.findIndex((t) => t.id === tabId);
+    if (idx === -1 || idx >= tabs.length - 1) return;
+    const kept = tabs.filter((t, i) => i <= idx || t.isPinned);
+    if (kept.length === tabs.length) return;
+    const closed = tabs.filter((t, i) => i > idx && !t.isPinned);
+    if (splitTabId && !kept.some((t) => t.id === splitTabId)) {
+      setSplitTabId(null);
+    }
+    if (!kept.some((t) => t.id === activeTabId)) {
+      setActiveTabId(tabId);
+    }
+    setTabs(kept);
+    forgetDomainsIfClosed(closed, kept);
+    if (!kept.some((t) => t.tabMode === 'private')) {
+      fetch('/api/cookies?partition=private', { method: 'DELETE' }).catch(() => {});
+    }
+    showToast('Pestañas a la derecha cerradas');
   };
 
   const handleDuplicateTab = (tabId: string) => {
@@ -626,6 +730,12 @@ export default function App() {
     const currentTab = tabs.find((t) => t.id === tabId);
 
     reportedPageKeysRef.current.delete(`${tabId}:${finalUrl}`);
+    setBlockedUrlsByTab((prev) => {
+      if (!(tabId in prev)) return prev;
+      const copy = { ...prev };
+      delete copy[tabId];
+      return copy;
+    });
 
     setTabs((prev) =>
       prev.map((t) => {
@@ -754,7 +864,13 @@ export default function App() {
       setSplitTabId(tabId);
     } else {
       const candidate = tabs.find((t) => t.id !== activeTabId);
-      if (candidate) setSplitTabId(candidate.id);
+      if (candidate) {
+        setSplitTabId(candidate.id);
+      } else {
+        const rightTabId = handleNewTab('fabinav://newtab', activeTab?.tabMode || 'normal', tabId);
+        setActiveTabId(tabId);
+        setSplitTabId(rightTabId);
+      }
     }
   };
 
@@ -877,6 +993,19 @@ export default function App() {
     setSettings((prev) => ({ ...prev, ...newSettings }));
   };
 
+  const handleResetSettings = () => {
+    setSettings(DEFAULT_SETTINGS);
+    setShieldState((prev) => ({
+      ...INITIAL_SHIELD_STATE,
+      httpsUpgradesCount: prev.httpsUpgradesCount,
+      trackersBlockedCount: prev.trackersBlockedCount,
+      cookiesBlockedCount: prev.cookiesBlockedCount,
+      searchesCount: prev.searchesCount
+    }));
+    appendLog('info', 'Configuración y escudos restablecidos a valores predeterminados.', 'Ajustes');
+    showToast('Configuración restablecida');
+  };
+
   const handleToggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
@@ -895,13 +1024,18 @@ export default function App() {
     try {
       await Promise.all([
         fetch('/api/cookies?partition=normal', { method: 'DELETE' }),
-        fetch('/api/cookies?partition=private', { method: 'DELETE' })
+        fetch('/api/cookies?partition=private', { method: 'DELETE' }),
+        fetch('/api/cache', { method: 'DELETE' })
       ]);
+      if ('caches' in window) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.map((k) => window.caches.delete(k)));
+      }
     } catch {
       // Ignore offline errors
     }
-    appendLog('info', 'Historial y cookies eliminados por el usuario.', 'Privacidad');
-    showToast('Historial y cookies borrados');
+    appendLog('info', 'Historial, caché y cookies eliminados por el usuario.', 'Privacidad');
+    showToast('Historial, caché y cookies borrados');
   };
 
   const handleNewWindow = () => {
@@ -951,6 +1085,18 @@ export default function App() {
     appendLog('warn', `Comando no reconocido: "${cmd}". Escribe "help" para ver opciones.`, 'Consola');
   };
 
+  useEffect(() => {
+    const onFindResult = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ tabId?: string; found?: boolean }>;
+      if (!customEv.detail || customEv.detail.tabId !== activeTabId) return;
+      setFindMatchStatus(
+        customEv.detail.found ? 'Coincidencia encontrada' : 'Sin coincidencias en la página'
+      );
+    };
+    window.addEventListener('fabinav:find-result', onFindResult);
+    return () => window.removeEventListener('fabinav:find-result', onFindResult);
+  }, [activeTabId]);
+
   const handleOpenFindInPage = useCallback(() => {
     setIsFindBarOpen(true);
     setFindMatchStatus(null);
@@ -966,6 +1112,16 @@ export default function App() {
       setFindMatchStatus(null);
       return;
     }
+    if (activeTab && (activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://'))) {
+      setFindMatchStatus('Buscando...');
+      window.dispatchEvent(
+        new CustomEvent('fabinav:dispatch-find', {
+          detail: { tabId: activeTab.id, query: q, backwards: direction === 'prev' }
+        })
+      );
+      return;
+    }
+
     const winWithFind = window as unknown as {
       find?: (
         str: string,
@@ -1045,7 +1201,7 @@ export default function App() {
     }
   };
 
-  const handleSavePageAs = () => {
+  const handleSavePageAs = async () => {
     if (!activeTab) return;
     const safeSlug =
       (activeTab.title || 'pagina')
@@ -1054,7 +1210,25 @@ export default function App() {
         .replace(/^-|-$/g, '')
         .slice(0, 40) || 'pagina';
     const filename = `fabinav-${safeSlug}.html`;
-    const htmlSnapshot = `<!doctype html>
+    let htmlContent = '';
+
+    if (activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://')) {
+      try {
+        const res = await fetch(
+          `/api/proxy?url=${encodeURIComponent(activeTab.url)}&raw=1&partition=${
+            activeTab.tabMode === 'private' ? 'private' : 'normal'
+          }`
+        );
+        if (res.ok) {
+          htmlContent = await res.text();
+        }
+      } catch {
+        // Fallback below if offline or unreachable
+      }
+    }
+
+    if (!htmlContent) {
+      htmlContent = `<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
@@ -1072,12 +1246,14 @@ export default function App() {
     <p class="meta">Guardado desde FabiNav v${APP_VERSION} · ${new Date().toLocaleString('es-ES')}</p>
     <p>URL original: <a href="${activeTab.url}">${activeTab.url}</a></p>
     <p class="meta">Escudos: ${shieldState.enabled ? 'Activos' : 'En pausa'} · Modo: ${
-      activeTab.tabMode === 'private' ? 'Privado' : 'Normal'
-    }</p>
+        activeTab.tabMode === 'private' ? 'Privado' : 'Normal'
+      }</p>
   </div>
 </body>
 </html>`;
-    const blob = new Blob([htmlSnapshot], { type: 'text/html;charset=utf-8' });
+    }
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1088,8 +1264,28 @@ export default function App() {
     showToast(`Página guardada: ${filename}`);
   };
 
-  const handleCaptureView = () => {
+  const handleCaptureView = async () => {
     if (!activeTab) return;
+    const filename = `fabinav-captura-${Date.now()}.png`;
+
+    if (window.fabinavDesktop?.capturePage) {
+      try {
+        const realPng = await window.fabinavDesktop.capturePage();
+        if (realPng) {
+          const a = document.createElement('a');
+          a.href = realPng;
+          a.download = filename;
+          a.click();
+          const approxKb = Math.max(1, (realPng.length * 0.75) / 1024).toFixed(1);
+          handleRecordDownload(filename, `${approxKb} KB`, activeTab.url);
+          showToast('Captura real de pantalla guardada como PNG');
+          return;
+        }
+      } catch {
+        // Fallback cleanly to visual card
+      }
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = 1280;
     canvas.height = 720;
@@ -1145,7 +1341,6 @@ export default function App() {
     );
 
     const pngUrl = canvas.toDataURL('image/png');
-    const filename = `fabinav-captura-${Date.now()}.png`;
     const a = document.createElement('a');
     a.href = pngUrl;
     a.download = filename;
@@ -1505,13 +1700,16 @@ export default function App() {
         useVerticalTabs={settings.useVerticalTabs}
         isMaximized={windowMode === 'maximized'}
         windowTitle={customWindowTitle}
+        language={settings.language || 'es'}
         openTabSearchSignal={tabSearchSignal}
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
         onCloseOtherTabs={handleCloseOtherTabs}
+        onCloseTabsToRight={handleCloseTabsToRight}
         onDuplicateTab={handleDuplicateTab}
         onReloadTab={handleReloadTab}
         onNewTab={() => handleNewTab()}
+        onNewTabToRight={(afterId) => handleNewTab('fabinav://newtab', 'normal', afterId)}
         onReopenClosedTab={handleReopenClosedTab}
         onTogglePinTab={handleTogglePinTab}
         onToggleMuteTab={handleToggleMuteTab}
@@ -1807,6 +2005,8 @@ export default function App() {
           onClearDownloads={() => setDownloads([])}
           onExportBackup={handleExportBackup}
           onImportBackup={handleImportBackup}
+          onClearBrowsingData={handleClearBrowsingData}
+          onResetSettings={handleResetSettings}
           onOpenElectronModal={() => setIsElectronModalOpen(true)}
           googleUser={googleUser}
           onGoogleSignIn={handleGoogleSignIn}
@@ -1821,6 +2021,8 @@ export default function App() {
           isOpen={isShieldsModalOpen}
           onClose={() => setIsShieldsModalOpen(false)}
           currentUrl={activeTab.url}
+          language={settings.language || 'es'}
+          blockedTrackerUrls={blockedUrlsByTab[activeTab.id] || []}
           shieldState={shieldState}
           onUpdateShieldState={(updates) => setShieldState((prev) => ({ ...prev, ...updates }))}
           onNavigate={(url) => handleNavigate(activeTab.id, url)}

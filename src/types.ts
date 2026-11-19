@@ -130,10 +130,13 @@ export interface DevToolNetworkReq {
   timestamp: string;
 }
 
+export type AppLanguage = 'es' | 'en' | 'ja';
+
 export interface BrowserSettings {
   defaultSearchEngine: 'fabinav' | 'google' | 'duckduckgo' | 'bing' | 'ecosia' | 'brave';
   homepage: string;
   theme: BrowserTheme;
+  language: AppLanguage;
   showSidebar: boolean;
   sidebarMode?: 'on' | 'auto' | 'off';
   sidebarPosition: 'left' | 'right';
@@ -160,6 +163,9 @@ export interface FabiShieldState {
   blockScripts: boolean;
   blockFingerprinting: 'standard' | 'strict' | 'disabled';
   blockCrossSiteCookies: boolean;
+  forgetOnCloseDomains?: string[];
+  filterLists?: string[];
+  customFilterRules?: string[];
   httpsUpgradesCount: number;
   trackersBlockedCount: number;
   cookiesBlockedCount: number;
@@ -280,6 +286,20 @@ export interface DesktopUpdateStatus {
   message?: string;
 }
 
+export interface CacheEntrySummary {
+  kind: 'page' | 'search';
+  label: string;
+  sizeBytes: number;
+  cachedAt: number;
+}
+
+export interface CacheStatusInfo {
+  proxyCount: number;
+  searchCount: number;
+  totalBytes: number;
+  entries: CacheEntrySummary[];
+}
+
 export interface FabiNavDesktopBridge {
   isElectron: boolean;
   platform: string;
@@ -291,6 +311,7 @@ export interface FabiNavDesktopBridge {
   minimizeWindow: () => void;
   toggleMaximizeWindow: () => void;
   closeWindow: () => void;
+  capturePage?: () => Promise<string | null>;
   checkForUpdates: () => Promise<DesktopUpdateStatus>;
   installUpdate: () => Promise<void>;
   openUninstallSettings: () => Promise<{ ok: boolean; message?: string }>;

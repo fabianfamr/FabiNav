@@ -65,6 +65,7 @@ import {
   TlsInspectionResult,
   StoredCookieItem
 } from '../types';
+import { t } from '../i18n/translations';
 
 interface TitleBarProps {
   currentTab?: WebTab;
@@ -191,6 +192,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [siteCookies, setSiteCookies] = useState<StoredCookieItem[]>([]);
   const [loadingSecurity, setLoadingSecurity] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
+  const lang = settings.language || 'es';
   const menuRef = useRef<HTMLDivElement>(null);
   const securityRef = useRef<HTMLDivElement>(null);
   const submenuCloseTimer = useRef<number | null>(null);
@@ -408,7 +410,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onGoBack}
           disabled={!currentTab?.canGoBack}
-          title="Ir atrás (Alt+Izquierda)"
+          title={t(lang, 'back')}
           className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent transition-all fabi-transition-xs"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -417,7 +419,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onGoForward}
           disabled={!currentTab?.canGoForward}
-          title="Ir adelante (Alt+Derecha)"
+          title={t(lang, 'forward')}
           className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 disabled:opacity-30 disabled:hover:bg-transparent transition-all fabi-transition-xs"
         >
           <ArrowRight className="w-4 h-4" />
@@ -425,7 +427,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <button
           type="button"
           onClick={onReload}
-          title="Volver a cargar esta página (Ctrl+R)"
+          title={t(lang, 'reload')}
           className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs"
         >
           <RotateCw
@@ -438,7 +440,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <button
             type="button"
             onClick={onGoHome}
-            title="Abrir página principal"
+            title={t(lang, 'home')}
             className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text)] hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs"
           >
             <Home className="w-4 h-4" />
@@ -449,8 +451,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           onClick={onToggleBookmark}
           title={
             currentTab?.isBookmarked
-              ? 'Quitar de marcadores'
-              : 'Añadir esta pestaña a marcadores'
+              ? t(lang, 'bookmarkRemove')
+              : t(lang, 'bookmarkAdd')
           }
           className={`w-8 h-8 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] active:scale-90 transition-all fabi-transition-xs ${
             currentTab?.isBookmarked
@@ -523,7 +525,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               }, 150);
             }}
             onKeyDown={handleOmniboxKeyDown}
-            placeholder="Busca en la web o escribe una dirección URL (Ctrl+L)"
+            placeholder={t(lang, 'omniboxPlaceholder')}
             className="w-full bg-transparent border-none text-[13px] text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none select-text"
             aria-label="Barra de direcciones y búsqueda"
           />
@@ -785,7 +787,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <button
           type="button"
           onClick={onToggleSplitMode}
-          title="Vista dividida (Ctrl+\)"
+          title={t(lang, 'splitView')}
           className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
             isSplitActive
               ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
@@ -798,7 +800,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <button
           type="button"
           onClick={onToggleSidebar}
-          title={settings.showSidebar ? 'Ocultar barra lateral' : 'Mostrar barra lateral'}
+          title={settings.showSidebar ? t(lang, 'hideSidebarTooltip') : t(lang, 'showSidebarTooltip')}
           className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
             settings.showSidebar
               ? 'text-[var(--bn-text-strong)] bg-[var(--bn-hover)]/65'
@@ -842,7 +844,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               setShowMainMenu((v) => !v);
               setActiveSubmenu(null);
             }}
-            title="Personaliza y controla FabiNav"
+            title={t(lang, 'menuTooltip')}
             className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
               showMainMenu
                 ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
@@ -874,7 +876,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <Plus className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Nueva pestaña</span>
+                    <span>{t(lang, 'newTab')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+T</span>
                 </button>
@@ -890,7 +892,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <AppWindow className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Nueva ventana</span>
+                    <span>{t(lang, 'menuNewWindow')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+N</span>
                 </button>
@@ -906,7 +908,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <EyeOff className="w-3.5 h-3.5 text-[var(--bn-private-text)]" />
-                    <span>Nueva ventana privada</span>
+                    <span>{t(lang, 'menuNewPrivate')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+N</span>
                 </button>
@@ -923,7 +925,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <RotateCcw className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Reabrir pestaña cerrada</span>
+                      <span>{t(lang, 'menuReopenTab')}</span>
                     </span>
                     <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+T</span>
                   </button>
@@ -938,15 +940,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-2.5 text-[var(--bn-text)] shrink-0">
                     <PanelLeft className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Barra lateral</span>
+                    <span>{t(lang, 'menuSidebar')}</span>
                   </span>
 
                   <div className="inline-flex items-center rounded-md border border-[var(--bn-border-strong)] overflow-hidden bg-[var(--bn-surface-alt)] text-[11px]">
                     {(
                       [
-                        { id: 'on', label: 'Activada' },
-                        { id: 'auto', label: 'Auto' },
-                        { id: 'off', label: 'Desactivada' }
+                        { id: 'on', label: t(lang, 'menuSidebarOn') },
+                        { id: 'auto', label: t(lang, 'menuSidebarAuto') },
+                        { id: 'off', label: t(lang, 'menuSidebarOff') }
                       ] as const
                     ).map((opt, idx) => {
                       const active = sidebarMode === opt.id;
@@ -984,7 +986,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <Cookie className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-                    <span>Escudos, Cookies y TLS</span>
+                    <span>{t(lang, 'menuShieldsManager')}</span>
                   </span>
                 </button>
 
@@ -1004,7 +1006,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <History className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Historial</span>
+                      <span>{t(lang, 'menuHistory')}</span>
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                   </button>
@@ -1025,7 +1027,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <History className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Historial completo</span>
+                          <span>{t(lang, 'menuFullHistory')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+H</span>
                       </button>
@@ -1102,7 +1104,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <BookmarkIcon className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Favoritos y listas</span>
+                      <span>{t(lang, 'menuBookmarks')}</span>
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                   </button>
@@ -1122,7 +1124,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <BookmarkIcon className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                        <span>Administrador de marcadores</span>
+                        <span>{t(lang, 'menuBookmarkManager')}</span>
                       </button>
 
                       <button
@@ -1136,7 +1138,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <PanelTop className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Mostrar barra de marcadores</span>
+                          <span>{t(lang, 'menuShowBookmarksBar')}</span>
                         </span>
                         {settings.showBookmarksBar && (
                           <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
@@ -1155,8 +1157,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         <Star className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
                         <span>
                           {currentTab?.isBookmarked
-                            ? 'Quitar pestaña de marcadores'
-                            : 'Añadir esta pestaña a marcadores'}
+                            ? t(lang, 'bookmarkRemove')
+                            : t(lang, 'bookmarkAdd')}
                         </span>
                       </button>
 
@@ -1164,7 +1166,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         <>
                           <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
                           <div className="px-3.5 py-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
-                            Marcadores guardados ({bookmarks.length})
+                            {t(lang, 'menuBookmarks')} ({bookmarks.length})
                           </div>
                           {bookmarks.slice(0, 6).map((bm) => (
                             <button
@@ -1198,7 +1200,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <Download className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Descargas</span>
+                    <span>{t(lang, 'menuDownloads')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+J</span>
                 </button>
@@ -1214,7 +1216,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <Trash2 className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Borrar datos de navegación...</span>
+                    <span>{t(lang, 'menuClearData')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+Supr</span>
                 </button>
@@ -1295,7 +1297,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <Printer className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Imprimir...</span>
+                    <span>{t(lang, 'menuPrint')}</span>
                   </span>
                   <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+P</span>
                 </button>
@@ -1316,7 +1318,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Buscar y editar</span>
+                      <span>{t(lang, 'menuFindEdit')}</span>
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                   </button>
@@ -1337,7 +1339,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Buscar...</span>
+                          <span>{t(lang, 'menuFindInPage')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+F</span>
                       </button>
@@ -1355,7 +1357,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Scissors className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Cortar</span>
+                          <span>{t(lang, 'menuCut')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+X</span>
                       </button>
@@ -1371,7 +1373,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Copy className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Copiar</span>
+                          <span>{t(lang, 'menuCopy')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+C</span>
                       </button>
@@ -1387,7 +1389,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Clipboard className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Pegar</span>
+                          <span>{t(lang, 'menuPaste')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+V</span>
                       </button>
@@ -1411,7 +1413,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <FileDown className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Guardar y compartir</span>
+                      <span>{t(lang, 'menuSaveShare')}</span>
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                   </button>
@@ -1421,9 +1423,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       onMouseEnter={() => openSubmenu('saveShare')}
                       className="sm:right-[calc(100%+6px)] right-2 bottom-0 absolute w-[280px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-xl shadow-2xl py-1.5 z-50 text-[12px]"
                     >
-                      <div className="px-3.5 pt-1 pb-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
-                        Guardar
-                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -1435,7 +1434,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <FileDown className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Guardar página como...</span>
+                          <span>{t(lang, 'menuSavePageAs')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+S</span>
                       </button>
@@ -1451,16 +1450,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Camera className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Captura de vista</span>
+                          <span>{t(lang, 'menuScreenshot')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+S</span>
                       </button>
 
                       <div className="h-[1px] bg-[var(--bn-border)] my-1.5" />
 
-                      <div className="px-3.5 pt-1 pb-1 text-[11px] font-semibold text-[var(--bn-text-muted)]">
-                        Compartir
-                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -1471,7 +1467,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <Link2 className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                        <span>Copiar vínculo</span>
+                        <span>{t(lang, 'menuCopyLink')}</span>
                       </button>
 
                       <button
@@ -1484,7 +1480,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <QrCode className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-                        <span>Crear código QR</span>
+                        <span>{t(lang, 'menuQrCode')}</span>
                       </button>
                     </div>
                   )}
@@ -1506,7 +1502,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <Wrench className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Más herramientas</span>
+                      <span>{t(lang, 'menuMoreTools')}</span>
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                   </button>
@@ -1527,7 +1523,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Búsqueda de pestañas</span>
+                          <span>{t(lang, 'menuTabSearch')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+A</span>
                       </button>
@@ -1542,7 +1538,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <Tag className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                        <span>Nombrar la ventana...</span>
+                        <span>{t(lang, 'menuRenameWindow')}</span>
                       </button>
 
                       <button
@@ -1556,7 +1552,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Command className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Comandos rápidos</span>
+                          <span>{t(lang, 'menuQuickCommands')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+K</span>
                       </button>
@@ -1572,7 +1568,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Columns className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Mostrar pestañas verticalmente</span>
+                          <span>{t(lang, 'verticalTabsOff')}</span>
                         </span>
                         {settings.useVerticalTabs && (
                           <Check className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
@@ -1590,7 +1586,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Columns className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>{isSplitActive ? 'Cerrar vista dividida' : 'Vista dividida'}</span>
+                          <span>
+                            {isSplitActive ? t(lang, 'tabRemoveSplit') : t(lang, 'tabAddSplit')}
+                          </span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+\</span>
                       </button>
@@ -1608,7 +1606,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Terminal className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Herramientas del desarrollador</span>
+                          <span>{t(lang, 'menuDevTools')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+Shift+I</span>
                       </button>
@@ -1623,7 +1621,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <Laptop className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                        <span>Exportar proyecto Electron</span>
+                        <span>{t(lang, 'menuElectronRepo')}</span>
                       </button>
 
                       <button
@@ -1636,7 +1634,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <StickyNote className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                        <span>Notas de sesión</span>
+                        <span>{t(lang, 'menuNotes')}</span>
                       </button>
 
                       <button
@@ -1650,7 +1648,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Activity className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-                          <span>Administrador de tareas</span>
+                          <span>{t(lang, 'menuTaskManager')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Shift+Esc</span>
                       </button>
@@ -1676,7 +1674,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   >
                     <span className="flex items-center gap-3">
                       <HelpCircle className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                      <span>Ayuda</span>
+                      <span>{t(lang, 'menuHelp')}</span>
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
                   </button>
@@ -1696,7 +1694,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <Info className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-                        <span>Acerca de FabiNav</span>
+                        <span>{t(lang, 'menuAbout')}</span>
                       </button>
 
                       <button
@@ -1710,7 +1708,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                       >
                         <span className="flex items-center gap-2.5">
                           <Command className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                          <span>Atajos y comandos</span>
+                          <span>{t(lang, 'menuQuickCommands')}</span>
                         </span>
                         <span className="text-[11px] text-[var(--bn-text-muted)]">Ctrl+K</span>
                       </button>
@@ -1725,7 +1723,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         className="w-full text-left px-3.5 py-2 hover:bg-[var(--bn-hover)] hover:text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
                       >
                         <StickyNote className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                        <span>Notas de sesión</span>
+                        <span>{t(lang, 'menuNotes')}</span>
                       </button>
                     </div>
                   )}
@@ -1742,7 +1740,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <Settings className="w-3.5 h-3.5 text-[var(--bn-text-muted)]" />
-                    <span>Configuración</span>
+                    <span>{t(lang, 'menuSettings')}</span>
                   </span>
                 </button>
 
@@ -1757,7 +1755,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 >
                   <span className="flex items-center gap-3">
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Salir</span>
+                    <span>{t(lang, 'menuExit')}</span>
                   </span>
                 </button>
               </motion.div>

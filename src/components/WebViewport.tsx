@@ -23,6 +23,7 @@ export interface PageSecurityReport {
   url?: string;
   blockedTrackers?: number;
   blockedCookies?: number;
+  blockedTrackerUrls?: string[];
   upgradedHttps?: boolean;
 }
 
@@ -53,6 +54,8 @@ interface WebViewportProps {
   onClearDownloads: () => void;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
+  onClearBrowsingData?: () => void;
+  onResetSettings?: () => void;
   onOpenElectronModal: () => void;
   googleUser?: GoogleUserProfile | null;
   onGoogleSignIn?: () => void;
@@ -86,6 +89,8 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   onClearDownloads,
   onExportBackup,
   onImportBackup,
+  onClearBrowsingData,
+  onResetSettings,
   onOpenElectronModal,
   googleUser,
   onGoogleSignIn,
@@ -115,6 +120,8 @@ export const WebViewport: React.FC<WebViewportProps> = ({
     onClearDownloads,
     onExportBackup,
     onImportBackup,
+    onClearBrowsingData,
+    onResetSettings,
     onOpenElectronModal,
     googleUser,
     onGoogleSignIn,
@@ -133,6 +140,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
       >
         <SingleTabFrame
           tab={primaryTab}
+          isPrimary={true}
           onNavigate={(url) => onNavigate(primaryTab.id, url)}
           onPageSecurityReport={(report) => onPageSecurityReport?.(primaryTab.id, report)}
           onCloseSplit={isSplit && splitTab ? () => onToggleSplitTab?.(splitTab.id) : undefined}
@@ -154,6 +162,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
           >
             <SingleTabFrame
               tab={splitTab}
+              isPrimary={false}
               onNavigate={(url) => onNavigate(splitTab.id, url)}
               onPageSecurityReport={(report) => onPageSecurityReport?.(splitTab.id, report)}
               onCloseSplit={() => onToggleSplitTab?.(splitTab.id)}
@@ -170,6 +179,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
 
 interface SingleTabFrameProps {
   tab: WebTab;
+  isPrimary?: boolean;
   settings: BrowserSettings;
   shieldState: FabiShieldState;
   onUpdateShieldState: (updates: Partial<FabiShieldState>) => void;
@@ -196,6 +206,8 @@ interface SingleTabFrameProps {
   onClearDownloads: () => void;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
+  onClearBrowsingData?: () => void;
+  onResetSettings?: () => void;
   onOpenElectronModal: () => void;
   googleUser?: GoogleUserProfile | null;
   onGoogleSignIn?: () => void;
@@ -204,6 +216,7 @@ interface SingleTabFrameProps {
 
 const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   tab,
+  isPrimary = false,
   settings,
   shieldState,
   onUpdateShieldState,
@@ -230,6 +243,8 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   onClearDownloads,
   onExportBackup,
   onImportBackup,
+  onClearBrowsingData,
+  onResetSettings,
   onOpenElectronModal,
   googleUser,
   onGoogleSignIn,
@@ -255,7 +270,9 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         title?: string;
         blockedTrackers?: number;
         blockedCookies?: number;
+        blockedTrackerUrls?: string[];
         upgradedHttps?: boolean;
+        found?: boolean;
       };
       if (!payload || typeof payload !== 'object') return;
 
@@ -267,14 +284,58 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           url: payload.url,
           blockedTrackers: payload.blockedTrackers,
           blockedCookies: payload.blockedCookies,
+          blockedTrackerUrls: Array.isArray(payload.blockedTrackerUrls)
+            ? payload.blockedTrackerUrls
+            : [],
           upgradedHttps: payload.upgradedHttps
         });
+      } else if (payload.type === 'fabinav:find-result') {
+        window.dispatchEvent(
+          new CustomEvent('fabinav:find-result', {
+            detail: { tabId: tab.id, found: !!payload.found }
+          })
+        );
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isNewTab, isSearchPage, isFabiInternal, onNavigate, onPageSecurityReport]);
+  }, [tab.id, isNewTab, isSearchPage, isFabiInternal, onNavigate, onPageSecurityReport]);
+
+  // Sync mute state into proxied iframe
+  useEffect(() => {
+    if (isNewTab || isSearchPage || isFabiInternal) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'fabinav:set-muted', muted: !!tab.isMuted },
+      '*'
+    );
+  }, [tab.isMuted, isNewTab, isSearchPage, isFabiInternal]);
+
+  // Forward Find-in-Page commands into active external iframe
+  useEffect(() => {
+    if (!isPrimary || isNewTab || isSearchPage || isFabiInternal) return;
+
+    const handleDispatchFind = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ tabId?: string; query?: string; backwards?: boolean }>;
+      if (!customEv.detail || customEv.detail.tabId !== tab.id || !customEv.detail.query) return;
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          type: 'fabinav:find',
+          query: customEv.detail.query,
+          backwards: !!customEv.detail.backwards
+        },
+        '*'
+      );
+    };
+
+    window.addEventListener('fabinav:dispatch-find', handleDispatchFind);
+    return () => window.removeEventListener('fabinav:dispatch-find', handleDispatchFind);
+  }, [isPrimary, tab.id, isNewTab, isSearchPage, isFabiInternal]);
+
+  const activeLists = (
+    shieldState.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
+  ).join(',');
+  const activeCustomRules = (shieldState.customFilterRules || []).join(',');
 
   const proxySrc =
     !isNewTab && !isSearchPage && !isFabiInternal
@@ -284,9 +345,11 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           shieldState.blockTrackersAndAds
         }&blockScripts=${shieldState.blockScripts ? '1' : '0'}&blockCookies=${
           shieldState.blockCrossSiteCookies ? '1' : '0'
-        }&upgradeHttps=${shieldState.upgradeHttps ? '1' : '0'}&strictTls=${
-          shieldState.strictTls ? '1' : '0'
-        }`
+        }&fingerprint=${shieldState.blockFingerprinting}&upgradeHttps=${
+          shieldState.upgradeHttps ? '1' : '0'
+        }&strictTls=${shieldState.strictTls ? '1' : '0'}&lists=${encodeURIComponent(
+          activeLists
+        )}&customRules=${encodeURIComponent(activeCustomRules)}`
       : '';
 
   return (
@@ -366,6 +429,8 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onClearDownloads={onClearDownloads}
           onExportBackup={onExportBackup}
           onImportBackup={onImportBackup}
+          onClearBrowsingData={onClearBrowsingData}
+          onResetSettings={onResetSettings}
           onOpenElectronModal={onOpenElectronModal}
           onNavigate={onNavigate}
         />
@@ -382,6 +447,12 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
               key={`${tab.id}-${proxySrc}`}
               src={proxySrc}
               title={tab.title}
+              onLoad={() => {
+                iframeRef.current?.contentWindow?.postMessage(
+                  { type: 'fabinav:set-muted', muted: !!tab.isMuted },
+                  '*'
+                );
+              }}
               className="w-full h-full border-none bg-white"
               sandbox="allow-scripts allow-forms allow-popups allow-downloads"
             />

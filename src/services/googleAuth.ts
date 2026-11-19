@@ -14,6 +14,10 @@ const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 auth.languageCode = 'es';
 
+export function setAuthLanguage(lang: 'es' | 'en' | 'ja'): void {
+  auth.languageCode = lang;
+}
+
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
 provider.addScope('https://www.googleapis.com/auth/userinfo.email');

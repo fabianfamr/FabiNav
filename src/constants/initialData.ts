@@ -9,7 +9,7 @@ import {
   LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.11.1';
+export const APP_VERSION = '1.13.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -87,6 +87,9 @@ export const INITIAL_SHIELD_STATE: FabiShieldState = {
   blockScripts: false,
   blockFingerprinting: 'standard',
   blockCrossSiteCookies: true,
+  forgetOnCloseDomains: [],
+  filterLists: ['core-trackers', 'cookie-notices', 'url-tracking'],
+  customFilterRules: [],
   httpsUpgradesCount: 0,
   trackersBlockedCount: 0,
   cookiesBlockedCount: 0,
@@ -166,6 +169,7 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   defaultSearchEngine: 'fabinav',
   homepage: 'fabinav://newtab',
   theme: 'fabi-dark',
+  language: 'es',
   showSidebar: true,
   sidebarMode: 'on',
   sidebarPosition: 'right',

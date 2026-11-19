@@ -83,6 +83,7 @@ async function resolveStartUrl() {
   process.env.FABINAV_EMBEDDED = '1';
   process.env.FABINAV_ELECTRON = '1';
   process.env.FABINAV_DIST_DIR = path.join(__dirname, '..', 'dist');
+  process.env.FABINAV_DATA_DIR = app.getPath('userData');
 
   const serverBundlePath = path.join(__dirname, '..', 'dist-server', 'server.cjs');
   const { startServer } = require(serverBundlePath);
@@ -195,6 +196,16 @@ ipcMain.on('fabinav:win-close', () => {
     mainWindow.close();
   } else {
     app.quit();
+  }
+});
+
+ipcMain.handle('fabinav:capture-page', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  try {
+    const img = await mainWindow.webContents.capturePage();
+    return img.toDataURL();
+  } catch {
+    return null;
   }
 });
 

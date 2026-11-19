@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import https from 'https';
@@ -16,6 +17,8 @@ const resolvedFilename =
 const resolvedDirname =
   typeof __dirname !== 'undefined' ? __dirname : path.dirname(resolvedFilename);
 const DEFAULT_PORT = Number(process.env.PORT) || 3000;
+const DATA_DIR = process.env.FABINAV_DATA_DIR || path.resolve(resolvedDirname, 'data');
+const COOKIES_FILE = path.join(DATA_DIR, 'fabinav-cookies.json');
 
 interface SearchResult {
   title: string;
@@ -45,6 +48,103 @@ const cookieJar: Record<'normal' | 'private', StoredCookie[]> = {
   private: []
 };
 
+interface ProxyCacheEntry {
+  url: string;
+  finalUrl: string;
+  contentType: string;
+  status: number;
+  html: string;
+  trackersBlocked: number;
+  sizeBytes: number;
+  cachedAt: number;
+  expiresAt: number;
+}
+
+interface SearchCacheEntry {
+  key: string;
+  query: string;
+  payload: Record<string, unknown>;
+  sizeBytes: number;
+  cachedAt: number;
+  expiresAt: number;
+}
+
+const proxyCache = new Map<string, ProxyCacheEntry>();
+const searchCache = new Map<string, SearchCacheEntry>();
+const MAX_PROXY_CACHE_ENTRIES = 45;
+const MAX_SEARCH_CACHE_ENTRIES = 50;
+const PROXY_CACHE_TTL_MS = 5 * 60 * 1000;
+const SEARCH_CACHE_TTL_MS = 3 * 60 * 1000;
+
+let cookieSaveTimer: NodeJS.Timeout | null = null;
+
+function flushNormalCookiesToDisk() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const now = Date.now();
+    const persistable = cookieJar.normal.filter((c) => !c.expiresAt || c.expiresAt > now);
+    fs.writeFileSync(COOKIES_FILE, JSON.stringify(persistable, null, 2), 'utf-8');
+  } catch {
+    // Ignore disk write errors on read-only environments
+  }
+}
+
+function scheduleSaveNormalCookies() {
+  if (cookieSaveTimer) clearTimeout(cookieSaveTimer);
+  cookieSaveTimer = setTimeout(() => {
+    cookieSaveTimer = null;
+    flushNormalCookiesToDisk();
+  }, 250);
+}
+
+function loadNormalCookiesFromDisk() {
+  try {
+    if (!fs.existsSync(COOKIES_FILE)) return;
+    const raw = fs.readFileSync(COOKIES_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    const now = Date.now();
+    cookieJar.normal = parsed.filter(
+      (c): c is StoredCookie =>
+        c &&
+        typeof c === 'object' &&
+        typeof c.name === 'string' &&
+        typeof c.domain === 'string' &&
+        (!c.expiresAt || c.expiresAt > now)
+    );
+  } catch {
+    cookieJar.normal = [];
+  }
+}
+
+function pruneExpiredCache() {
+  const now = Date.now();
+  for (const [k, entry] of proxyCache.entries()) {
+    if (entry.expiresAt <= now) proxyCache.delete(k);
+  }
+  for (const [k, entry] of searchCache.entries()) {
+    if (entry.expiresAt <= now) searchCache.delete(k);
+  }
+}
+
+function setProxyCacheEntry(key: string, entry: ProxyCacheEntry) {
+  pruneExpiredCache();
+  if (proxyCache.size >= MAX_PROXY_CACHE_ENTRIES) {
+    const oldestKey = proxyCache.keys().next().value;
+    if (oldestKey) proxyCache.delete(oldestKey);
+  }
+  proxyCache.set(key, entry);
+}
+
+function setSearchCacheEntry(key: string, entry: SearchCacheEntry) {
+  pruneExpiredCache();
+  if (searchCache.size >= MAX_SEARCH_CACHE_ENTRIES) {
+    const oldestKey = searchCache.keys().next().value;
+    if (oldestKey) searchCache.delete(oldestKey);
+  }
+  searchCache.set(key, entry);
+}
+
 const TRACKER_DOMAINS = [
   'doubleclick.net',
   'google-analytics.com',
@@ -52,11 +152,9 @@ const TRACKER_DOMAINS = [
   'googlesyndication.com',
   'googleadservices.com',
   'adservice.google.',
-  'connect.facebook.net',
-  'facebook.com/tr',
-  'pixel.facebook.com',
-  'analytics.twitter.com',
-  'ads-twitter.com',
+  'cloudflareinsights.com',
+  'adtng.com',
+  'tsyndicate.com',
   'scorecardresearch.com',
   'quantserve.com',
   'criteo.com',
@@ -81,8 +179,65 @@ const TRACKER_DOMAINS = [
   'amazon-adsystem.com',
   'bing.com/bat.js',
   'bat.bing.com',
-  'sentry.io'
+  'sentry.io',
+  'mc.yandex.ru',
+  'moatads.com',
+  'doubleverify.com',
+  'adform.net',
+  'adsrvr.org'
 ];
+
+const SOCIAL_TRACKER_DOMAINS = [
+  'connect.facebook.net',
+  'facebook.com/tr',
+  'pixel.facebook.com',
+  'analytics.twitter.com',
+  'ads-twitter.com',
+  'platform.twitter.com/widgets.js',
+  'snap.licdn.com',
+  'px.ads.linkedin.com',
+  'ct.pinterest.com'
+];
+
+const REGIONAL_TRACKER_DOMAINS = [
+  'adingo.jp',
+  'microad.jp',
+  'nend.net',
+  'geniee.jp',
+  'im-apps.net',
+  'smartadserver.com',
+  'teads.tv',
+  'seedtag.com',
+  'e-planning.net'
+];
+
+function stripUrlTrackingParams(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    const trackingParams = [
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_term',
+      'utm_content',
+      'fbclid',
+      'gclid',
+      'yclid',
+      'mc_eid',
+      'igshid'
+    ];
+    let changed = false;
+    for (const p of trackingParams) {
+      if (u.searchParams.has(p)) {
+        u.searchParams.delete(p);
+        changed = true;
+      }
+    }
+    return changed ? u.toString() : rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
 
 const TRACKER_COOKIE_PATTERNS = [
   /^_ga/i,
@@ -249,6 +404,10 @@ function storeSetCookieHeaders(
     }
   }
 
+  if (partition === 'normal') {
+    scheduleSaveNormalCookies();
+  }
+
   return blockedCount;
 }
 
@@ -268,9 +427,27 @@ function buildCookieHeader(requestUrl: URL, partition: 'normal' | 'private'): st
   return matching.map((c) => `${c.name}=${c.value}`).join('; ');
 }
 
-function isTrackerUrl(rawSrc: string, aggressive: boolean): boolean {
+function isTrackerUrl(
+  rawSrc: string,
+  aggressive: boolean,
+  filterLists: string[] = ['core-trackers', 'cookie-notices', 'url-tracking'],
+  customRules: string[] = []
+): boolean {
   const lower = rawSrc.toLowerCase();
-  if (TRACKER_DOMAINS.some((d) => lower.includes(d))) {
+  const hasCore = filterLists.includes('core-trackers');
+  const hasSocial = filterLists.includes('social-widgets');
+  const hasRegional = filterLists.includes('regional-es-ja');
+
+  if (hasCore && TRACKER_DOMAINS.some((d) => lower.includes(d))) {
+    return true;
+  }
+  if (hasSocial && SOCIAL_TRACKER_DOMAINS.some((d) => lower.includes(d))) {
+    return true;
+  }
+  if (hasRegional && REGIONAL_TRACKER_DOMAINS.some((d) => lower.includes(d))) {
+    return true;
+  }
+  if (customRules.some((rule) => rule && lower.includes(rule.toLowerCase()))) {
     return true;
   }
   if (aggressive) {
@@ -1336,12 +1513,30 @@ function sanitizeAndEnhanceHtml(
     shields: boolean;
     blockTrackers: 'standard' | 'aggressive' | 'disabled';
     blockScripts: boolean;
+    blockFingerprinting: 'standard' | 'strict' | 'disabled';
     cookiesBlocked: number;
     upgradedHttps: boolean;
+    filterLists: string[];
+    customRules: string[];
   }
-): { html: string; trackersBlocked: number } {
+): { html: string; trackersBlocked: number; blockedTrackerUrls: string[] } {
   let html = rawHtml;
   let trackersBlocked = 0;
+  const blockedTrackerUrls: string[] = [];
+
+  const recordBlocked = (rawSrc: string) => {
+    trackersBlocked += 1;
+    try {
+      const resolved = new URL(rawSrc, finalUrl).href;
+      if (!blockedTrackerUrls.includes(resolved) && blockedTrackerUrls.length < 40) {
+        blockedTrackerUrls.push(resolved);
+      }
+    } catch {
+      if (rawSrc && !blockedTrackerUrls.includes(rawSrc) && blockedTrackerUrls.length < 40) {
+        blockedTrackerUrls.push(rawSrc);
+      }
+    }
+  };
 
   // Strip meta CSP frame-ancestors tags if present
   html = html.replace(
@@ -1356,8 +1551,11 @@ function sanitizeAndEnhanceHtml(
     html = html.replace(
       /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>[\s\S]*?<\/script>/gi,
       (fullTag, src) => {
-        if (options.blockScripts || isTrackerUrl(src, aggressive)) {
-          trackersBlocked += 1;
+        if (
+          options.blockScripts ||
+          isTrackerUrl(src, aggressive, options.filterLists, options.customRules)
+        ) {
+          recordBlocked(src);
           return '';
         }
         return fullTag;
@@ -1374,8 +1572,8 @@ function sanitizeAndEnhanceHtml(
     html = html.replace(
       /<iframe\b[^>]*\bsrc=["']([^"']+)["'][^>]*>[\s\S]*?<\/iframe>/gi,
       (fullTag, src) => {
-        if (isTrackerUrl(src, aggressive)) {
-          trackersBlocked += 1;
+        if (isTrackerUrl(src, aggressive, options.filterLists, options.customRules)) {
+          recordBlocked(src);
           return '';
         }
         return fullTag;
@@ -1385,8 +1583,8 @@ function sanitizeAndEnhanceHtml(
     html = html.replace(
       /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi,
       (fullTag, src) => {
-        if (isTrackerUrl(src, aggressive)) {
-          trackersBlocked += 1;
+        if (isTrackerUrl(src, aggressive, options.filterLists, options.customRules)) {
+          recordBlocked(src);
           return '';
         }
         return fullTag;
@@ -1399,19 +1597,118 @@ function sanitizeAndEnhanceHtml(
     });
   }
 
-  // Insert <base href="..."> so relative assets resolve properly against finalUrl
-  const baseTag = `<base href="${escapeHtml(finalUrl)}">`;
+  // Real Anti-Fingerprinting Protection Script (Canvas, WebGL, Hardware & Audio)
+  const fpLevel = options.shields ? options.blockFingerprinting : 'disabled';
+  const fingerprintGuard =
+    fpLevel !== 'disabled'
+      ? `
+<script data-fabinav-fp="1">
+(function () {
+  var strict = ${fpLevel === 'strict' ? 'true' : 'false'};
+  try {
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: function () { return 4; }, configurable: true });
+    if ('deviceMemory' in navigator) {
+      Object.defineProperty(navigator, 'deviceMemory', { get: function () { return strict ? 4 : 8; }, configurable: true });
+    }
+  } catch (e) {}
+  try {
+    var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function () {
+      try {
+        var ctx = this.getContext('2d');
+        if (ctx && this.width > 0 && this.height > 0 && this.width <= 512 && this.height <= 512) {
+          var img = ctx.getImageData(0, 0, Math.min(4, this.width), Math.min(4, this.height));
+          if (img && img.data && img.data.length > 3) {
+            img.data[0] = (img.data[0] ^ (strict ? 3 : 1)) & 255;
+            ctx.putImageData(img, 0, 0);
+          }
+        }
+      } catch (e) {}
+      return origToDataURL.apply(this, arguments);
+    };
+  } catch (e) {}
+  try {
+    var patchWebGL = function (Proto) {
+      if (!Proto || !Proto.prototype || !Proto.prototype.getParameter) return;
+      var origGetParam = Proto.prototype.getParameter;
+      Proto.prototype.getParameter = function (param) {
+        if (param === 37445) return 'FabiNav Protected GPU';
+        if (param === 37446) return 'ANGLE (FabiNav Privacy Renderer)';
+        return origGetParam.apply(this, arguments);
+      };
+    };
+    patchWebGL(window.WebGLRenderingContext);
+    patchWebGL(window.WebGL2RenderingContext);
+  } catch (e) {}
+  if (strict) {
+    try {
+      var origGetChannelData = window.AudioBuffer && AudioBuffer.prototype.getChannelData;
+      if (origGetChannelData) {
+        AudioBuffer.prototype.getChannelData = function () {
+          var data = origGetChannelData.apply(this, arguments);
+          if (data && data.length > 0) data[0] = data[0] + 0.0000001;
+          return data;
+        };
+      }
+    } catch (e) {}
+  }
+})();
+</script>`
+      : '';
+
+  const cookieBannerGuard =
+    options.shields && options.filterLists.includes('cookie-notices')
+      ? `<style data-fabinav-annoyances="1">[id*="cookie-banner"],[class*="cookie-banner"],[id*="onetrust-banner"],.fc-consent-root,#CybotCookiebotDialog{display:none!important;}</style>`
+      : '';
+
+  // Insert <base href="..."> + Fingerprint guard + Cookie annoyances guard
+  const baseTag = `<base href="${escapeHtml(finalUrl)}">${cookieBannerGuard}${fingerprintGuard}`;
   if (/<head[^>]*>/i.test(html)) {
     html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${baseTag}`);
   } else {
     html = `<head>${baseTag}</head>\n${html}`;
   }
 
-  // Inject lightweight FabiNav bridge (links + forms + real title/shield telemetry via postMessage)
+  // Inject lightweight FabiNav bridge (links + forms + find-in-page + audio mute + real telemetry via postMessage)
   const bridgeScript = `
 <script data-fabinav-bridge="1">
 (function () {
   var currentUrl = ${JSON.stringify(finalUrl)};
+  var isTabMuted = false;
+  var applyMute = function (muted) {
+    isTabMuted = !!muted;
+    try {
+      var els = document.querySelectorAll('audio, video');
+      for (var i = 0; i < els.length; i++) {
+        els[i].muted = isTabMuted;
+      }
+    } catch (e) {}
+  };
+  try {
+    var obs = new MutationObserver(function () {
+      if (isTabMuted) applyMute(true);
+    });
+    if (document.documentElement) {
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+    }
+  } catch (e) {}
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'fabinav:set-muted') {
+      applyMute(!!d.muted);
+    } else if (d.type === 'fabinav:find' && typeof d.query === 'string') {
+      var found = false;
+      try {
+        if (typeof window.find === 'function') {
+          found = !!window.find(d.query, false, !!d.backwards, true);
+        }
+      } catch (e) {}
+      try {
+        window.parent.postMessage({ type: 'fabinav:find-result', found: found }, '*');
+      } catch (e) {}
+    }
+  });
   var report = function () {
     try {
       window.parent.postMessage({
@@ -1420,6 +1717,7 @@ function sanitizeAndEnhanceHtml(
         title: document.title || currentUrl,
         blockedTrackers: ${trackersBlocked},
         blockedCookies: ${options.cookiesBlocked},
+        blockedTrackerUrls: ${JSON.stringify(blockedTrackerUrls)},
         upgradedHttps: ${options.upgradedHttps ? 'true' : 'false'}
       }, '*');
     } catch (e) {}
@@ -1471,7 +1769,7 @@ function sanitizeAndEnhanceHtml(
     html = `${html}\n${bridgeScript}`;
   }
 
-  return { html, trackersBlocked };
+  return { html, trackersBlocked, blockedTrackerUrls };
 }
 
 function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): string {
@@ -1543,6 +1841,7 @@ function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): strin
 }
 
 async function startServer() {
+  loadNormalCookiesFromDisk();
   const app = express();
 
   // 0. Live Autocomplete Suggestions API
@@ -1556,7 +1855,7 @@ async function startServer() {
     res.json({ query: q, suggestions });
   });
 
-  // 1. Live Multi-Vertical Web Search API
+  // 1. Live Multi-Vertical Web Search API (with in-memory search cache)
   app.get('/api/search', async (req, res) => {
     const q = String(req.query.q || '').trim();
     const page = Math.max(1, Math.min(5, Number(req.query.page) || 1));
@@ -1582,6 +1881,14 @@ async function startServer() {
       return;
     }
 
+    const searchCacheKey = `${q.toLowerCase()}::p${page}::${lang}`;
+    const cachedSearch = req.query.refresh === '1' ? undefined : searchCache.get(searchCacheKey);
+    if (cachedSearch && cachedSearch.expiresAt > Date.now()) {
+      res.setHeader('X-FabiNav-Cache', 'HIT');
+      res.json({ ...cachedSearch.payload, cached: true });
+      return;
+    }
+
     const startedAt = Date.now();
 
     if (page > 1) {
@@ -1599,7 +1906,7 @@ async function startServer() {
             )
           : null;
 
-      res.json({
+      const payload = {
         query: q,
         page,
         hasMore: outcome.hasMore,
@@ -1609,7 +1916,18 @@ async function startServer() {
         durationMs: Date.now() - startedAt,
         webError,
         fetchedAt: Date.now()
+      };
+      const serializedSize = Buffer.byteLength(JSON.stringify(payload), 'utf-8');
+      setSearchCacheEntry(searchCacheKey, {
+        key: searchCacheKey,
+        query: q,
+        payload,
+        sizeBytes: serializedSize,
+        cachedAt: Date.now(),
+        expiresAt: Date.now() + SEARCH_CACHE_TTL_MS
       });
+      res.setHeader('X-FabiNav-Cache', 'MISS');
+      res.json(payload);
       return;
     }
 
@@ -1654,7 +1972,7 @@ async function startServer() {
         ? String(webSettled.reason instanceof Error ? webSettled.reason.message : webSettled.reason)
         : null;
 
-    res.json({
+    const payload = {
       query: q,
       page: 1,
       hasMore: webOutcome.hasMore,
@@ -1672,7 +1990,22 @@ async function startServer() {
       durationMs: Date.now() - startedAt,
       webError,
       fetchedAt: Date.now()
-    });
+    };
+
+    if (results.length > 0 || wikipedia.length > 0 || news.length > 0) {
+      const serializedSize = Buffer.byteLength(JSON.stringify(payload), 'utf-8');
+      setSearchCacheEntry(searchCacheKey, {
+        key: searchCacheKey,
+        query: q,
+        payload,
+        sizeBytes: serializedSize,
+        cachedAt: Date.now(),
+        expiresAt: Date.now() + SEARCH_CACHE_TTL_MS
+      });
+    }
+
+    res.setHeader('X-FabiNav-Cache', 'MISS');
+    res.json(payload);
   });
 
   // 2. Real TLS Certificate & Handshake Inspection API
@@ -1745,6 +2078,10 @@ async function startServer() {
       cookieJar[partition] = [];
     }
 
+    if (partition === 'normal') {
+      scheduleSaveNormalCookies();
+    }
+
     res.json({
       ok: true,
       partition,
@@ -1752,7 +2089,55 @@ async function startServer() {
     });
   });
 
-  // 4. FabiNav Secure Web Proxy (strips X-Frame-Options/frame-ancestors, enforces TLS & Shields)
+  // 3b. Real Proxy & Search Cache Management API
+  app.get('/api/cache', (_req, res) => {
+    pruneExpiredCache();
+    let totalBytes = 0;
+    const entries: Array<{ kind: 'page' | 'search'; label: string; sizeBytes: number; cachedAt: number }> = [];
+
+    for (const item of proxyCache.values()) {
+      totalBytes += item.sizeBytes;
+      entries.push({
+        kind: 'page',
+        label: item.finalUrl || item.url,
+        sizeBytes: item.sizeBytes,
+        cachedAt: item.cachedAt
+      });
+    }
+    for (const item of searchCache.values()) {
+      totalBytes += item.sizeBytes;
+      entries.push({
+        kind: 'search',
+        label: `Búsqueda: ${item.query}`,
+        sizeBytes: item.sizeBytes,
+        cachedAt: item.cachedAt
+      });
+    }
+
+    entries.sort((a, b) => b.cachedAt - a.cachedAt);
+    res.json({
+      proxyCount: proxyCache.size,
+      searchCount: searchCache.size,
+      totalBytes,
+      entries: entries.slice(0, 20)
+    });
+  });
+
+  app.delete('/api/cache', (_req, res) => {
+    let freedBytes = 0;
+    for (const item of proxyCache.values()) freedBytes += item.sizeBytes;
+    for (const item of searchCache.values()) freedBytes += item.sizeBytes;
+    const clearedEntries = proxyCache.size + searchCache.size;
+    proxyCache.clear();
+    searchCache.clear();
+    res.json({
+      ok: true,
+      clearedEntries,
+      freedBytes
+    });
+  });
+
+  // 4. FabiNav Secure Web Proxy (strips X-Frame-Options/frame-ancestors, enforces TLS, Cache, Fingerprinting & Shields)
   app.get('/api/proxy', async (req, res) => {
     const targetUrl = String(req.query.url || '').trim();
     if (!targetUrl) {
@@ -1769,11 +2154,47 @@ async function startServer() {
         : 'standard';
     const blockScripts = req.query.blockScripts === '1';
     const blockCookies = req.query.blockCookies !== '0';
+    const fpRaw = String(req.query.fingerprint || 'standard');
+    const blockFingerprinting: 'standard' | 'strict' | 'disabled' =
+      fpRaw === 'strict' || fpRaw === 'disabled' ? fpRaw : 'standard';
     const upgradeHttps = req.query.upgradeHttps !== '0';
     const strictTls = req.query.strictTls !== '0';
+    const rawDownload = req.query.raw === '1';
+    const refresh = req.query.refresh === '1';
+    const filterListsRaw = String(req.query.lists || 'core-trackers,cookie-notices,url-tracking');
+    const filterLists = filterListsRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const customRulesRaw = String(req.query.customRules || '');
+    const customRules = customRulesRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 30);
+
+    const requestTargetUrl =
+      shields && filterLists.includes('url-tracking')
+        ? stripUrlTrackingParams(targetUrl)
+        : targetUrl;
+
+    const cacheKey = `${requestTargetUrl}::s${shields ? 1 : 0}::t${blockTrackers}::js${
+      blockScripts ? 1 : 0
+    }::fp${blockFingerprinting}::l[${filterLists.join('|')}]::r[${customRules.join('|')}]`;
+
+    if (partition === 'normal' && !rawDownload && !refresh) {
+      const hit = proxyCache.get(cacheKey);
+      if (hit && hit.expiresAt > Date.now()) {
+        res.status(hit.status);
+        res.setHeader('Content-Type', hit.contentType);
+        res.setHeader('X-FabiNav-Cache', 'HIT');
+        res.send(hit.html);
+        return;
+      }
+    }
 
     try {
-      const outcome = await fetchViaNodeHttp(targetUrl, {
+      const outcome = await fetchViaNodeHttp(requestTargetUrl, {
         partition,
         blockCookies: shields && blockCookies,
         strictTls,
@@ -1783,16 +2204,56 @@ async function startServer() {
       const contentType = String(outcome.headers['content-type'] || 'text/html');
       if (contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
         const rawHtml = outcome.body.toString('utf-8');
-        const { html } = sanitizeAndEnhanceHtml(rawHtml, outcome.finalUrl, {
+        if (rawDownload) {
+          res.status(outcome.status >= 400 ? outcome.status : 200);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.send(rawHtml);
+          return;
+        }
+
+        const { html, trackersBlocked } = sanitizeAndEnhanceHtml(rawHtml, outcome.finalUrl, {
           shields,
           blockTrackers,
           blockScripts,
+          blockFingerprinting,
           cookiesBlocked: outcome.cookiesBlocked,
-          upgradedHttps: outcome.upgradedHttps
+          upgradedHttps: outcome.upgradedHttps,
+          filterLists,
+          customRules
         });
+
+        const upstreamCacheControl = String(outcome.headers['cache-control'] || '').toLowerCase();
+        const allowCache =
+          partition === 'normal' &&
+          outcome.status < 400 &&
+          !upstreamCacheControl.includes('no-store') &&
+          !upstreamCacheControl.includes('private');
+
+        if (allowCache) {
+          const sizeBytes = Buffer.byteLength(html, 'utf-8');
+          if (sizeBytes <= 2 * 1024 * 1024) {
+            setProxyCacheEntry(cacheKey, {
+              url: targetUrl,
+              finalUrl: outcome.finalUrl,
+              contentType: 'text/html; charset=utf-8',
+              status: 200,
+              html,
+              trackersBlocked,
+              sizeBytes,
+              cachedAt: Date.now(),
+              expiresAt: Date.now() + PROXY_CACHE_TTL_MS
+            });
+          }
+        }
+
         res.status(outcome.status >= 400 ? outcome.status : 200);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-FabiNav-Cache', 'MISS');
+        res.setHeader(
+          'Cache-Control',
+          partition === 'private' ? 'no-store' : 'private, max-age=180'
+        );
         res.send(html);
         return;
       }

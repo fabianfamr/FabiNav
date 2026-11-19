@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('fabinavDesktop', {
   minimizeWindow: () => ipcRenderer.send('fabinav:win-minimize'),
   toggleMaximizeWindow: () => ipcRenderer.send('fabinav:win-toggle-maximize'),
   closeWindow: () => ipcRenderer.send('fabinav:win-close'),
+  capturePage: () => ipcRenderer.invoke('fabinav:capture-page'),
   checkForUpdates: () => ipcRenderer.invoke('fabinav:check-updates'),
   installUpdate: () => ipcRenderer.invoke('fabinav:install-update'),
   openUninstallSettings: () => ipcRenderer.invoke('fabinav:open-uninstall'),

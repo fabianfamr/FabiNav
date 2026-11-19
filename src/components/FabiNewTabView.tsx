@@ -19,6 +19,7 @@ import {
   TopSiteItem
 } from '../types';
 import { FabiSwitch } from './FabiSwitch';
+import { t, getDateLocale } from '../i18n/translations';
 
 interface FabiNewTabViewProps {
   onNavigate: (url: string) => void;
@@ -146,12 +147,15 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
     onUpdateCustomization({ selectedWallpaperId: FABI_WALLPAPERS[nextIndex].id });
   };
 
-  const timeFormatted = now.toLocaleTimeString('es-ES', {
+  const lang = settings.language || 'es';
+  const dateLocale = getDateLocale(lang);
+
+  const timeFormatted = now.toLocaleTimeString(dateLocale, {
     hour: '2-digit',
     minute: '2-digit'
   });
 
-  const dateFormatted = now.toLocaleDateString('es-ES', {
+  const dateFormatted = now.toLocaleDateString(dateLocale, {
     weekday: 'long',
     day: 'numeric',
     month: 'long'
@@ -202,7 +206,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 {shieldState.trackersBlockedCount + shieldState.cookiesBlockedCount}
               </div>
               <div className="text-[11px] text-white/80 mt-1.5 max-w-[120px] leading-tight">
-                Rastreadores y cookies bloqueados
+                {t(lang, 'statTrackersBlocked')}
               </div>
             </div>
 
@@ -213,7 +217,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 {shieldState.httpsUpgradesCount}
               </div>
               <div className="text-[11px] text-white/80 mt-1.5 max-w-[100px] leading-tight">
-                Conexiones HTTPS/TLS
+                {t(lang, 'statHttpsConn')}
               </div>
             </div>
 
@@ -225,10 +229,10 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                   shieldState.enabled ? 'text-emerald-400' : 'text-white/60'
                 }`}
               >
-                {shieldState.enabled ? 'Activos' : 'En pausa'}
+                {shieldState.enabled ? t(lang, 'shieldsActiveShort') : t(lang, 'shieldsPausedShort')}
               </div>
               <div className="text-[11px] text-white/80 mt-1.5 leading-tight">
-                Escudos y TLS
+                {t(lang, 'statShieldsTls')}
               </div>
             </div>
           </motion.button>
@@ -267,7 +271,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Buscar con ${currentEngineLabel} o escribir URL`}
+              placeholder={t(lang, 'searchWithOrUrl', { engine: currentEngineLabel })}
               className="w-full bg-transparent text-sm text-white placeholder-white/55 focus:outline-none select-text"
             />
 
@@ -311,7 +315,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                 className="absolute right-12 top-14 w-48 bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] rounded-2xl shadow-2xl py-1.5 z-50 text-xs text-[var(--bn-text)]"
               >
                 <div className="px-3.5 py-1.5 text-[11px] text-[var(--bn-text-muted)] border-b border-[var(--bn-border)]">
-                  Motor predeterminado
+                  {t(lang, 'defaultEngineTitle')}
                 </div>
                 {SEARCH_ENGINES.map((eng) => (
                   <button
@@ -385,13 +389,13 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAddSiteModal(true)}
-                title="Añadir sitio"
+                title={t(lang, 'addSite')}
                 className="w-13 h-13 rounded-2xl bg-black/30 hover:bg-black/50 hover:-translate-y-0.5 active:scale-95 backdrop-blur-md border border-dashed border-white/30 hover:border-white/55 flex items-center justify-center text-white/80 hover:text-white transition-all fabi-transition-s"
               >
                 <Plus className="w-5 h-5" />
               </button>
               <span className="mt-2 text-[11px] text-white/80 truncate w-full text-center">
-                Añadir sitio
+                {t(lang, 'addSite')}
               </span>
             </div>
           </div>
@@ -417,7 +421,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-black/40 hover:bg-black/60 active:scale-95 backdrop-blur-md border border-white/12 text-white/85 hover:text-white transition-all whitespace-nowrap"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
-            <span>{shieldState.enabled ? 'Escudos activos' : 'Escudos en pausa'}</span>
+            <span>{shieldState.enabled ? t(lang, 'shieldsActiveLong') : t(lang, 'shieldsPausedLong')}</span>
           </button>
 
           <button
@@ -426,7 +430,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/50 hover:bg-black/70 active:scale-95 backdrop-blur-md border border-white/15 text-white transition-all font-medium whitespace-nowrap"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Personalizar</span>
+            <span>{t(lang, 'customize')}</span>
           </button>
         </div>
       </div>
@@ -453,7 +457,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-[var(--bn-text-strong)]">
-                  Añadir acceso directo
+                  {t(lang, 'addShortcutTitle')}
                 </h3>
                 <button
                   type="button"
@@ -466,20 +470,22 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
 
               <div className="space-y-3 text-xs">
                 <div>
-                  <label className="block text-[11px] text-[var(--bn-text-muted)] mb-1">Nombre</label>
+                  <label className="block text-[11px] text-[var(--bn-text-muted)] mb-1">
+                    {t(lang, 'nameLabel')}
+                  </label>
                   <input
                     type="text"
                     required
                     autoFocus
                     value={newSiteTitle}
                     onChange={(e) => setNewSiteTitle(e.target.value)}
-                    placeholder="Ejemplo: YouTube"
+                    placeholder="YouTube"
                     className="w-full bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-xs text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] text-[var(--bn-text-muted)] mb-1">
-                    Dirección URL
+                    {t(lang, 'urlLabel')}
                   </label>
                   <input
                     type="text"
@@ -498,13 +504,13 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                   onClick={() => setShowAddSiteModal(false)}
                   className="px-4 py-1.5 rounded-full border border-[var(--bn-border)] text-xs text-[var(--bn-text)] hover:bg-[var(--bn-hover)]"
                 >
-                  Cancelar
+                  {t(lang, 'cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium"
                 >
-                  Guardar
+                  {t(lang, 'save')}
                 </button>
               </div>
             </motion.form>
@@ -533,7 +539,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
             >
               <div className="flex items-center justify-between border-b border-[var(--bn-border)] pb-3">
                 <h3 className="font-semibold text-[var(--bn-text-strong)] text-sm">
-                  Personalizar nueva pestaña
+                  {t(lang, 'customizeTitle')}
                 </h3>
                 <button
                   type="button"
@@ -546,39 +552,39 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
 
               <div className="space-y-3 text-xs">
                 <div className="flex items-center justify-between py-1">
-                  <span>Mostrar estadísticas de privacidad</span>
+                  <span>{t(lang, 'showPrivacyStats')}</span>
                   <FabiSwitch
                     checked={customization.showStats}
                     onChange={(v) => onUpdateCustomization({ showStats: v })}
-                    ariaLabel="Mostrar estadísticas de privacidad"
+                    ariaLabel={t(lang, 'showPrivacyStats')}
                   />
                 </div>
 
                 <div className="flex items-center justify-between py-1">
-                  <span>Mostrar sitios principales</span>
+                  <span>{t(lang, 'showTopSites')}</span>
                   <FabiSwitch
                     checked={customization.showTopSites}
                     onChange={(v) => onUpdateCustomization({ showTopSites: v })}
-                    ariaLabel="Mostrar sitios principales"
+                    ariaLabel={t(lang, 'showTopSites')}
                   />
                 </div>
 
                 <div className="flex items-center justify-between py-1">
-                  <span>Mostrar reloj y fecha</span>
+                  <span>{t(lang, 'showClockDate')}</span>
                   <FabiSwitch
                     checked={customization.showClock}
                     onChange={(v) => onUpdateCustomization({ showClock: v })}
-                    ariaLabel="Mostrar reloj y fecha"
+                    ariaLabel={t(lang, 'showClockDate')}
                   />
                 </div>
 
                 <div className="pt-3 border-t border-[var(--bn-border)]">
                   <div className="flex items-center justify-between mb-2.5">
                     <span className="text-xs font-medium text-[var(--bn-text-strong)]">
-                      Imagen de fondo
+                      {t(lang, 'wallpaperTitle')}
                     </span>
                     <span className="text-[11px] text-[var(--bn-text-muted)] tabular-nums">
-                      {FABI_WALLPAPERS.length} disponibles
+                      {t(lang, 'availableCount', { n: FABI_WALLPAPERS.length })}
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
@@ -614,7 +620,7 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
                   onClick={() => setShowCustomizeModal(false)}
                   className="px-5 py-1.5 bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white rounded-full text-xs font-medium transition-colors"
                 >
-                  Listo
+                  {t(lang, 'done')}
                 </button>
               </div>
             </motion.div>
