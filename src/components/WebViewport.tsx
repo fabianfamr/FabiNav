@@ -558,6 +558,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         <FabiSearchView
           query={searchQuery}
           defaultEngine={settings.defaultSearchEngine}
+          googleUser={googleUser}
           onNavigate={onNavigate}
         />
       ) : isFabiInternal ? (

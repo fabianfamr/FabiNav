@@ -101,15 +101,11 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
   }, [isOpen, onClose, viewMode]);
 
   const pageTrackersCount = blockedTrackerUrls.length;
-  const displayBlockedCount = isExternal
-    ? pageTrackersCount > 0
-      ? pageTrackersCount
-      : shieldState.trackersBlockedCount +
-        shieldState.cookiesBlockedCount +
-        shieldState.httpsUpgradesCount
-    : shieldState.trackersBlockedCount +
-      shieldState.cookiesBlockedCount +
-      shieldState.httpsUpgradesCount;
+  const displayBlockedCount = isExternal ? pageTrackersCount : 0;
+  const totalAllTimeBlocked =
+    shieldState.trackersBlockedCount +
+    shieldState.cookiesBlockedCount +
+    shieldState.httpsUpgradesCount;
 
   const forgetList = shieldState.forgetOnCloseDomains || [];
   const isForgetEnabled = isExternal && forgetList.includes(domain);
@@ -240,7 +236,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                   />
                 </div>
 
-                {/* Blocked Summary Box */}
+                {/* Blocked Summary Box (Live per-site counter) */}
                 <div className="px-4 pb-3.5">
                   <div className="rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] px-4 py-3 flex items-center gap-3.5">
                     <span className="text-2xl font-bold text-[var(--bn-text-strong)] tabular-nums shrink-0 leading-none">
@@ -250,8 +246,13 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                       <p className="text-[12px] text-[var(--bn-text)] leading-snug">
                         {t(language, 'shieldsBlockedSummary')}
                       </p>
+                      <p className="text-[10px] text-[var(--bn-text-muted)] mt-1 tabular-nums truncate">
+                        {isExternal ? t(language, 'shieldsLivePageNote') : t(language, 'trackersInternalNote')}
+                        {' · '}
+                        {t(language, 'shieldsSessionTotalLabel')}: {totalAllTimeBlocked}
+                      </p>
                       {tlsSummary?.protocol && (
-                        <p className="text-[10px] text-[var(--bn-success-text)] font-mono mt-1 truncate">
+                        <p className="text-[10px] text-[var(--bn-success-text)] font-mono mt-0.5 truncate">
                           {t(language, 'tlsVerified')} · {tlsSummary.protocol}
                           {tlsSummary.cipher ? ` · ${tlsSummary.cipher}` : ''}
                         </p>
@@ -314,11 +315,9 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                                 {t(language, 'blockTrackersDisabled')}
                               </option>
                             </select>
-                            {(pageTrackersCount > 0 || shieldState.trackersBlockedCount > 0) && (
+                            {isExternal && pageTrackersCount > 0 && (
                               <span className="px-1.5 py-0.5 rounded bg-[var(--bn-surface)] border border-[var(--bn-border)] text-[11px] font-mono tabular-nums text-[var(--bn-text-strong)] shrink-0">
-                                {pageTrackersCount > 0
-                                  ? pageTrackersCount
-                                  : shieldState.trackersBlockedCount}
+                                {pageTrackersCount}
                               </span>
                             )}
                           </div>

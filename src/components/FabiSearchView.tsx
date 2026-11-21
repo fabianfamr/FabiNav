@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   BrowserSettings,
+  GoogleUserProfile,
   InstantAnswerData,
   SearchApiResponse,
   SearchImageItem,
@@ -9,25 +10,40 @@ import {
 } from '../types';
 import {
   AlertCircle,
+  Archive,
   ArrowUpRight,
   BookOpen,
   Calculator,
+  Calendar,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Compass,
   Copy,
   ExternalLink,
+  FileText,
+  FolderOpen,
   GitFork,
   Globe,
+  HardDrive,
   Image as ImageIcon,
+  Languages,
+  LayoutGrid,
+  Lightbulb,
   Lock,
+  Mail,
+  MapPin,
   Newspaper,
   Play,
   RotateCw,
   Search,
+  Share2,
+  ShoppingBag,
   SlidersHorizontal,
   Star,
+  User,
   Video,
   X
 } from 'lucide-react';
@@ -39,13 +55,161 @@ import {
 
 const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
-type SearchFilterTab = 'all' | 'images' | 'videos' | 'news' | 'wikipedia' | 'code';
+type SearchFilterTab =
+  | 'all'
+  | 'images'
+  | 'videos'
+  | 'news'
+  | 'maps'
+  | 'wikipedia'
+  | 'code';
 
 interface FabiSearchViewProps {
   query: string;
   defaultEngine: BrowserSettings['defaultSearchEngine'];
+  googleUser?: GoogleUserProfile | null;
   onNavigate: (url: string) => void;
 }
+
+interface LauncherAppItem {
+  id: string;
+  label: string;
+  url: string;
+  color: string;
+  icon: React.ReactNode;
+}
+
+const FAVORITE_APPS: LauncherAppItem[] = [
+  {
+    id: 'account',
+    label: 'Cuenta',
+    url: 'fabinav://settings#tu-google',
+    color: 'bg-sky-500/15 text-sky-400',
+    icon: <User className="w-5 h-5" />
+  },
+  {
+    id: 'drive',
+    label: 'Drive',
+    url: 'https://drive.google.com',
+    color: 'bg-amber-500/15 text-amber-400',
+    icon: <HardDrive className="w-5 h-5" />
+  },
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    url: 'https://mail.google.com',
+    color: 'bg-rose-500/15 text-rose-400',
+    icon: <Mail className="w-5 h-5" />
+  },
+  {
+    id: 'maps',
+    label: 'Maps',
+    url: 'https://www.openstreetmap.org',
+    color: 'bg-emerald-500/15 text-emerald-400',
+    icon: <MapPin className="w-5 h-5" />
+  },
+  {
+    id: 'search',
+    label: 'Búsqueda',
+    url: 'fabinav://newtab',
+    color: 'bg-blue-500/15 text-blue-400',
+    icon: <Search className="w-5 h-5" />
+  },
+  {
+    id: 'calendar',
+    label: 'Calendario',
+    url: 'https://calendar.google.com',
+    color: 'bg-indigo-500/15 text-indigo-400',
+    icon: <Calendar className="w-5 h-5" />
+  },
+  {
+    id: 'news',
+    label: 'Noticias',
+    url: 'https://news.google.com',
+    color: 'bg-cyan-500/15 text-cyan-400',
+    icon: <Newspaper className="w-5 h-5" />
+  },
+  {
+    id: 'photos',
+    label: 'Fotos',
+    url: 'https://photos.google.com',
+    color: 'bg-yellow-500/15 text-yellow-400',
+    icon: <ImageIcon className="w-5 h-5" />
+  },
+  {
+    id: 'translate',
+    label: 'Traductor',
+    url: 'https://translate.google.com',
+    color: 'bg-blue-500/15 text-blue-300',
+    icon: <Languages className="w-5 h-5" />
+  }
+];
+
+const MORE_LAUNCHER_APPS: LauncherAppItem[] = [
+  {
+    id: 'meet',
+    label: 'Meet',
+    url: 'https://meet.google.com',
+    color: 'bg-teal-500/15 text-teal-400',
+    icon: <Video className="w-5 h-5" />
+  },
+  {
+    id: 'docs',
+    label: 'Documentos',
+    url: 'https://docs.google.com/document',
+    color: 'bg-blue-500/15 text-blue-400',
+    icon: <FileText className="w-5 h-5" />
+  },
+  {
+    id: 'youtube',
+    label: 'YouTube',
+    url: 'https://www.youtube.com',
+    color: 'bg-red-500/15 text-red-400',
+    icon: <Play className="w-5 h-5" />
+  },
+  {
+    id: 'keep',
+    label: 'Keep',
+    url: 'https://keep.google.com',
+    color: 'bg-amber-500/15 text-amber-300',
+    icon: <Lightbulb className="w-5 h-5" />
+  },
+  {
+    id: 'shopping',
+    label: 'Shopping',
+    url: 'https://shopping.google.com',
+    color: 'bg-lime-500/15 text-lime-400',
+    icon: <ShoppingBag className="w-5 h-5" />
+  },
+  {
+    id: 'wikipedia',
+    label: 'Wikipedia',
+    url: 'https://es.wikipedia.org',
+    color: 'bg-zinc-500/15 text-zinc-300',
+    icon: <BookOpen className="w-5 h-5" />
+  },
+  {
+    id: 'github',
+    label: 'GitHub',
+    url: 'https://github.com',
+    color: 'bg-purple-500/15 text-purple-300',
+    icon: <Code2 className="w-5 h-5" />
+  },
+  {
+    id: 'files',
+    label: 'Marcadores',
+    url: 'fabinav://bookmarks',
+    color: 'bg-orange-500/15 text-orange-300',
+    icon: <FolderOpen className="w-5 h-5" />
+  },
+  {
+    id: 'archive',
+    label: 'Archive',
+    url: 'https://archive.org',
+    color: 'bg-slate-500/15 text-slate-300',
+    icon: <Archive className="w-5 h-5" />
+  }
+];
 
 const SiteFavicon: React.FC<{
   url: string;
@@ -116,7 +280,8 @@ function renderHighlightedSnippet(text: string, query: string): React.ReactNode 
 
 export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
   query,
-  defaultEngine,
+  defaultEngine: _defaultEngine,
+  googleUser,
   onNavigate
 }) => {
   const [inputVal, setInputVal] = useState(query);
@@ -126,10 +291,10 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
   const [showTools, setShowTools] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingPage, setLoadingPage] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [data, setData] = useState<SearchApiResponse | null>(null);
-  const [extraWebResults, setExtraWebResults] = useState<SearchResultItem[]>([]);
+  const [pagesCache, setPagesCache] = useState<Record<number, SearchResultItem[]>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
 
@@ -138,6 +303,14 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
   const [previewImage, setPreviewImage] = useState<SearchImageItem | null>(null);
   const [expandedTopicIdx, setExpandedTopicIdx] = useState<number | null>(0);
   const [copiedInstant, setCopiedInstant] = useState(false);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+
+  // Header menus
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const appsMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Autocomplete dropdown state
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -149,23 +322,43 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
     setInputVal(query);
     setWikiImgFailed(false);
     setPreviewImage(null);
-    setExtraWebResults([]);
+    setPagesCache({});
     setCurrentPage(1);
     setHasMore(false);
     setExpandedTopicIdx(0);
     setDropdownOpen(false);
     setHighlightedIdx(-1);
+    setAppsOpen(false);
+    setMoreMenuOpen(false);
   }, [query]);
 
-  // Close autocomplete on outside click
+  // Close popovers on outside click or Escape
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
-      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (searchBoxRef.current && !searchBoxRef.current.contains(target)) {
         setDropdownOpen(false);
+      }
+      if (appsMenuRef.current && !appsMenuRef.current.contains(target)) {
+        setAppsOpen(false);
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(target)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDropdownOpen(false);
+        setAppsOpen(false);
+        setMoreMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 
   // Debounced live suggestions
@@ -186,9 +379,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
           setSuggestions(Array.isArray(json.suggestions) ? json.suggestions.slice(0, 7) : []);
           setHighlightedIdx(-1);
         })
-        .catch(() => {
-          // ignore aborts or transient errors
-        });
+        .catch(() => {});
     }, 180);
 
     return () => {
@@ -197,7 +388,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
     };
   }, [inputVal, dropdownOpen]);
 
-  // Main search fetch
+  // Main search fetch (Page 1)
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -210,7 +401,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
     const controller = new AbortController();
     setLoading(true);
     setErrorMsg(null);
-    setExtraWebResults([]);
+    setPagesCache({});
     setCurrentPage(1);
 
     fetch(`/api/search?q=${encodeURIComponent(trimmed)}&page=1&lang=${langFilter}`, {
@@ -224,6 +415,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
       })
       .then((json) => {
         setData(json);
+        setPagesCache({ 1: json.results || [] });
         setHasMore(Boolean(json.hasMore));
         setLoading(false);
       })
@@ -236,29 +428,33 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
     return () => controller.abort();
   }, [query, langFilter, reloadTick]);
 
-  const handleLoadMore = async () => {
-    if (loadingMore || !query.trim()) return;
-    const nextPage = currentPage + 1;
-    setLoadingMore(true);
+  const handleGoToPage = async (targetPage: number) => {
+    const safePage = Math.max(1, Math.min(5, targetPage));
+    if (safePage === currentPage || loadingPage || !query.trim()) return;
+
+    if (pagesCache[safePage]) {
+      setCurrentPage(safePage);
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setLoadingPage(true);
     try {
       const res = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}&page=${nextPage}&lang=${langFilter}`
+        `/api/search?q=${encodeURIComponent(query.trim())}&page=${safePage}&lang=${langFilter}`
       );
       if (res.ok) {
         const json = (await res.json()) as SearchApiResponse;
-        const seenUrls = new Set([
-          ...(data?.results || []).map((r) => r.url),
-          ...extraWebResults.map((r) => r.url)
-        ]);
-        const fresh = (json.results || []).filter((r) => !seenUrls.has(r.url));
-        setExtraWebResults((prev) => [...prev, ...fresh]);
-        setCurrentPage(nextPage);
-        setHasMore(Boolean(json.hasMore) && fresh.length > 0 && nextPage < 4);
+        const pageItems = json.results || [];
+        setPagesCache((prev) => ({ ...prev, [safePage]: pageItems }));
+        setCurrentPage(safePage);
+        setHasMore(Boolean(json.hasMore));
+        scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch {
-      // keep existing items on transient pagination error
+      // keep active page if fetch fails
     } finally {
-      setLoadingMore(false);
+      setLoadingPage(false);
     }
   };
 
@@ -307,10 +503,18 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
     window.setTimeout(() => setCopiedInstant(false), 1600);
   };
 
-  const webResults = useMemo(
-    () => [...(data?.results || []), ...extraWebResults],
-    [data?.results, extraWebResults]
+  const handleShareSearch = () => {
+    const shareUrl = `fabinav://search?q=${encodeURIComponent(query.trim())}`;
+    navigator.clipboard?.writeText(shareUrl).catch(() => {});
+    setCopiedShareLink(true);
+    window.setTimeout(() => setCopiedShareLink(false), 1800);
+  };
+
+  const activePageResults = useMemo(
+    () => pagesCache[currentPage] ?? data?.results ?? [],
+    [pagesCache, currentPage, data?.results]
   );
+
   const wikiResults = data?.wikipedia || [];
   const imageResults = data?.images || [];
   const newsResults = data?.news || [];
@@ -319,17 +523,17 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
   const relatedTopics = data?.relatedTopics || [];
   const relatedQueries = data?.relatedQueries || [];
 
-  const mergedAll: SearchResultItem[] = useMemo(
-    () => [
-      ...webResults,
-      ...wikiResults.filter((w) => !webResults.some((r) => r.url === w.url))
-    ],
-    [webResults, wikiResults]
-  );
+  const mergedAll: SearchResultItem[] = useMemo(() => {
+    if (currentPage > 1) return activePageResults;
+    return [
+      ...activePageResults,
+      ...wikiResults.filter((w) => !activePageResults.some((r) => r.url === w.url))
+    ];
+  }, [activePageResults, wikiResults, currentPage]);
 
   const groupedAll = useMemo(() => groupResultsByDomain(mergedAll), [mergedAll]);
   const featuredGroup =
-    activeFilter === 'all' && groupedAll.length > 0 ? groupedAll[0] : null;
+    activeFilter === 'all' && currentPage === 1 && groupedAll.length > 0 ? groupedAll[0] : null;
   const standardGroups = useMemo(() => {
     if (activeFilter === 'wikipedia') {
       return wikiResults.map((item) => ({ primary: item, sitelinks: [] as SearchResultItem[] }));
@@ -343,11 +547,11 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
       ? `${(data.durationMs / 1000).toFixed(2)} s`
       : null;
 
-  const tabs: Array<{
+  const primaryTabs: Array<{
     id: SearchFilterTab;
     label: string;
     icon: React.ReactNode;
-    count: number;
+    count?: number;
   }> = [
     { id: 'all', label: 'Todo', icon: <Globe className="w-3.5 h-3.5" />, count: mergedAll.length },
     {
@@ -369,153 +573,305 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
       count: newsResults.length
     },
     {
-      id: 'wikipedia',
-      label: 'Wikipedia',
-      icon: <BookOpen className="w-3.5 h-3.5" />,
-      count: wikiResults.length
-    },
-    {
-      id: 'code',
-      label: 'Código',
-      icon: <Code2 className="w-3.5 h-3.5" />,
-      count: repoResults.length
+      id: 'maps',
+      label: 'Maps',
+      icon: <MapPin className="w-3.5 h-3.5" />
     }
   ];
 
+  const isMoreTabActive = activeFilter === 'wikipedia' || activeFilter === 'code';
+  const moreTabLabel =
+    activeFilter === 'wikipedia'
+      ? 'Más · Wikipedia'
+      : activeFilter === 'code'
+        ? 'Más · Código'
+        : 'Más';
+
+  const visiblePages = useMemo(() => {
+    const pages = [1, 2, 3, 4, 5];
+    return pages.filter((p) => p <= currentPage + 2 || p <= 3 || Boolean(pagesCache[p]));
+  }, [currentPage, pagesCache]);
+
+  const osmSearchUrl = `https://www.openstreetmap.org/search?query=${encodeURIComponent(query.trim())}`;
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query.trim())}`;
+  const archiveSearchUrl = `https://archive.org/search?query=${encodeURIComponent(query.trim())}`;
+
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)]">
-      {/* Top FabiNav Search Header */}
-      <header className="sticky top-0 z-20 bg-[var(--bn-toolbar)]/95 backdrop-blur-md border-b border-[var(--bn-border)] px-5 sm:px-8 pt-3.5 pb-0">
+    <div
+      ref={scrollContainerRef}
+      className="flex-1 overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)] flex flex-col"
+    >
+      {/* Top Google-style FabiNav Search Header */}
+      <header className="sticky top-0 z-20 bg-[var(--bn-toolbar)]/95 backdrop-blur-md border-b border-[var(--bn-border)] px-5 sm:px-8 pt-3.5 pb-0 shrink-0">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-3 sm:gap-5">
-            {/* Brand Wordmark */}
-            <button
-              type="button"
-              onClick={() => onNavigate('fabinav://newtab')}
-              title="Volver a Nueva pestaña"
-              className="flex items-center gap-2.5 shrink-0 group whitespace-nowrap"
-            >
-              <span
-                className="w-8 h-8 rounded-xl flex items-center justify-center shadow-xs transition-transform fabi-transition-s group-hover:scale-105"
-                style={{ background: 'var(--fabi-gradient-brand)' }}
+          <div className="flex items-center justify-between gap-3 sm:gap-5">
+            <div className="flex items-center gap-3 sm:gap-5 flex-1 min-w-0">
+              {/* Brand Wordmark */}
+              <button
+                type="button"
+                onClick={() => onNavigate('fabinav://newtab')}
+                title="Volver a Nueva pestaña"
+                className="flex items-center gap-2.5 shrink-0 group whitespace-nowrap"
               >
-                <Compass className="w-4 h-4 text-white" />
-              </span>
-              <span className="hidden sm:inline text-sm font-bold text-[var(--bn-text-strong)] tracking-tight">
-                FabiNav Search
-              </span>
-            </button>
+                <span
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shadow-xs transition-transform fabi-transition-s group-hover:scale-105"
+                  style={{ background: 'var(--fabi-gradient-brand)' }}
+                >
+                  <Compass className="w-4 h-4 text-white" />
+                </span>
+                <span className="hidden sm:inline text-base font-bold text-[var(--bn-text-strong)] tracking-tight">
+                  FabiNav
+                </span>
+              </button>
 
-            {/* Live Search Bar with Autocomplete Dropdown */}
-            <div ref={searchBoxRef} className="relative flex-1 max-w-2xl">
-              <form onSubmit={handleSubmit}>
-                <div className="h-10 rounded-full bg-[var(--bn-omnibox)] border border-[var(--bn-border)] focus-within:border-[var(--bn-accent)] focus-within:bg-[var(--bn-omnibox-focus)] flex items-center pl-3.5 pr-1.5 gap-2 transition-colors fabi-transition-s shadow-xs">
-                  <Search className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
-                  <input
-                    type="text"
-                    value={inputVal}
-                    onFocus={() => setDropdownOpen(true)}
-                    onChange={(e) => {
-                      setInputVal(e.target.value);
-                      setDropdownOpen(true);
-                    }}
-                    onKeyDown={handleInputKeyDown}
-                    placeholder="Buscar en la web o escribir una URL..."
-                    aria-label="Buscar en FabiNav Search"
-                    className="flex-1 bg-transparent outline-none text-[13px] text-[var(--bn-text-strong)] placeholder:text-[var(--bn-text-muted)] select-text"
-                  />
-                  {inputVal.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInputVal('');
-                        setSuggestions([]);
+              {/* Live Search Bar with Autocomplete Dropdown */}
+              <div ref={searchBoxRef} className="relative flex-1 max-w-2xl">
+                <form onSubmit={handleSubmit}>
+                  <div className="h-10 rounded-full bg-[var(--bn-omnibox)] border border-[var(--bn-border)] focus-within:border-[var(--bn-accent)] focus-within:bg-[var(--bn-omnibox-focus)] flex items-center pl-4 pr-1.5 gap-2 transition-colors fabi-transition-s shadow-xs">
+                    <input
+                      type="text"
+                      value={inputVal}
+                      onFocus={() => setDropdownOpen(true)}
+                      onChange={(e) => {
+                        setInputVal(e.target.value);
+                        setDropdownOpen(true);
                       }}
-                      title="Limpiar búsqueda"
-                      className="p-1 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors"
+                      onKeyDown={handleInputKeyDown}
+                      placeholder="Buscar en la web o escribir una URL..."
+                      aria-label="Buscar en FabiNav Search"
+                      className="flex-1 bg-transparent outline-none text-[13px] text-[var(--bn-text-strong)] placeholder:text-[var(--bn-text-muted)] select-text min-w-0"
+                    />
+                    {inputVal.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInputVal('');
+                          setSuggestions([]);
+                        }}
+                        title="Limpiar búsqueda"
+                        className="p-1 rounded-full text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors shrink-0"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      title="Buscar"
+                      className="w-8 h-8 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-95 text-white flex items-center justify-center transition-all fabi-transition-xs shrink-0"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <Search className="w-3.5 h-3.5" />
                     </button>
-                  )}
-                  <button
-                    type="submit"
-                    className="px-3.5 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] active:scale-95 text-white text-xs font-medium transition-all fabi-transition-xs shrink-0 whitespace-nowrap"
-                  >
-                    Buscar
-                  </button>
-                </div>
-              </form>
+                  </div>
+                </form>
 
-              {/* Autocomplete & Live Calculation Dropdown */}
-              <AnimatePresence>
-                {dropdownOpen &&
-                  (dropdownInstantPreview !== null || suggestions.length > 0) && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 4 }}
-                      transition={{ duration: 0.12, ease: FABI_EASE_OUT }}
-                      className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] shadow-xl overflow-hidden z-40"
-                    >
-                      {dropdownInstantPreview && (
-                        <button
-                          type="button"
-                          onClick={() => submitQuery(inputVal)}
-                          className="w-full px-4 py-2.5 flex items-center justify-between gap-3 bg-[var(--bn-accent-soft)] hover:bg-[var(--bn-hover)] text-left border-b border-[var(--bn-border)] transition-colors"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <Calculator className="w-4 h-4 text-[var(--bn-accent)] shrink-0" />
-                            <span className="text-xs text-[var(--bn-text-muted)] truncate">
-                              {dropdownInstantPreview.subtitle}
+                {/* Autocomplete & Live Calculation Dropdown */}
+                <AnimatePresence>
+                  {dropdownOpen &&
+                    (dropdownInstantPreview !== null || suggestions.length > 0) && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        transition={{ duration: 0.12, ease: FABI_EASE_OUT }}
+                        className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] shadow-xl overflow-hidden z-40"
+                      >
+                        {dropdownInstantPreview && (
+                          <button
+                            type="button"
+                            onClick={() => submitQuery(inputVal)}
+                            className="w-full px-4 py-2.5 flex items-center justify-between gap-3 bg-[var(--bn-accent-soft)] hover:bg-[var(--bn-hover)] text-left border-b border-[var(--bn-border)] transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Calculator className="w-4 h-4 text-[var(--bn-accent)] shrink-0" />
+                              <span className="text-xs text-[var(--bn-text-muted)] truncate">
+                                {dropdownInstantPreview.subtitle}
+                              </span>
+                            </div>
+                            <span className="text-sm font-semibold text-[var(--bn-text-strong)] tabular-nums shrink-0">
+                              {dropdownInstantPreview.resultText}
                             </span>
-                          </div>
-                          <span className="text-sm font-semibold text-[var(--bn-text-strong)] tabular-nums shrink-0">
-                            {dropdownInstantPreview.resultText}
-                          </span>
-                        </button>
-                      )}
+                          </button>
+                        )}
 
-                      {suggestions.map((sug, idx) => (
-                        <button
-                          key={sug}
-                          type="button"
-                          onClick={() => submitQuery(sug)}
-                          onMouseEnter={() => setHighlightedIdx(idx)}
-                          className={`w-full px-4 py-2 flex items-center gap-3 text-left text-[13px] transition-colors ${
-                            highlightedIdx === idx
-                              ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
-                              : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
-                          }`}
-                        >
-                          <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
-                          <span className="truncate">{sug}</span>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-              </AnimatePresence>
+                        {suggestions.map((sug, idx) => (
+                          <button
+                            key={sug}
+                            type="button"
+                            onClick={() => submitQuery(sug)}
+                            onMouseEnter={() => setHighlightedIdx(idx)}
+                            className={`w-full px-4 py-2 flex items-center gap-3 text-left text-[13px] transition-colors ${
+                              highlightedIdx === idx
+                                ? 'bg-[var(--bn-hover)] text-[var(--bn-text-strong)]'
+                                : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                            }`}
+                          >
+                            <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+                            <span className="truncate">{sug}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                </AnimatePresence>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setReloadTick((n) => n + 1)}
-              title="Actualizar resultados"
-              className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors fabi-transition-xs shrink-0"
-            >
-              <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-[var(--bn-accent)]' : ''}`} />
-            </button>
+            {/* Right Header Utility Icons: Reload, Share, 9-Dot Apps Launcher, User Avatar */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setReloadTick((n) => n + 1)}
+                title="Actualizar resultados"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors fabi-transition-xs"
+              >
+                <RotateCw
+                  className={`w-4 h-4 ${loading || loadingPage ? 'animate-spin text-[var(--bn-accent)]' : ''}`}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareSearch}
+                title={copiedShareLink ? 'Enlace de búsqueda copiado' : 'Compartir búsqueda'}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)] transition-colors fabi-transition-xs"
+              >
+                {copiedShareLink ? (
+                  <Check className="w-4 h-4 text-[var(--bn-success-text)]" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+              </button>
+
+              {/* 9-Dot Apps Launcher */}
+              <div ref={appsMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAppsOpen((v) => !v)}
+                  title="Aplicaciones y accesos web"
+                  aria-expanded={appsOpen}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors fabi-transition-xs ${
+                    appsOpen
+                      ? 'bg-[var(--bn-active)] text-[var(--bn-text-strong)]'
+                      : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+
+                <AnimatePresence>
+                  {appsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                      transition={{ duration: 0.14, ease: FABI_EASE_OUT }}
+                      className="absolute right-0 top-full mt-2 w-[312px] rounded-3xl border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] shadow-2xl overflow-hidden z-50"
+                    >
+                      <div className="max-h-[410px] overflow-y-auto p-3 space-y-3">
+                        {/* Tus favoritos card */}
+                        <div className="rounded-2xl bg-[var(--bn-surface)] border border-[var(--bn-border)] p-3 space-y-2.5">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                              Tus favoritos
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAppsOpen(false);
+                                onNavigate('fabinav://bookmarks');
+                              }}
+                              className="text-[11px] text-[var(--bn-accent)] hover:underline font-medium"
+                            >
+                              Marcadores
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1">
+                            {FAVORITE_APPS.map((app) => (
+                              <button
+                                key={app.id}
+                                type="button"
+                                onClick={() => {
+                                  setAppsOpen(false);
+                                  onNavigate(app.url);
+                                }}
+                                className="p-2 rounded-2xl hover:bg-[var(--bn-hover)] transition-colors flex flex-col items-center gap-1.5 text-center overflow-hidden"
+                              >
+                                <span
+                                  className={`w-10 h-10 rounded-xl flex items-center justify-center ${app.color}`}
+                                >
+                                  {app.icon}
+                                </span>
+                                <span className="text-[11px] text-[var(--bn-text-strong)] truncate w-full">
+                                  {app.label}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Más servicios */}
+                        <div className="grid grid-cols-3 gap-1 px-1">
+                          {MORE_LAUNCHER_APPS.map((app) => (
+                            <button
+                              key={app.id}
+                              type="button"
+                              onClick={() => {
+                                setAppsOpen(false);
+                                onNavigate(app.url);
+                              }}
+                              className="p-2 rounded-2xl hover:bg-[var(--bn-hover)] transition-colors flex flex-col items-center gap-1.5 text-center overflow-hidden"
+                            >
+                              <span
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center ${app.color}`}
+                              >
+                                {app.icon}
+                              </span>
+                              <span className="text-[11px] text-[var(--bn-text)] truncate w-full">
+                                {app.label}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* User Profile Avatar */}
+              <button
+                type="button"
+                onClick={() => onNavigate('fabinav://settings#tu-google')}
+                title={googleUser ? `${googleUser.name} (${googleUser.email})` : 'Cuenta de FabiNav'}
+                className="w-8 h-8 rounded-full border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] hover:border-[var(--bn-accent)] flex items-center justify-center overflow-hidden transition-colors shrink-0 ml-0.5"
+              >
+                {googleUser?.photoUrl ? (
+                  <img
+                    src={googleUser.photoUrl}
+                    alt={googleUser.name}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-4 h-4 text-[var(--bn-text-muted)]" />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Filter Tabs & Tools Toggle Row */}
           <div className="flex items-center justify-between gap-4 mt-3 text-xs">
             <div className="flex items-center gap-5 sm:gap-6 font-medium overflow-x-auto no-scrollbar">
-              {tabs.map((tab) => {
+              {primaryTabs.map((tab) => {
                 const isActive = activeFilter === tab.id;
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setActiveFilter(tab.id)}
+                    onClick={() => {
+                      setActiveFilter(tab.id);
+                      setMoreMenuOpen(false);
+                    }}
                     className={`pb-2.5 border-b-2 flex items-center gap-1.5 transition-colors fabi-transition-s whitespace-nowrap shrink-0 ${
                       isActive
                         ? 'border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
@@ -524,7 +880,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                   >
                     {tab.icon}
                     <span>{tab.label}</span>
-                    {!loading && data && (
+                    {typeof tab.count === 'number' && !loading && data && (
                       <span className="text-[11px] text-[var(--bn-text-muted)] tabular-nums">
                         ({tab.count})
                       </span>
@@ -532,6 +888,101 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                   </button>
                 );
               })}
+
+              {/* Más Dropdown (Wikipedia, Código, Archive.org) */}
+              <div ref={moreMenuRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMoreMenuOpen((v) => !v)}
+                  className={`pb-2.5 border-b-2 flex items-center gap-1 transition-colors fabi-transition-s whitespace-nowrap ${
+                    isMoreTabActive
+                      ? 'border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
+                      : 'border-transparent text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)]'
+                  }`}
+                >
+                  <span>{moreTabLabel}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                      moreMenuOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {moreMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.12, ease: FABI_EASE_OUT }}
+                      className="fixed sm:absolute left-auto mt-1 w-48 rounded-2xl border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] shadow-2xl overflow-hidden z-50 py-1"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveFilter('wikipedia');
+                          setMoreMenuOpen(false);
+                        }}
+                        className={`w-full px-3.5 py-2 flex items-center justify-between text-xs transition-colors ${
+                          activeFilter === 'wikipedia'
+                            ? 'bg-[var(--bn-active)] text-[var(--bn-text-strong)] font-medium'
+                            : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Wikipedia</span>
+                        </span>
+                        {data && (
+                          <span className="text-[11px] text-[var(--bn-text-muted)] tabular-nums">
+                            {wikiResults.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveFilter('code');
+                          setMoreMenuOpen(false);
+                        }}
+                        className={`w-full px-3.5 py-2 flex items-center justify-between text-xs transition-colors ${
+                          activeFilter === 'code'
+                            ? 'bg-[var(--bn-active)] text-[var(--bn-text-strong)] font-medium'
+                            : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Code2 className="w-3.5 h-3.5" />
+                          <span>Código (GitHub)</span>
+                        </span>
+                        {data && (
+                          <span className="text-[11px] text-[var(--bn-text-muted)] tabular-nums">
+                            {repoResults.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <div className="h-[1px] bg-[var(--bn-border)] my-1" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onNavigate(archiveSearchUrl);
+                        }}
+                        className="w-full px-3.5 py-2 flex items-center justify-between text-xs text-[var(--bn-text)] hover:bg-[var(--bn-hover)] transition-colors"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Archive className="w-3.5 h-3.5" />
+                          <span>Internet Archive</span>
+                        </span>
+                        <ArrowUpRight className="w-3 h-3 text-[var(--bn-text-muted)]" />
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
             <div className="flex items-center gap-3 pb-2 shrink-0">
@@ -629,8 +1080,8 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
       </header>
 
       {/* Results Body */}
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 py-6">
-        {loading ? (
+      <div className="flex-1 w-full max-w-6xl mx-auto px-5 sm:px-8 py-6">
+        {loading || loadingPage ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-8 space-y-6">
               <div className="h-36 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] animate-pulse" />
@@ -674,6 +1125,78 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                   Motor de búsqueda en Ajustes
                 </button>
               </div>
+            </div>
+          </div>
+        ) : activeFilter === 'maps' ? (
+          <div className="max-w-4xl space-y-5">
+            <div className="rounded-2xl border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] overflow-hidden">
+              <div className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--bn-border)]">
+                <div className="flex items-start gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-[var(--bn-text-strong)] truncate">
+                      Ubicación y mapas para «{query}»
+                    </h2>
+                    <p className="text-xs text-[var(--bn-text-muted)] mt-1">
+                      Explora mapas abiertos en OpenStreetMap o abre el resultado geográfico en una pestaña de FabiNav.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(osmSearchUrl)}
+                    className="px-4 py-2 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  >
+                    <span>Abrir OpenStreetMap</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                  <a
+                    href={googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-full bg-[var(--bn-surface)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-xs font-medium text-[var(--bn-text-strong)] inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  >
+                    <span>Google Maps</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              {knowledge && (
+                <div className="p-5 sm:p-6 flex flex-col sm:flex-row gap-4 items-start">
+                  {knowledge.thumbnailUrl && !wikiImgFailed && (
+                    <img
+                      src={knowledge.thumbnailUrl}
+                      alt={knowledge.title}
+                      referrerPolicy="no-referrer"
+                      onError={() => setWikiImgFailed(true)}
+                      className="w-full sm:w-44 h-32 rounded-xl object-cover border border-[var(--bn-border)] shrink-0"
+                    />
+                  )}
+                  <div className="space-y-2 min-w-0">
+                    <div className="text-sm font-semibold text-[var(--bn-text-strong)]">
+                      {knowledge.title}
+                    </div>
+                    {knowledge.description && (
+                      <div className="text-xs text-[var(--bn-accent)]">{knowledge.description}</div>
+                    )}
+                    <p className="text-xs text-[var(--bn-text)]/90 leading-relaxed line-clamp-3">
+                      {knowledge.extract}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate(knowledge.url)}
+                      className="text-xs text-[var(--bn-link)] hover:underline font-medium inline-flex items-center gap-1"
+                    >
+                      <span>Ver ficha geográfica en Wikipedia</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : activeFilter === 'images' ? (
@@ -936,14 +1459,21 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left / Main Column */}
             <div className="lg:col-span-8 space-y-5">
-              {data?.webError && webResults.length === 0 && (
+              {currentPage > 1 && (
+                <div className="text-xs text-[var(--bn-text-muted)] tabular-nums">
+                  Página {currentPage} de resultados para{' '}
+                  <strong className="text-[var(--bn-text-strong)]">«{query}»</strong>
+                </div>
+              )}
+
+              {data?.webError && activePageResults.length === 0 && (
                 <div className="p-3.5 rounded-xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] text-xs text-[var(--bn-text-muted)]">
                   La búsqueda web directa alcanzó un límite temporal; se muestran los resultados disponibles de Wikipedia y fuentes paralelas.
                 </div>
               )}
 
               {/* Instant Answer Card (Math / Units / Currency / Color / Dictionary) */}
-              {activeFilter === 'all' && activeInstantAnswer && (
+              {activeFilter === 'all' && currentPage === 1 && activeInstantAnswer && (
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1111,8 +1641,8 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 );
               })()}
 
-              {/* Top Stories / Noticias destacadas inside Todo tab */}
-              {activeFilter === 'all' && newsResults.length > 0 && (
+              {/* Top Stories / Noticias destacadas inside Todo tab (Page 1) */}
+              {activeFilter === 'all' && currentPage === 1 && newsResults.length > 0 && (
                 <section className="space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
                     <h2 className="font-semibold text-[var(--bn-text-strong)] flex items-center gap-1.5">
@@ -1153,8 +1683,8 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 </section>
               )}
 
-              {/* Videos Strip inside Todo tab */}
-              {activeFilter === 'all' && videoResults.length > 0 && (
+              {/* Videos Strip inside Todo tab (Page 1) */}
+              {activeFilter === 'all' && currentPage === 1 && videoResults.length > 0 && (
                 <section className="space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
                     <h2 className="font-semibold text-[var(--bn-text-strong)] flex items-center gap-1.5">
@@ -1214,11 +1744,20 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
               {standardGroups.length === 0 && !featuredGroup ? (
                 <div className="p-8 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] text-center space-y-2.5">
                   <div className="text-sm font-semibold text-[var(--bn-text-strong)]">
-                    No se encontraron resultados para «{query}»
+                    No se encontraron resultados en esta página para «{query}»
                   </div>
                   <p className="text-xs text-[var(--bn-text-muted)]">
-                    Prueba con otros términos o usa un motor de búsqueda externo en la columna derecha.
+                    Prueba volver a la página 1 o buscar con otros términos.
                   </p>
+                  {currentPage > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleGoToPage(1)}
+                      className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium"
+                    >
+                      Volver a la página 1
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="divide-y divide-[var(--bn-border)]/70">
@@ -1309,8 +1848,8 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 </div>
               )}
 
-              {/* Mini Image Strip Preview inside Todo tab */}
-              {activeFilter === 'all' && imageResults.length > 0 && (
+              {/* Mini Image Strip Preview inside Todo tab (Page 1) */}
+              {activeFilter === 'all' && currentPage === 1 && imageResults.length > 0 && (
                 <section className="p-4 rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
                     <h2 className="font-semibold text-[var(--bn-text-strong)] flex items-center gap-1.5">
@@ -1346,7 +1885,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
               )}
 
               {/* Expandable Wikipedia Topics ("Temas relacionados") */}
-              {activeFilter === 'all' && relatedTopics.length > 0 && (
+              {activeFilter === 'all' && currentPage === 1 && relatedTopics.length > 0 && (
                 <section className="rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] overflow-hidden">
                   <div className="px-4 py-3 border-b border-[var(--bn-border)] text-xs font-semibold text-[var(--bn-text-strong)]">
                     Temas relacionados · Wikipedia
@@ -1388,45 +1927,112 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 </section>
               )}
 
-              {/* Load More Pagination */}
-              {activeFilter === 'all' && hasMore && (
-                <div className="flex justify-center pt-1">
-                  <button
-                    type="button"
-                    disabled={loadingMore}
-                    onClick={handleLoadMore}
-                    className="px-6 py-2 rounded-full bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-xs font-medium text-[var(--bn-text-strong)] inline-flex items-center gap-2 transition-colors disabled:opacity-60"
-                  >
-                    {loadingMore && <RotateCw className="w-3.5 h-3.5 animate-spin" />}
-                    <span>{loadingMore ? 'Cargando más resultados...' : 'Más resultados'}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Related Queries */}
+              {/* "También se buscó" Pill Cards (2 columns, matching reference) */}
               {relatedQueries.length > 0 && (
-                <div className="pt-4 border-t border-[var(--bn-border)] space-y-2.5">
-                  <h3 className="text-xs font-semibold text-[var(--bn-text-strong)]">
-                    Búsquedas relacionadas
+                <section className="pt-4 border-t border-[var(--bn-border)] space-y-3">
+                  <h3 className="text-sm font-semibold text-[var(--bn-text-strong)]">
+                    También se buscó
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {relatedQueries.map((rq) => (
                       <button
                         key={rq}
                         type="button"
-                        onClick={() => onNavigate(rq)}
-                        className="px-3.5 py-2.5 rounded-xl bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-left text-xs font-medium text-[var(--bn-text-strong)] flex items-center gap-2.5 transition-colors"
+                        onClick={() => submitQuery(rq)}
+                        className="px-4 py-2.5 rounded-full bg-[var(--bn-surface-alt)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-left text-xs font-medium text-[var(--bn-text-strong)] flex items-center justify-between gap-3 transition-colors overflow-hidden"
                       >
-                        <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
                         <span className="truncate">{rq}</span>
+                        <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
                       </button>
                     ))}
                   </div>
-                </div>
+                </section>
+              )}
+
+              {/* Classic Stretched Wordmark + Numbered Pagination (1..5) */}
+              {activeFilter === 'all' && (mergedAll.length > 0 || currentPage > 1) && (
+                <nav
+                  aria-label="Paginación de resultados"
+                  className="pt-6 pb-2 flex flex-col items-center gap-2.5 select-none"
+                >
+                  <div className="flex items-center tracking-tight text-2xl font-bold leading-none">
+                    <span className="text-[#4285F4]">F</span>
+                    {visiblePages.map((p) => (
+                      <button
+                        key={`logo-a-${p}`}
+                        type="button"
+                        onClick={() => handleGoToPage(p)}
+                        className={`transition-transform hover:scale-110 ${
+                          p === currentPage
+                            ? 'text-[#EA4335]'
+                            : 'text-[#FBBC05] hover:text-[#EA4335]'
+                        }`}
+                      >
+                        a
+                      </button>
+                    ))}
+                    <span className="text-[#4285F4]">b</span>
+                    <span className="text-[#34A853]">i</span>
+                    <span className="text-[#EA4335]">Nav</span>
+                    {currentPage < 5 && (hasMore || currentPage < 3) && (
+                      <button
+                        type="button"
+                        onClick={() => handleGoToPage(currentPage + 1)}
+                        aria-label="Página siguiente"
+                        className="ml-2 text-[#8ab4f8] hover:text-[var(--bn-text-strong)] inline-flex items-center"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3 text-xs tabular-nums">
+                    {currentPage > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleGoToPage(currentPage - 1)}
+                        className="text-[var(--bn-link)] hover:underline inline-flex items-center gap-0.5 font-medium mr-1"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Anterior</span>
+                      </button>
+                    )}
+
+                    {visiblePages.map((p) => {
+                      const isCurrent = p === currentPage;
+                      return (
+                        <button
+                          key={`page-${p}`}
+                          type="button"
+                          onClick={() => handleGoToPage(p)}
+                          aria-current={isCurrent ? 'page' : undefined}
+                          className={`px-1.5 py-0.5 rounded transition-colors ${
+                            isCurrent
+                              ? 'text-[var(--bn-text-strong)] font-bold'
+                              : 'text-[var(--bn-link)] hover:underline font-medium'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+
+                    {currentPage < 5 && (hasMore || currentPage < 3) && (
+                      <button
+                        type="button"
+                        onClick={() => handleGoToPage(currentPage + 1)}
+                        className="text-[var(--bn-link)] hover:underline inline-flex items-center gap-0.5 font-medium ml-1"
+                      >
+                        <span>Siguiente</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </nav>
               )}
             </div>
 
-            {/* Right Column: Knowledge Panel + External Engine Launcher */}
+            {/* Right Column: Knowledge Panel */}
             <aside className="lg:col-span-4 space-y-4 lg:sticky lg:top-32">
               {knowledge && (
                 <div className="rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] overflow-hidden">
@@ -1482,11 +2088,66 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                   </div>
                 </div>
               )}
-
             </aside>
           </div>
         )}
       </div>
+
+      {/* Bottom Search Footer Bar */}
+      <footer className="mt-8 bg-[var(--bn-toolbar)] border-t border-[var(--bn-border)] text-xs text-[var(--bn-text-muted)] shrink-0">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-3 border-b border-[var(--bn-border)]/70 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-[var(--bn-text-strong)]">FabiNav Search</span>
+            <span aria-hidden="true">·</span>
+            <span>Búsqueda directa privada sin rastreadores</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('fabinav://settings#buscador')}
+            className="text-[var(--bn-link)] hover:underline font-medium"
+          >
+            Configurar buscador predeterminado
+          </button>
+        </div>
+
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-1.5">
+          <button
+            type="button"
+            onClick={() => onNavigate('fabinav://about')}
+            className="hover:text-[var(--bn-text-strong)] transition-colors"
+          >
+            Ayuda y versión
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('fabinav://shields')}
+            className="hover:text-[var(--bn-text-strong)] transition-colors"
+          >
+            Privacidad y Escudos
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('fabinav://extensions')}
+            className="hover:text-[var(--bn-text-strong)] transition-colors"
+          >
+            Extensiones
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('fabinav://history')}
+            className="hover:text-[var(--bn-text-strong)] transition-colors"
+          >
+            Historial
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('fabinav://newtab')}
+            className="hover:text-[var(--bn-text-strong)] transition-colors"
+          >
+            Nueva pestaña
+          </button>
+        </div>
+      </footer>
 
       {/* Image Preview Modal */}
       <AnimatePresence>

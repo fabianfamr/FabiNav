@@ -2032,9 +2032,9 @@ export default function App() {
         onCloseWindow={handleCloseBrowserWindow}
         isSplitActive={!!splitTabId}
         shieldCount={
-          shieldState.trackersBlockedCount +
-          shieldState.cookiesBlockedCount +
-          shieldState.httpsUpgradesCount
+          activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://')
+            ? (blockedUrlsByTab[activeTab.id] || []).length
+            : 0
         }
         isShieldActive={shieldState.enabled}
       />

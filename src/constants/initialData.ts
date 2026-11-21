@@ -10,7 +10,7 @@ import {
   BrowserExtension
 } from '../types';
 
-export const APP_VERSION = '1.14.0';
+export const APP_VERSION = '1.15.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
