@@ -183,9 +183,22 @@ export default function App() {
 
   // Settings, Theme, Extensions & Autofill
   const [settings, setSettings] = useState<BrowserSettings>(initialSession.loadedSettings);
-  const [extensions, setExtensions] = useState<BrowserExtension[]>(() =>
-    loadStored('extensions', INITIAL_EXTENSIONS)
-  );
+  const [extensions, setExtensions] = useState<BrowserExtension[]>(() => {
+    const stored = loadStored<BrowserExtension[]>('extensions', INITIAL_EXTENSIONS);
+    if (!Array.isArray(stored)) return INITIAL_EXTENSIONS;
+    const builtinMap = new Map(INITIAL_EXTENSIONS.map((e) => [e.id, e]));
+    return stored.map((item) => {
+      const builtin = builtinMap.get(item.id);
+      if (!builtin) return item;
+      return {
+        ...builtin,
+        enabled: typeof item.enabled === 'boolean' ? item.enabled : builtin.enabled,
+        pinned: typeof item.pinned === 'boolean' ? item.pinned : builtin.pinned,
+        customCss: item.customCss !== undefined ? item.customCss : builtin.customCss,
+        customJs: item.customJs !== undefined ? item.customJs : builtin.customJs
+      };
+    });
+  });
   const [autofillEntries, setAutofillEntries] = useState<AutofillEntry[]>(() =>
     loadStored('autofill_entries', [])
   );
@@ -1265,6 +1278,12 @@ export default function App() {
   };
 
   const handleRemoveExtension = (id: string) => {
+    const target = extensions.find((ext) => ext.id === id);
+    if (target && (target.nativeElectronId || target.localPath) && window.fabinavDesktop?.removeNativeExtension) {
+      window.fabinavDesktop
+        .removeNativeExtension(target.nativeElectronId || target.id, target.localPath)
+        .catch(() => {});
+    }
     setExtensions((prev) => prev.filter((ext) => ext.id !== id));
     showToast('Extensión eliminada');
   };

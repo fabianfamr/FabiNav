@@ -6,11 +6,11 @@ import {
   WallpaperItem,
   FabiShieldState,
   FabiNewTabCustomization,
-  LocalBackupMeta,
-  BrowserExtension
+  LocalBackupMeta
 } from '../types';
+export { INITIAL_EXTENSIONS } from './defaultExtensions';
 
-export const APP_VERSION = '1.16.0';
+export const APP_VERSION = '1.17.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -195,66 +195,6 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   extensionsDevMode: false
 };
 
-export const INITIAL_EXTENSIONS: BrowserExtension[] = [
-  {
-    id: 'ext-dark-web',
-    name: 'Dark Web Reader',
-    description:
-      'Aplica modo oscuro inteligente sobre páginas externas claras, conservando imágenes y videos sin invertir.',
-    version: '1.4.2',
-    author: 'FabiNav Labs',
-    enabled: false,
-    pinned: true,
-    permissions: ['Leer y modificar CSS de sitios web visitados'],
-    accentColor: '#7c6bf2',
-    mode: 'dark-web',
-    builtIn: true
-  },
-  {
-    id: 'ext-reader-zen',
-    name: 'Modo Lectura Zen',
-    description:
-      'Optimiza el ancho de columna, contraste tipográfico e interlineado de artículos para leer sin distracciones.',
-    version: '1.2.0',
-    author: 'FabiNav Labs',
-    enabled: false,
-    pinned: true,
-    permissions: ['Modificar estilos visuales de artículos externos'],
-    accentColor: '#10b981',
-    mode: 'reader',
-    builtIn: true
-  },
-  {
-    id: 'ext-stylus',
-    name: 'Stylus — Estilos de Usuario',
-    description:
-      'Administrador de hojas de estilo CSS personalizadas para ajustar fuentes, colores y diseño de cualquier sitio.',
-    version: '2.1.0',
-    author: 'FabiNav Community',
-    enabled: false,
-    pinned: true,
-    permissions: ['Inyectar reglas CSS personalizadas en páginas externas'],
-    accentColor: '#14b8a6',
-    mode: 'stylus',
-    customCss:
-      '/* CSS personalizado de Stylus */\nbody {\n  scroll-behavior: smooth;\n  -webkit-font-smoothing: antialiased;\n}\na {\n  text-decoration-thickness: 1.5px;\n  text-underline-offset: 3px;\n}\n::selection {\n  background: rgba(255, 111, 76, 0.28);\n}',
-    builtIn: true
-  },
-  {
-    id: 'ext-cleanweb',
-    name: 'CleanWeb Banners & Popups',
-    description:
-      'Oculta superposiciones invasivas de boletines, carteles flotantes y barras pegajosas molestas en páginas externas.',
-    version: '1.1.5',
-    author: 'FabiNav Privacy',
-    enabled: true,
-    pinned: false,
-    permissions: ['Filtrado cosmético del DOM en páginas externas'],
-    accentColor: '#f97316',
-    mode: 'ad-cosmetic',
-    builtIn: true
-  }
-];
 
 export const ELECTRON_MAIN_JS = `const { app, BrowserWindow, session } = require('electron');
 const path = require('path');

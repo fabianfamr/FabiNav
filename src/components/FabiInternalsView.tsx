@@ -38,7 +38,11 @@ import {
   ShieldAlert,
   CreditCard,
   MapPin,
-  Phone
+  Phone,
+  FolderOpen,
+  FileArchive,
+  Globe,
+  FileCode
 } from 'lucide-react';
 import {
   FabiShieldState,
@@ -172,12 +176,24 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [extSearch, setExtSearch] = useState('');
   const [extTab, setExtTab] = useState<'mine' | 'shortcuts'>('mine');
   const [detailExtId, setDetailExtId] = useState<string | null>(null);
+  const [detailActiveTab, setDetailActiveTab] = useState<'overview' | 'code' | 'manifest'>('overview');
   const [detailCssDraft, setDetailCssDraft] = useState('');
+  const [detailJsDraft, setDetailJsDraft] = useState('');
+  const [detailMatchesDraft, setDetailMatchesDraft] = useState('<all_urls>');
+  const [manifestCopied, setManifestCopied] = useState(false);
   const [showDevCreator, setShowDevCreator] = useState(false);
   const [newExtName, setNewExtName] = useState('');
   const [newExtDesc, setNewExtDesc] = useState('');
+  const [newExtMatches, setNewExtMatches] = useState('<all_urls>');
+  const [newExtJs, setNewExtJs] = useState(
+    "// Tu script real ejecutándose en el DOM de la página\nconsole.log('[FabiNav Extension]', document.title, location.href);"
+  );
   const [newExtCss, setNewExtCss] = useState('body {\n  scroll-behavior: smooth;\n}');
   const [newExtColor, setNewExtColor] = useState('#7c6bf2');
+  const [storeInput, setStoreInput] = useState('');
+  const [extBusy, setExtBusy] = useState(false);
+  const [extStatus, setExtStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isExtDragOver, setIsExtDragOver] = useState(false);
 
   // Autofill & Performance local form states
   const [afCategory, setAfCategory] = useState<AutofillEntry['category']>('contact');
@@ -188,6 +204,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [alwaysActiveInput, setAlwaysActiveInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const extFileInputRef = useRef<HTMLInputElement>(null);
+  const extFolderInputRef = useRef<HTMLInputElement>(null);
   const filtersSectionRef = useRef<HTMLDivElement>(null);
   const lang = settings.language || 'es';
   const dateLocale = getDateLocale(lang);
@@ -1265,26 +1283,301 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     );
     const detailExt = detailExtId ? extensions.find((e) => e.id === detailExtId) || null : null;
 
+    const arrayBufferToBase64 = (buf: ArrayBuffer): string => {
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    };
+
+    const parseMatchesInput = (raw: string): string[] => {
+      const items = raw
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return items.length > 0 ? items : ['<all_urls>'];
+    };
+
+    const importExtensionFile = async (file: File) => {
+      if (!onAddExtension) return;
+      setExtBusy(true);
+      setExtStatus(null);
+      try {
+        const buffer = await file.arrayBuffer();
+        const contentBase64 = arrayBufferToBase64(buffer);
+        const res = await fetch('/api/extensions/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName: file.name, contentBase64 })
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          extension?: Omit<BrowserExtension, 'id'>;
+        };
+        if (!res.ok || !data.extension) {
+          throw new Error(data.error || 'No se pudo procesar el archivo de extensión.');
+        }
+        onAddExtension({
+          ...data.extension,
+          pinned: settings.pinNewExtensions !== false
+        });
+        setExtStatus({
+          ok: true,
+          text: `Extensión "${data.extension.name}" v${data.extension.version} instalada desde ${file.name}.`
+        });
+      } catch (err) {
+        setExtStatus({
+          ok: false,
+          text: err instanceof Error ? err.message : 'Error al importar la extensión.'
+        });
+      } finally {
+        setExtBusy(false);
+      }
+    };
+
+    const handleLoadUnpacked = async () => {
+      if (!onAddExtension) return;
+      if (window.fabinavDesktop?.pickAndLoadExtension) {
+        setExtBusy(true);
+        setExtStatus(null);
+        try {
+          const res = await window.fabinavDesktop.pickAndLoadExtension();
+          if (res.canceled) {
+            setExtBusy(false);
+            return;
+          }
+          if (!res.ok || !res.extension) {
+            throw new Error(res.message || 'La carpeta seleccionada no contiene un manifest.json válido.');
+          }
+          onAddExtension({
+            ...res.extension,
+            pinned: settings.pinNewExtensions !== false
+          });
+          setExtStatus({
+            ok: true,
+            text: `Extensión "${res.extension.name}" cargada de forma nativa en Chromium.`
+          });
+        } catch (err) {
+          setExtStatus({
+            ok: false,
+            text: err instanceof Error ? err.message : 'Error cargando extensión descomprimida.'
+          });
+        } finally {
+          setExtBusy(false);
+        }
+        return;
+      }
+      extFolderInputRef.current?.click();
+    };
+
+    const handleFolderFilesSelected = async (fileList: FileList | null) => {
+      if (!fileList || fileList.length === 0 || !onAddExtension) return;
+      setExtBusy(true);
+      setExtStatus(null);
+      try {
+        const files: Array<{ path: string; contentBase64: string }> = [];
+        for (const f of Array.from(fileList)) {
+          const rawPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+          const parts = rawPath.split('/');
+          const relPath = parts.length > 1 ? parts.slice(1).join('/') : rawPath;
+          if (!relPath || relPath.startsWith('.git/')) continue;
+          const buf = await f.arrayBuffer();
+          files.push({
+            path: relPath,
+            contentBase64: arrayBufferToBase64(buf)
+          });
+        }
+        const res = await fetch('/api/extensions/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files })
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          extension?: Omit<BrowserExtension, 'id'>;
+        };
+        if (!res.ok || !data.extension) {
+          throw new Error(data.error || 'No se encontró manifest.json válido en la carpeta.');
+        }
+        onAddExtension({
+          ...data.extension,
+          pinned: settings.pinNewExtensions !== false
+        });
+        setExtStatus({
+          ok: true,
+          text: `Extensión descomprimida "${data.extension.name}" instalada (${files.length} archivos).`
+        });
+      } catch (err) {
+        setExtStatus({
+          ok: false,
+          text: err instanceof Error ? err.message : 'Error leyendo la carpeta de extensión.'
+        });
+      } finally {
+        setExtBusy(false);
+        if (extFolderInputRef.current) extFolderInputRef.current.value = '';
+      }
+    };
+
+    const handleInstallFromWebStore = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!storeInput.trim() || !onAddExtension) return;
+      setExtBusy(true);
+      setExtStatus(null);
+      try {
+        const res = await fetch('/api/extensions/fetch-store', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: storeInput.trim() })
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          extension?: Omit<BrowserExtension, 'id'>;
+        };
+        if (!res.ok || !data.extension) {
+          throw new Error(data.error || 'No se pudo descargar desde Chrome Web Store.');
+        }
+        onAddExtension({
+          ...data.extension,
+          pinned: settings.pinNewExtensions !== false
+        });
+        setExtStatus({
+          ok: true,
+          text: `"${data.extension.name}" v${data.extension.version} instalada desde Chrome Web Store.`
+        });
+        setStoreInput('');
+      } catch (err) {
+        setExtStatus({
+          ok: false,
+          text: err instanceof Error ? err.message : 'Error al conectar con Chrome Web Store.'
+        });
+      } finally {
+        setExtBusy(false);
+      }
+    };
+
     const handleCreateCustomExt = (e: React.FormEvent) => {
       e.preventDefault();
       if (!newExtName.trim() || !onAddExtension) return;
+      const matches = parseMatchesInput(newExtMatches);
+      const hasJs = newExtJs.trim().length > 0;
+      const hasCss = newExtCss.trim().length > 0;
+      const manifest = {
+        manifest_version: 3,
+        name: newExtName.trim(),
+        version: '1.0.0',
+        description: newExtDesc.trim() || 'Userscript / hoja de estilos personalizada en FabiNav.',
+        permissions: ['storage'],
+        host_permissions: matches,
+        content_scripts: [
+          {
+            matches,
+            css: hasCss ? ['styles.css'] : [],
+            js: hasJs ? ['content.js'] : [],
+            run_at: 'document_end'
+          }
+        ]
+      };
       onAddExtension({
         name: newExtName.trim(),
         description:
-          newExtDesc.trim() || 'Extensión de estilos CSS creada en Modo de desarrollador.',
+          newExtDesc.trim() || 'Userscript / hoja de estilos personalizada en FabiNav.',
         version: '1.0.0',
         author: 'Desarrollador local',
         enabled: true,
         pinned: settings.pinNewExtensions !== false,
-        permissions: ['Inyectar reglas CSS personalizadas en páginas externas'],
+        permissions: [
+          'Leer y modificar páginas en los sitios coincidentes',
+          'Almacenamiento local de la extensión (chrome.storage)'
+        ],
+        hostPermissions: matches,
+        matchPatterns: matches,
         accentColor: newExtColor,
-        mode: 'custom-css',
+        mode: hasJs ? 'userscript' : 'custom-css',
+        manifestVersion: 3,
+        manifestJson: JSON.stringify(manifest, null, 2),
+        contentScripts: [
+          {
+            matches,
+            css: hasCss ? [newExtCss] : [],
+            js: hasJs ? [newExtJs] : [],
+            runAt: 'document_end'
+          }
+        ],
         customCss: newExtCss,
+        customJs: newExtJs,
+        sourceType: 'userscript',
         builtIn: false
       });
       setNewExtName('');
       setNewExtDesc('');
       setShowDevCreator(false);
+      setExtStatus({ ok: true, text: `Extensión "${newExtName.trim()}" creada e instalada.` });
+    };
+
+    const getSourceLabel = (ext: BrowserExtension): string => {
+      if (ext.sourceType === 'crx') return 'CRX';
+      if (ext.sourceType === 'zip') return 'ZIP';
+      if (ext.sourceType === 'webstore') return 'Web Store';
+      if (ext.sourceType === 'unpacked') return ext.nativeElectronId ? 'Nativa local' : 'Descomprimida';
+      if (ext.sourceType === 'userscript' || ext.mode === 'userscript') return 'Userscript';
+      if (ext.sourceType === 'custom' || ext.mode === 'custom-css') return 'Personalizada';
+      return `MV${ext.manifestVersion || 3}`;
+    };
+
+    const openExtensionDetails = (ext: BrowserExtension) => {
+      setDetailExtId(ext.id);
+      setDetailActiveTab('overview');
+      setManifestCopied(false);
+      setDetailCssDraft(
+        ext.customCss ?? ext.contentScripts?.flatMap((cs) => cs.css || []).join('\n\n') ?? ''
+      );
+      setDetailJsDraft(
+        ext.customJs ?? ext.contentScripts?.flatMap((cs) => cs.js || []).join('\n\n') ?? ''
+      );
+      setDetailMatchesDraft((ext.matchPatterns || ext.hostPermissions || ['<all_urls>']).join(', '));
+    };
+
+    const handleSaveDetailCode = () => {
+      if (!detailExt || !onUpdateExtension) return;
+      const matches = parseMatchesInput(detailMatchesDraft);
+      const updatedScripts =
+        detailExt.contentScripts && detailExt.contentScripts.length > 0
+          ? [
+              {
+                ...detailExt.contentScripts[0],
+                matches,
+                css: detailCssDraft.trim() ? [detailCssDraft] : [],
+                js: detailJsDraft.trim() ? [detailJsDraft] : []
+              },
+              ...detailExt.contentScripts.slice(1)
+            ]
+          : [
+              {
+                matches,
+                css: detailCssDraft.trim() ? [detailCssDraft] : [],
+                js: detailJsDraft.trim() ? [detailJsDraft] : [],
+                runAt: 'document_end' as const
+              }
+            ];
+
+      onUpdateExtension(detailExt.id, {
+        customCss: detailCssDraft,
+        customJs: detailJsDraft,
+        matchPatterns: matches,
+        hostPermissions: matches,
+        contentScripts: updatedScripts
+      });
+      setExtStatus({
+        ok: true,
+        text: `Código actualizado para "${detailExt.name}". Se aplicará al instante en las pestañas abiertas.`
+      });
+      setDetailExtId(null);
     };
 
     const extShortcuts = [
@@ -1297,7 +1590,44 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
     ];
 
     return (
-      <div className="w-full h-full overflow-hidden bg-[var(--bn-surface)] text-[var(--bn-text)] flex flex-col">
+      <div
+        className="w-full h-full overflow-hidden bg-[var(--bn-surface)] text-[var(--bn-text)] flex flex-col"
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!isExtDragOver) setIsExtDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setIsExtDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsExtDragOver(false);
+          const files = e.dataTransfer?.files;
+          if (files && files.length > 0) {
+            void importExtensionFile(files[0]);
+          }
+        }}
+      >
+        <input
+          ref={extFileInputRef}
+          type="file"
+          accept=".crx,.zip,.js,.user.js"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void importExtensionFile(file);
+            e.target.value = '';
+          }}
+        />
+        <input
+          ref={extFolderInputRef}
+          type="file"
+          multiple
+          {...({ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
+          className="hidden"
+          onChange={(e) => void handleFolderFilesSelected(e.target.files)}
+        />
+
         {/* Top bar */}
         <div className="h-14 px-4 sm:px-6 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)]/75 flex items-center justify-between gap-4 shrink-0">
           <div className="md:w-56 flex items-center gap-2.5 shrink-0">
@@ -1375,14 +1705,97 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
             </div>
 
             <div className="hidden md:block p-3.5 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-text-muted)] leading-relaxed">
-              Las extensiones de FabiNav aplican hojas CSS y filtrado cosmético en vivo sobre páginas externas sin recargar la pestaña.
+              Compatible con paquetes estándar <span className="font-mono text-[var(--bn-text)]">manifest.json</span> (MV2/MV3), <span className="font-mono text-[var(--bn-text)]">.crx</span>, <span className="font-mono text-[var(--bn-text)]">.zip</span>, <span className="font-mono text-[var(--bn-text)]">.user.js</span> y APIs <span className="font-mono text-[var(--bn-text)]">chrome.*</span>.
             </div>
           </aside>
 
-          <div className="flex-1 overflow-y-auto p-5 sm:p-8">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-8 relative">
+            {isExtDragOver && (
+              <div className="fixed inset-0 z-40 pointer-events-none bg-[var(--bn-accent)]/12 border-2 border-dashed border-[var(--bn-accent)] flex items-center justify-center">
+                <div className="px-6 py-4 rounded-2xl bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-sm font-medium text-[var(--bn-text-strong)]">
+                  Suelta el archivo .crx, .zip o .user.js para instalar la extensión
+                </div>
+              </div>
+            )}
+
             <div className="max-w-4xl mx-auto space-y-5">
               {extTab === 'mine' ? (
                 <>
+                  {/* Install Real Extensions Bar */}
+                  <div className="rounded-2xl overflow-hidden border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] p-4 space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                          Instalar extensiones WebExtension y Userscripts
+                        </h2>
+                        <p className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Importa paquetes reales con manifest.json, arrastra un .crx / .zip / .user.js o instala desde Chrome Web Store.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={extBusy}
+                          onClick={handleLoadUnpacked}
+                          className="px-3.5 py-1.5 rounded-full border border-[var(--bn-border-strong)] bg-[var(--bn-surface)] hover:bg-[var(--bn-hover)] text-xs font-medium text-[var(--bn-text-strong)] inline-flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                          <span>Cargar descomprimida</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={extBusy}
+                          onClick={() => extFileInputRef.current?.click()}
+                          className="px-3.5 py-1.5 rounded-full border border-[var(--bn-border-strong)] bg-[var(--bn-surface)] hover:bg-[var(--bn-hover)] text-xs font-medium text-[var(--bn-text-strong)] inline-flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          <FileArchive className="w-3.5 h-3.5 text-[var(--bn-accent)]" />
+                          <span>Importar .crx / .zip / .user.js</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleInstallFromWebStore} className="flex flex-col sm:flex-row gap-2">
+                      <div className="relative flex-1">
+                        <Globe className="w-3.5 h-3.5 text-[var(--bn-text-muted)] absolute left-3.5 top-2.5 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={storeInput}
+                          onChange={(e) => setStoreInput(e.target.value)}
+                          placeholder="URL de Chrome Web Store o ID de 32 caracteres (ej. cjpalhdlnbpafiamejdnhcphjbkeiagm)"
+                          className="w-full h-8.5 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-full pl-9 pr-3 text-xs text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none focus:border-[var(--bn-accent)]"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={extBusy || !storeInput.trim()}
+                        className="px-4 h-8.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{extBusy ? 'Procesando...' : 'Instalar desde Store'}</span>
+                      </button>
+                    </form>
+
+                    {extStatus && (
+                      <div
+                        className={`px-3.5 py-2 rounded-xl text-[11px] flex items-center justify-between gap-2 border ${
+                          extStatus.ok
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                            : 'bg-red-500/10 border-red-500/30 text-red-300'
+                        }`}
+                      >
+                        <span>{extStatus.text}</span>
+                        <button
+                          type="button"
+                          onClick={() => setExtStatus(null)}
+                          className="p-0.5 rounded hover:bg-white/10 shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-[var(--bn-border)]">
                     <div className="flex items-center gap-2.5">
                       <h2 className="text-sm font-semibold text-[var(--bn-text-strong)]">
@@ -1411,14 +1824,14 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                           <Code2 className="w-4 h-4 text-[var(--bn-accent)]" />
                           <span>Herramientas de desarrollador de extensiones</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => setShowDevCreator((v) => !v)}
                             className="px-3.5 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-1.5"
                           >
                             <Plus className="w-3.5 h-3.5" />
-                            <span>Nueva extensión CSS</span>
+                            <span>Crear script JS / CSS</span>
                           </button>
                           {onResetExtensions && (
                             <button
@@ -1434,7 +1847,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
 
                       {showDevCreator && (
                         <form onSubmit={handleCreateCustomExt} className="pt-3 border-t border-[var(--bn-border)] space-y-2.5 text-xs">
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                             <input
                               type="text"
                               value={newExtName}
@@ -1450,6 +1863,13 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                               placeholder="Descripción corta"
                               className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
                             />
+                            <input
+                              type="text"
+                              value={newExtMatches}
+                              onChange={(e) => setNewExtMatches(e.target.value)}
+                              placeholder="Patrones (<all_urls>, https://*.github.com/*)"
+                              className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)] font-mono text-[11px]"
+                            />
                             <div className="flex items-center gap-2 bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5">
                               <span className="text-[var(--bn-text-muted)]">Color:</span>
                               <input
@@ -1461,13 +1881,22 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                               <span className="font-mono text-[11px]">{newExtColor}</span>
                             </div>
                           </div>
-                          <textarea
-                            rows={3}
-                            value={newExtCss}
-                            onChange={(e) => setNewExtCss(e.target.value)}
-                            placeholder="Reglas CSS a inyectar en sitios web externos..."
-                            className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
-                          />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <textarea
+                              rows={4}
+                              value={newExtJs}
+                              onChange={(e) => setNewExtJs(e.target.value)}
+                              placeholder="JavaScript de Content Script (tiene acceso a DOM, chrome.storage, GM_addStyle...)"
+                              className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                            />
+                            <textarea
+                              rows={4}
+                              value={newExtCss}
+                              onChange={(e) => setNewExtCss(e.target.value)}
+                              placeholder="Reglas CSS a inyectar en sitios coincidentes..."
+                              className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                            />
+                          </div>
                           <div className="flex justify-end gap-2">
                             <button
                               type="button"
@@ -1500,23 +1929,38 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                           className="rounded-2xl overflow-hidden border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] flex flex-col justify-between transition-colors hover:border-[var(--bn-border-strong)]"
                         >
                           <div className="p-4 flex items-start gap-3.5">
-                            <div
-                              className="w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs"
-                              style={{ backgroundColor: ext.accentColor }}
-                            >
-                              {ext.name[0]?.toUpperCase() || 'E'}
-                            </div>
+                            {ext.iconDataUrl ? (
+                              <img
+                                src={ext.iconDataUrl}
+                                alt=""
+                                className="w-10 h-10 rounded-xl object-contain bg-[var(--bn-surface)] p-1 border border-[var(--bn-border)] shrink-0"
+                              />
+                            ) : (
+                              <div
+                                className="w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs"
+                                style={{ backgroundColor: ext.accentColor }}
+                              >
+                                {ext.name[0]?.toUpperCase() || 'E'}
+                              </div>
+                            )}
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-xs font-semibold text-[var(--bn-text-strong)] truncate">
-                                  {ext.name}
-                                </h3>
-                                <span className="text-[10px] font-mono text-[var(--bn-text-muted)] shrink-0">
-                                  v{ext.version}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <h3 className="text-xs font-semibold text-[var(--bn-text-strong)] truncate">
+                                    {ext.name}
+                                  </h3>
+                                  <span className="text-[10px] font-mono text-[var(--bn-text-muted)] shrink-0">
+                                    v{ext.version}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[var(--bn-surface)] border border-[var(--bn-border)] text-[var(--bn-text-muted)] shrink-0">
+                                  {getSourceLabel(ext)}
                                 </span>
                               </div>
-                              <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                              <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5 truncate">
                                 {ext.author}
+                                {ext.popupHtml ? ' · Popup interactivo' : ''}
+                                {ext.contentScripts?.length ? ` · ${ext.contentScripts.length} script(s)` : ''}
                               </div>
                               <p className="text-[11px] text-[var(--bn-text)] mt-2 leading-relaxed line-clamp-2">
                                 {ext.description}
@@ -1528,15 +1972,12 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setDetailExtId(ext.id);
-                                  setDetailCssDraft(ext.customCss || '');
-                                }}
+                                onClick={() => openExtensionDetails(ext)}
                                 className="px-3.5 py-1 rounded-full border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-[11px] font-medium text-[var(--bn-accent)] transition-colors"
                               >
                                 {t(lang, 'detailsBtn')}
                               </button>
-                              {!ext.builtIn && onRemoveExtension && (
+                              {onRemoveExtension && (
                                 <button
                                   type="button"
                                   onClick={() => onRemoveExtension(ext.id)}
@@ -1591,19 +2032,32 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg rounded-2xl overflow-hidden bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-xs"
+              className="w-full max-w-2xl rounded-2xl overflow-hidden bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl text-xs"
             >
               <div className="px-5 py-4 border-b border-[var(--bn-border)] flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className="w-9 h-9 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0"
-                    style={{ backgroundColor: detailExt.accentColor }}
-                  >
-                    {detailExt.name[0]?.toUpperCase() || 'E'}
-                  </div>
+                  {detailExt.iconDataUrl ? (
+                    <img
+                      src={detailExt.iconDataUrl}
+                      alt=""
+                      className="w-9 h-9 rounded-xl object-contain bg-[var(--bn-surface-alt)] p-1 border border-[var(--bn-border)] shrink-0"
+                    />
+                  ) : (
+                    <div
+                      className="w-9 h-9 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0"
+                      style={{ backgroundColor: detailExt.accentColor }}
+                    >
+                      {detailExt.name[0]?.toUpperCase() || 'E'}
+                    </div>
+                  )}
                   <div className="min-w-0">
-                    <div className="font-semibold text-sm text-[var(--bn-text-strong)] truncate">
-                      {detailExt.name}
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm text-[var(--bn-text-strong)] truncate">
+                        {detailExt.name}
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[var(--bn-text-muted)] shrink-0">
+                        {getSourceLabel(detailExt)}
+                      </span>
                     </div>
                     <div className="text-[11px] text-[var(--bn-text-muted)]">
                       v{detailExt.version} · {detailExt.author}
@@ -1619,53 +2073,183 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 </button>
               </div>
 
-              <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-                <p className="text-[var(--bn-text)] leading-relaxed">{detailExt.description}</p>
+              <div className="px-5 pt-3 border-b border-[var(--bn-border)] flex items-center gap-1.5 bg-[var(--bn-surface-alt)]/40">
+                <button
+                  type="button"
+                  onClick={() => setDetailActiveTab('overview')}
+                  className={`px-3 py-1.5 rounded-t-lg text-[11px] font-medium border-b-2 transition-colors ${
+                    detailActiveTab === 'overview'
+                      ? 'border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
+                      : 'border-transparent text-[var(--bn-text-muted)] hover:text-[var(--bn-text)]'
+                  }`}
+                >
+                  Resumen y permisos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailActiveTab('code')}
+                  className={`px-3 py-1.5 rounded-t-lg text-[11px] font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
+                    detailActiveTab === 'code'
+                      ? 'border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
+                      : 'border-transparent text-[var(--bn-text-muted)] hover:text-[var(--bn-text)]'
+                  }`}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>Scripts JS / CSS</span>
+                </button>
+                {detailExt.manifestJson && (
+                  <button
+                    type="button"
+                    onClick={() => setDetailActiveTab('manifest')}
+                    className={`px-3 py-1.5 rounded-t-lg text-[11px] font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
+                      detailActiveTab === 'manifest'
+                        ? 'border-[var(--bn-accent)] text-[var(--bn-text-strong)]'
+                        : 'border-transparent text-[var(--bn-text-muted)] hover:text-[var(--bn-text)]'
+                    }`}
+                  >
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>manifest.json</span>
+                  </button>
+                )}
+              </div>
 
-                <div className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)]">
-                  <span>Fijar en la barra de herramientas</span>
-                  <FabiSwitch
-                    size="sm"
-                    checked={detailExt.pinned}
-                    onChange={(v) => onUpdateExtension?.(detailExt.id, { pinned: v })}
-                    ariaLabel="Fijar extensión"
-                  />
-                </div>
+              <div className="p-5 space-y-4 max-h-[65vh] overflow-y-auto">
+                {detailActiveTab === 'overview' && (
+                  <>
+                    <p className="text-[var(--bn-text)] leading-relaxed">{detailExt.description}</p>
 
-                <div className="space-y-1.5">
-                  <div className="text-[11px] font-semibold text-[var(--bn-text-strong)] uppercase tracking-wider">
-                    Permisos
-                  </div>
-                  <ul className="space-y-1 text-[11px] text-[var(--bn-text-muted)] list-disc list-inside">
-                    {detailExt.permissions.map((perm) => (
-                      <li key={perm}>{perm}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                {(detailExt.mode === 'stylus' || detailExt.mode === 'custom-css') && (
-                  <div className="space-y-2">
-                    <div className="text-[11px] font-semibold text-[var(--bn-text-strong)]">
-                      Hoja CSS inyectada en páginas externas
+                    <div className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)]">
+                      <span>Fijar en la barra de herramientas</span>
+                      <FabiSwitch
+                        size="sm"
+                        checked={detailExt.pinned}
+                        onChange={(v) => onUpdateExtension?.(detailExt.id, { pinned: v })}
+                        ariaLabel="Fijar extensión"
+                      />
                     </div>
-                    <textarea
-                      rows={6}
-                      value={detailCssDraft}
-                      onChange={(e) => setDetailCssDraft(e.target.value)}
-                      className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
-                    />
+
+                    {detailExt.localPath && (
+                      <div className="p-3 rounded-xl bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] space-y-1">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--bn-text-muted)]">
+                          Ruta local en disco (Chromium nativo)
+                        </div>
+                        <div className="font-mono text-[11px] text-[var(--bn-text-strong)] break-all">
+                          {detailExt.localPath}
+                        </div>
+                      </div>
+                    )}
+
+                    {(detailExt.hostPermissions || detailExt.matchPatterns) && (
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] font-semibold text-[var(--bn-text-strong)] uppercase tracking-wider">
+                          Sitios permitidos
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(detailExt.hostPermissions || detailExt.matchPatterns || []).map((pat) => (
+                            <span
+                              key={pat}
+                              className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] text-[var(--bn-text)]"
+                            >
+                              {pat}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-semibold text-[var(--bn-text-strong)] uppercase tracking-wider">
+                        Permisos declarados
+                      </div>
+                      <ul className="space-y-1 text-[11px] text-[var(--bn-text-muted)] list-disc list-inside">
+                        {detailExt.permissions.map((perm) => (
+                          <li key={perm}>{perm}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+
+                {detailActiveTab === 'code' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[var(--bn-text-strong)] mb-1">
+                        Patrones de coincidencia (matches)
+                      </label>
+                      <input
+                        type="text"
+                        value={detailMatchesDraft}
+                        onChange={(e) => setDetailMatchesDraft(e.target.value)}
+                        className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-2 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[var(--bn-text-strong)] mb-1">
+                        Content Script JavaScript (DOM + chrome.* APIs)
+                      </label>
+                      <textarea
+                        rows={6}
+                        value={detailJsDraft}
+                        onChange={(e) => setDetailJsDraft(e.target.value)}
+                        placeholder="// Sin JavaScript personalizado"
+                        className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[var(--bn-text-strong)] mb-1">
+                        Hoja de estilos CSS inyectada
+                      </label>
+                      <textarea
+                        rows={5}
+                        value={detailCssDraft}
+                        onChange={(e) => setDetailCssDraft(e.target.value)}
+                        placeholder="/* Sin reglas CSS personalizadas */"
+                        className="w-full font-mono text-[11px] bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl p-3 text-[var(--bn-text-strong)] focus:outline-none focus:border-[var(--bn-accent)]"
+                      />
+                    </div>
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        onClick={() => {
-                          onUpdateExtension?.(detailExt.id, { customCss: detailCssDraft });
-                          setDetailExtId(null);
-                        }}
+                        onClick={handleSaveDetailCode}
                         className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white font-medium"
                       >
-                        Guardar CSS y aplicar
+                        Guardar cambios y aplicar
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {detailActiveTab === 'manifest' && detailExt.manifestJson && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-[var(--bn-text-strong)]">
+                        Manifiesto estándar WebExtension
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(detailExt.manifestJson || '');
+                          setManifestCopied(true);
+                          setTimeout(() => setManifestCopied(false), 1800);
+                        }}
+                        className="px-3 py-1 rounded-full border border-[var(--bn-border-strong)] hover:bg-[var(--bn-hover)] text-[11px] inline-flex items-center gap-1.5 text-[var(--bn-text)]"
+                      >
+                        {manifestCopied ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Copiado</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copiar JSON</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <pre className="p-3.5 rounded-xl bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] font-mono text-[11px] text-[var(--bn-text)] overflow-x-auto max-h-72 leading-relaxed">
+                      {detailExt.manifestJson}
+                    </pre>
                   </div>
                 )}
               </div>

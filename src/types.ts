@@ -167,11 +167,22 @@ export interface BrowserSettings {
 }
 
 export type ExtensionMode =
+  | 'webextension'
+  | 'userscript'
   | 'dark-web'
   | 'reader'
   | 'stylus'
   | 'ad-cosmetic'
   | 'custom-css';
+
+export interface ExtensionContentScript {
+  matches: string[];
+  excludeMatches?: string[];
+  css?: string[];
+  js?: string[];
+  runAt?: 'document_start' | 'document_end' | 'document_idle';
+  allFrames?: boolean;
+}
 
 export interface BrowserExtension {
   id: string;
@@ -182,9 +193,22 @@ export interface BrowserExtension {
   enabled: boolean;
   pinned: boolean;
   permissions: string[];
+  hostPermissions?: string[];
   accentColor: string;
   mode: ExtensionMode;
+  manifestVersion?: 2 | 3;
+  manifestJson?: string;
+  iconDataUrl?: string;
+  popupHtml?: string;
+  popupTitle?: string;
+  contentScripts?: ExtensionContentScript[];
+  resources?: Record<string, string>;
   customCss?: string;
+  customJs?: string;
+  matchPatterns?: string[];
+  sourceType?: 'builtin' | 'unpacked' | 'crx' | 'zip' | 'webstore' | 'userscript' | 'custom';
+  localPath?: string;
+  nativeElectronId?: string;
   builtIn?: boolean;
 }
 
@@ -366,6 +390,13 @@ export interface FabiNavDesktopBridge {
   checkForUpdates: () => Promise<DesktopUpdateStatus>;
   installUpdate: () => Promise<void>;
   openUninstallSettings: () => Promise<{ ok: boolean; message?: string }>;
+  pickAndLoadExtension?: () => Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    message?: string;
+    extension?: Omit<BrowserExtension, 'id'>;
+  }>;
+  removeNativeExtension?: (nativeId: string, localPath?: string) => Promise<{ ok: boolean }>;
   onWindowState?: (callback: (state: { isMaximized: boolean }) => void) => () => void;
   onUpdateStatus?: (callback: (status: DesktopUpdateStatus) => void) => () => void;
 }

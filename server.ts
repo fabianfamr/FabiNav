@@ -1506,6 +1506,390 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function guessMimeFromExt(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.ico')) return 'image/x-icon';
+  if (lower.endsWith('.css')) return 'text/css';
+  if (lower.endsWith('.js')) return 'application/javascript';
+  if (lower.endsWith('.json')) return 'application/json';
+  return 'application/octet-stream';
+}
+
+function extractZipOrCrxEntries(rawBuffer: Buffer): Map<string, Buffer> {
+  let buf = rawBuffer;
+  // Unwrap CRX2 or CRX3 header if present ("Cr24")
+  if (buf.length >= 16 && buf.subarray(0, 4).toString('ascii') === 'Cr24') {
+    const version = buf.readUInt32LE(4);
+    if (version === 2) {
+      const pubKeyLen = buf.readUInt32LE(8);
+      const sigLen = buf.readUInt32LE(12);
+      const offset = 16 + pubKeyLen + sigLen;
+      if (offset < buf.length) buf = buf.subarray(offset);
+    } else if (version === 3) {
+      const headerSize = buf.readUInt32LE(8);
+      const offset = 12 + headerSize;
+      if (offset < buf.length) buf = buf.subarray(offset);
+    }
+  }
+
+  // Locate ZIP End of Central Directory (PK\x05\x06)
+  let eocdOffset = -1;
+  const minOffset = Math.max(0, buf.length - 65560);
+  for (let i = buf.length - 22; i >= minOffset; i--) {
+    if (
+      buf[i] === 0x50 &&
+      buf[i + 1] === 0x4b &&
+      buf[i + 2] === 0x05 &&
+      buf[i + 3] === 0x06
+    ) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset === -1) {
+    throw new Error('El archivo no es un paquete ZIP/CRX válido');
+  }
+
+  const totalEntries = buf.readUInt16LE(eocdOffset + 10);
+  const cdOffset = buf.readUInt32LE(eocdOffset + 16);
+  const files = new Map<string, Buffer>();
+
+  let ptr = cdOffset;
+  for (let idx = 0; idx < totalEntries && ptr + 46 <= eocdOffset; idx++) {
+    if (
+      buf[ptr] !== 0x50 ||
+      buf[ptr + 1] !== 0x4b ||
+      buf[ptr + 2] !== 0x01 ||
+      buf[ptr + 3] !== 0x02
+    ) {
+      break;
+    }
+    const method = buf.readUInt16LE(ptr + 10);
+    const compressedSize = buf.readUInt32LE(ptr + 20);
+    const fnLen = buf.readUInt16LE(ptr + 28);
+    const extraLen = buf.readUInt16LE(ptr + 30);
+    const commentLen = buf.readUInt16LE(ptr + 32);
+    const localHeaderOffset = buf.readUInt32LE(ptr + 42);
+    const rawName = buf
+      .subarray(ptr + 46, ptr + 46 + fnLen)
+      .toString('utf8')
+      .replace(/\\/g, '/')
+      .replace(/^\.\//, '')
+      .replace(/^\/+/, '');
+    ptr += 46 + fnLen + extraLen + commentLen;
+
+    if (!rawName || rawName.endsWith('/')) continue;
+    if (
+      localHeaderOffset + 30 > buf.length ||
+      buf[localHeaderOffset] !== 0x50 ||
+      buf[localHeaderOffset + 1] !== 0x4b ||
+      buf[localHeaderOffset + 2] !== 0x03 ||
+      buf[localHeaderOffset + 3] !== 0x04
+    ) {
+      continue;
+    }
+    const lhFnLen = buf.readUInt16LE(localHeaderOffset + 26);
+    const lhExtraLen = buf.readUInt16LE(localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + lhFnLen + lhExtraLen;
+    const dataEnd = Math.min(buf.length, dataStart + compressedSize);
+    if (dataStart > buf.length) continue;
+
+    const compSlice = buf.subarray(dataStart, dataEnd);
+    try {
+      if (method === 0) {
+        files.set(rawName, compSlice);
+      } else if (method === 8) {
+        files.set(rawName, zlib.inflateRawSync(compSlice));
+      }
+    } catch {
+      // Skip malformed entry
+    }
+  }
+
+  // Normalize single top-level wrapper folder if manifest.json lives inside it
+  if (!files.has('manifest.json')) {
+    const manifestEntry = Array.from(files.keys()).find(
+      (k) => k.toLowerCase().endsWith('/manifest.json') && k.split('/').length === 2
+    );
+    if (manifestEntry) {
+      const prefix = manifestEntry.slice(0, manifestEntry.indexOf('/') + 1);
+      const stripped = new Map<string, Buffer>();
+      for (const [k, v] of files.entries()) {
+        if (k.startsWith(prefix)) stripped.set(k.slice(prefix.length), v);
+      }
+      return stripped;
+    }
+  }
+
+  return files;
+}
+
+function buildExtensionFromFileMap(
+  files: Map<string, Buffer>,
+  sourceType: 'unpacked' | 'crx' | 'zip' | 'webstore',
+  localPath?: string
+) {
+  const getFile = (relPath: string): Buffer | undefined => {
+    const clean = relPath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '');
+    if (files.has(clean)) return files.get(clean);
+    const lower = clean.toLowerCase();
+    for (const [k, v] of files.entries()) {
+      if (k.toLowerCase() === lower) return v;
+    }
+    return undefined;
+  };
+
+  const manifestBuf = getFile('manifest.json');
+  if (!manifestBuf) {
+    throw new Error('No se encontró manifest.json dentro de la extensión.');
+  }
+  const manifestRaw = manifestBuf.toString('utf8').replace(/^\uFEFF/, '');
+  const manifest = JSON.parse(manifestRaw) as Record<string, unknown>;
+
+  // Resolve i18n __MSG_...__ strings from _locales
+  const defaultLocale =
+    typeof manifest.default_locale === 'string' ? manifest.default_locale : 'en';
+  const localeCandidates = ['es', defaultLocale, 'en', 'en_US'];
+  let messagesMap: Record<string, { message?: string }> = {};
+  for (const loc of localeCandidates) {
+    const msgBuf = getFile(`_locales/${loc}/messages.json`);
+    if (msgBuf) {
+      try {
+        messagesMap = JSON.parse(msgBuf.toString('utf8').replace(/^\uFEFF/, ''));
+        break;
+      } catch {
+        // try next locale
+      }
+    }
+  }
+  const resolveMsg = (val: unknown, fallback: string): string => {
+    if (typeof val !== 'string' || !val.trim()) return fallback;
+    return val.replace(/__MSG_([A-Za-z0-9_@]+)__/g, (full, key: string) => {
+      const hit =
+        messagesMap[key] ||
+        Object.entries(messagesMap).find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1];
+      return hit?.message || full;
+    });
+  };
+
+  const name = resolveMsg(manifest.name, 'Extensión Web').trim();
+  const description = resolveMsg(
+    manifest.description,
+    'Extensión cargada desde paquete WebExtension.'
+  ).trim();
+  const version = typeof manifest.version === 'string' ? manifest.version : '1.0.0';
+  const author =
+    typeof manifest.author === 'string'
+      ? manifest.author
+      : typeof (manifest.author as { email?: string } | undefined)?.email === 'string'
+      ? String((manifest.author as { email: string }).email)
+      : 'WebExtension';
+  const manifestVersion: 2 | 3 = Number(manifest.manifest_version) === 2 ? 2 : 3;
+
+  // Icon extraction
+  let iconDataUrl: string | undefined;
+  const actionObj = (manifest.action || manifest.browser_action || {}) as Record<string, unknown>;
+  const iconMap =
+    (manifest.icons as Record<string, string> | undefined) ||
+    (typeof actionObj.default_icon === 'object'
+      ? (actionObj.default_icon as Record<string, string>)
+      : undefined);
+  const iconCandidates: string[] = [];
+  if (iconMap) {
+    for (const sz of ['128', '96', '64', '48', '32', '16']) {
+      if (typeof iconMap[sz] === 'string') iconCandidates.push(iconMap[sz]);
+    }
+    for (const val of Object.values(iconMap)) {
+      if (typeof val === 'string') iconCandidates.push(val);
+    }
+  } else if (typeof actionObj.default_icon === 'string') {
+    iconCandidates.push(actionObj.default_icon);
+  }
+  for (const ic of iconCandidates) {
+    const icBuf = getFile(ic);
+    if (icBuf) {
+      iconDataUrl = `data:${guessMimeFromExt(ic)};base64,${icBuf.toString('base64')}`;
+      break;
+    }
+  }
+
+  // Content scripts extraction
+  const rawScripts = Array.isArray(manifest.content_scripts) ? manifest.content_scripts : [];
+  const contentScripts = rawScripts
+    .map((entry) => {
+      const obj = entry as Record<string, unknown>;
+      const matches = Array.isArray(obj.matches)
+        ? obj.matches.filter((m): m is string => typeof m === 'string')
+        : [];
+      const excludeMatches = Array.isArray(obj.exclude_matches)
+        ? obj.exclude_matches.filter((m): m is string => typeof m === 'string')
+        : undefined;
+      const css = Array.isArray(obj.css)
+        ? obj.css
+            .filter((p): p is string => typeof p === 'string')
+            .map((p) => getFile(p)?.toString('utf8') || '')
+            .filter(Boolean)
+        : [];
+      const js = Array.isArray(obj.js)
+        ? obj.js
+            .filter((p): p is string => typeof p === 'string')
+            .map((p) => getFile(p)?.toString('utf8') || '')
+            .filter(Boolean)
+        : [];
+      const runAtRaw = typeof obj.run_at === 'string' ? obj.run_at : 'document_idle';
+      const runAt: 'document_start' | 'document_end' | 'document_idle' =
+        runAtRaw === 'document_start' || runAtRaw === 'document_end' ? runAtRaw : 'document_idle';
+      return { matches, excludeMatches, css, js, runAt, allFrames: !!obj.all_frames };
+    })
+    .filter((cs) => cs.matches.length > 0 && (cs.css.length > 0 || cs.js.length > 0));
+
+  // Inline default popup HTML assets
+  let popupHtml: string | undefined;
+  const popupRel = typeof actionObj.default_popup === 'string' ? actionObj.default_popup : '';
+  if (popupRel) {
+    const popupBuf = getFile(popupRel);
+    if (popupBuf) {
+      const popupDir = popupRel.includes('/') ? popupRel.slice(0, popupRel.lastIndexOf('/') + 1) : '';
+      const resolvePopupAsset = (ref: string) => {
+        const clean = ref.split('?')[0].split('#')[0];
+        return clean.startsWith('/') ? clean.slice(1) : `${popupDir}${clean}`;
+      };
+      let html = popupBuf.toString('utf8');
+      html = html.replace(
+        /<link\b[^>]*rel=["']?stylesheet["']?[^>]*href=["']([^"']+)["'][^>]*>/gi,
+        (full, href: string) => {
+          if (/^https?:\/\//i.test(href)) return full;
+          const b = getFile(resolvePopupAsset(href)) || getFile(href);
+          return b ? `<style>${b.toString('utf8')}</style>` : full;
+        }
+      );
+      html = html.replace(
+        /<script\b[^>]*src=["']([^"']+)["'][^>]*>\s*<\/script>/gi,
+        (full, src: string) => {
+          if (/^https?:\/\//i.test(src)) return full;
+          const b = getFile(resolvePopupAsset(src)) || getFile(src);
+          return b ? `<script>${b.toString('utf8').replace(/<\/script>/gi, '<\\/script>')}</script>` : full;
+        }
+      );
+      html = html.replace(
+        /(<img\b[^>]*\bsrc=["'])([^"']+)(["'][^>]*>)/gi,
+        (full, pre: string, src: string, post: string) => {
+          if (/^(https?:|data:)/i.test(src)) return full;
+          const assetPath = resolvePopupAsset(src);
+          const b = getFile(assetPath) || getFile(src);
+          return b ? `${pre}data:${guessMimeFromExt(assetPath)};base64,${b.toString('base64')}${post}` : full;
+        }
+      );
+      popupHtml = html;
+    }
+  }
+
+  // Resources map for chrome.runtime.getURL(...)
+  const resources: Record<string, string> = {};
+  let resCount = 0;
+  for (const [k, v] of files.entries()) {
+    if (resCount >= 30) break;
+    if (v.length > 260_000) continue;
+    const mime = guessMimeFromExt(k);
+    if (mime.startsWith('image/') || mime === 'text/css' || mime === 'application/json') {
+      resources[k] = `data:${mime};base64,${v.toString('base64')}`;
+      resCount++;
+    }
+  }
+
+  const permissions = Array.isArray(manifest.permissions)
+    ? manifest.permissions.filter((p): p is string => typeof p === 'string')
+    : [];
+  const hostPermissions = Array.isArray(manifest.host_permissions)
+    ? manifest.host_permissions.filter((p): p is string => typeof p === 'string')
+    : [];
+
+  const palette = ['#6366f1', '#10b981', '#f97316', '#14b8a6', '#ec4899', '#3b82f6'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  const accentColor = palette[hash % palette.length];
+
+  return {
+    name,
+    description,
+    version,
+    author,
+    enabled: true,
+    pinned: true,
+    manifestVersion,
+    manifestJson: JSON.stringify(manifest, null, 2),
+    permissions: permissions.length > 0 ? permissions : ['activeTab'],
+    hostPermissions,
+    accentColor,
+    mode: 'webextension' as const,
+    iconDataUrl,
+    popupHtml,
+    popupTitle: resolveMsg(actionObj.default_title, name),
+    contentScripts,
+    resources,
+    sourceType,
+    localPath,
+    builtIn: false
+  };
+}
+
+function parseUserscriptText(code: string) {
+  const headerMatch = code.match(/\/\/\s*==UserScript==([\s\S]*?)\/\/\s*==\/UserScript==/);
+  const metaBlock = headerMatch ? headerMatch[1] : '';
+  const getMeta = (key: string) => {
+    const m = metaBlock.match(new RegExp(`^\\s*//\\s*@${key}\\s+(.+)$`, 'm'));
+    return m ? m[1].trim() : '';
+  };
+  const getAllMeta = (key: string) => {
+    const out: string[] = [];
+    const re = new RegExp(`^\\s*//\\s*@${key}\\s+(.+)$`, 'gm');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(metaBlock)) !== null) out.push(m[1].trim());
+    return out;
+  };
+
+  const name = getMeta('name') || 'Userscript personalizado';
+  const version = getMeta('version') || '1.0.0';
+  const description = getMeta('description') || 'Script de usuario ejecutado en páginas coincidentes.';
+  const author = getMeta('author') || 'UserScript';
+  const matches = [...getAllMeta('match'), ...getAllMeta('include')];
+  const excludeMatches = getAllMeta('exclude');
+  const runAtRaw = getMeta('run-at').replace(/-/g, '_');
+  const runAt: 'document_start' | 'document_end' | 'document_idle' =
+    runAtRaw === 'document_start' || runAtRaw === 'document_end' ? runAtRaw : 'document_idle';
+
+  return {
+    name,
+    description,
+    version,
+    author,
+    enabled: true,
+    pinned: true,
+    manifestVersion: 3 as const,
+    permissions: ['Ejecutar script de usuario', 'Inyectar CSS (GM_addStyle)'],
+    hostPermissions: matches.length > 0 ? matches : ['<all_urls>'],
+    accentColor: '#f59e0b',
+    mode: 'userscript' as const,
+    customJs: code,
+    matchPatterns: matches.length > 0 ? matches : ['<all_urls>'],
+    contentScripts: [
+      {
+        matches: matches.length > 0 ? matches : ['<all_urls>'],
+        excludeMatches: excludeMatches.length > 0 ? excludeMatches : undefined,
+        js: [code],
+        runAt
+      }
+    ],
+    sourceType: 'userscript' as const,
+    builtIn: false
+  };
+}
+
 function buildBuiltInExtensionCss(extModes: string[]): string {
   const chunks: string[] = [];
   if (extModes.includes('dark-web')) {
@@ -1709,37 +2093,229 @@ function sanitizeAndEnhanceHtml(
       }
     } catch (e) {}
   };
-  var applyExtensions = function (modes, customCss) {
+  var extRunRegistry = {};
+  var extMessageListeners = {};
+  var extStorageListeners = {};
+
+  var matchSinglePattern = function (url, pattern) {
+    if (!pattern || pattern === '<all_urls>' || pattern === '*://*/*') return true;
     try {
-      var builtInEl = document.getElementById('fabinav-extensions-style');
-      if (!builtInEl && document.head) {
-        builtInEl = document.createElement('style');
-        builtInEl.id = 'fabinav-extensions-style';
-        document.head.appendChild(builtInEl);
+      var regexStr = '^' + String(pattern)
+        .replace(/[.+?^$()|[\\]\\\\{}]/g, '\\\\$&')
+        .replace(/\\*/g, '.*') + '$';
+      return new RegExp(regexStr, 'i').test(url);
+    } catch (e) {
+      return false;
+    }
+  };
+
+  var urlMatchesExtRule = function (url, matches, excludeMatches) {
+    if (!Array.isArray(matches) || matches.length === 0) return true;
+    var hit = false;
+    for (var i = 0; i < matches.length; i++) {
+      if (matchSinglePattern(url, matches[i])) { hit = true; break; }
+    }
+    if (!hit) return false;
+    if (Array.isArray(excludeMatches)) {
+      for (var j = 0; j < excludeMatches.length; j++) {
+        if (matchSinglePattern(url, excludeMatches[j])) return false;
       }
-      if (builtInEl) {
-        var chunks = [];
-        if (Array.isArray(modes)) {
-          if (modes.indexOf('dark-web') !== -1) {
-            chunks.push('html{filter:invert(0.91) hue-rotate(180deg)!important;background:#ffffff!important;min-height:100%;}img,video,picture,canvas,iframe,svg image,[style*="background-image"]{filter:invert(1) hue-rotate(180deg)!important;}');
+    }
+    return true;
+  };
+
+  var createChromeEnvForExt = function (ext) {
+    var extId = ext.id;
+    var storeKey = 'fabinav_ext_storage_' + extId;
+    var readStore = function () {
+      try {
+        var r = localStorage.getItem(storeKey);
+        return r ? JSON.parse(r) : {};
+      } catch (e) { return {}; }
+    };
+    var writeStore = function (data, changes) {
+      try { localStorage.setItem(storeKey, JSON.stringify(data)); } catch (e) {}
+      var list = extStorageListeners[extId] || [];
+      for (var i = 0; i < list.length; i++) {
+        try { list[i](changes, 'local'); } catch (e) {}
+      }
+    };
+    var storageArea = {
+      get: function (keys, cb) {
+        var store = readStore();
+        var out = {};
+        if (keys === null || keys === undefined) out = Object.assign({}, store);
+        else if (typeof keys === 'string') { if (Object.prototype.hasOwnProperty.call(store, keys)) out[keys] = store[keys]; }
+        else if (Array.isArray(keys)) { keys.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(store, k)) out[k] = store[k]; }); }
+        else if (typeof keys === 'object') { Object.keys(keys).forEach(function (k) { out[k] = Object.prototype.hasOwnProperty.call(store, k) ? store[k] : keys[k]; }); }
+        if (typeof cb === 'function') setTimeout(function () { cb(out); }, 0);
+        return Promise.resolve(out);
+      },
+      set: function (items, cb) {
+        var store = readStore();
+        var changes = {};
+        Object.keys(items || {}).forEach(function (k) {
+          changes[k] = { oldValue: store[k], newValue: items[k] };
+          store[k] = items[k];
+        });
+        writeStore(store, changes);
+        if (typeof cb === 'function') setTimeout(function () { cb(); }, 0);
+        return Promise.resolve();
+      },
+      remove: function (keys, cb) {
+        var store = readStore();
+        var changes = {};
+        (Array.isArray(keys) ? keys : [keys]).forEach(function (k) {
+          if (Object.prototype.hasOwnProperty.call(store, k)) {
+            changes[k] = { oldValue: store[k], newValue: undefined };
+            delete store[k];
           }
-          if (modes.indexOf('reader') !== -1) {
-            chunks.push('html,body{background:#f7f3eb!important;color:#1f2328!important;}body{max-width:760px!important;margin:0 auto!important;padding:36px 28px!important;font-size:18px!important;line-height:1.75!important;font-family:Georgia,"Times New Roman",serif!important;}header,nav,aside,footer,.sidebar,[role="complementary"],[role="navigation"],.ad,[class*="sidebar"],[class*="banner"],[class*="nav"]{display:none!important;}article,main{max-width:100%!important;width:100%!important;margin:0!important;padding:0!important;}img{max-width:100%!important;height:auto!important;border-radius:8px!important;}');
-          }
-          if (modes.indexOf('ad-cosmetic') !== -1) {
-            chunks.push('[class*="newsletter"],[id*="newsletter"],[class*="subscribe-modal"],[class*="paywall-banner"],[class*="sticky-footer"],[class*="cookie-banner"],[id*="cookie-banner"],[class*="consent-banner"],[class*="promo-banner"],.fc-ab-root{display:none!important;}');
+        });
+        writeStore(store, changes);
+        if (typeof cb === 'function') setTimeout(function () { cb(); }, 0);
+        return Promise.resolve();
+      }
+    };
+    var resMap = ext.resources || {};
+    var manifestObj = {
+      name: ext.name,
+      version: ext.version,
+      manifest_version: ext.manifestVersion || 3
+    };
+    return {
+      runtime: {
+        id: extId,
+        getManifest: function () { return manifestObj; },
+        getURL: function (rel) {
+          var clean = String(rel || '').replace(/^\\/+/, '');
+          return resMap[clean] || clean;
+        },
+        sendMessage: function (msg, cb) {
+          try { window.parent.postMessage({ type: 'fabinav:ext-content-message', extId: extId, message: msg }, '*'); } catch (e) {}
+          if (typeof cb === 'function') setTimeout(function () { cb(undefined); }, 0);
+          return Promise.resolve(undefined);
+        },
+        onMessage: {
+          addListener: function (fn) {
+            if (typeof fn !== 'function') return;
+            if (!extMessageListeners[extId]) extMessageListeners[extId] = [];
+            extMessageListeners[extId].push(fn);
+          },
+          removeListener: function (fn) {
+            if (!extMessageListeners[extId]) return;
+            extMessageListeners[extId] = extMessageListeners[extId].filter(function (f) { return f !== fn; });
           }
         }
-        builtInEl.textContent = chunks.join('\\n');
+      },
+      storage: {
+        local: storageArea,
+        sync: storageArea,
+        onChanged: {
+          addListener: function (fn) {
+            if (typeof fn !== 'function') return;
+            if (!extStorageListeners[extId]) extStorageListeners[extId] = [];
+            extStorageListeners[extId].push(fn);
+          }
+        }
       }
+    };
+  };
+
+  var notifyExtUnload = function (extId) {
+    var list = extMessageListeners[extId] || [];
+    for (var i = 0; i < list.length; i++) {
+      try { list[i]({ type: 'FABINAV_EXT_UNLOAD' }, { id: extId }, function () {}); } catch (e) {}
+    }
+    extMessageListeners[extId] = [];
+    extStorageListeners[extId] = [];
+    delete extRunRegistry[extId];
+    var oldStyles = document.querySelectorAll('style[data-fabinav-ext-id="' + extId + '"]');
+    for (var j = 0; j < oldStyles.length; j++) {
+      if (oldStyles[j].parentNode) oldStyles[j].parentNode.removeChild(oldStyles[j]);
+    }
+  };
+
+  var applyExtensions = function (modes, customCss, activeExtensions) {
+    try {
+      var list = Array.isArray(activeExtensions) ? activeExtensions : [];
+      var activeIds = {};
+
+      // Clean up deactivated extensions
+      Object.keys(extRunRegistry).forEach(function (prevId) {
+        if (!list.some(function (e) { return e.id === prevId; })) {
+          notifyExtUnload(prevId);
+        }
+      });
+
+      list.forEach(function (ext) {
+        activeIds[ext.id] = true;
+        var cssChunks = [];
+        var jsChunks = [];
+
+        if (Array.isArray(ext.contentScripts) && ext.contentScripts.length > 0) {
+          ext.contentScripts.forEach(function (cs) {
+            if (urlMatchesExtRule(currentUrl, cs.matches, cs.excludeMatches)) {
+              if (Array.isArray(cs.css)) cssChunks = cssChunks.concat(cs.css);
+              if (Array.isArray(cs.js)) jsChunks = jsChunks.concat(cs.js);
+            }
+          });
+        }
+
+        if (ext.customCss && urlMatchesExtRule(currentUrl, ext.matchPatterns, null)) {
+          cssChunks.push(ext.customCss);
+        }
+        if (ext.customJs && (!Array.isArray(ext.contentScripts) || ext.contentScripts.length === 0) && urlMatchesExtRule(currentUrl, ext.matchPatterns, null)) {
+          jsChunks.push(ext.customJs);
+        }
+
+        // Apply CSS cleanly
+        var styleId = 'fabinav-ext-style-' + ext.id;
+        var styleEl = document.getElementById(styleId);
+        if (cssChunks.length > 0) {
+          if (!styleEl && document.head) {
+            styleEl = document.createElement('style');
+            styleEl.id = styleId;
+            styleEl.setAttribute('data-fabinav-ext-id', ext.id);
+            document.head.appendChild(styleEl);
+          }
+          if (styleEl) styleEl.textContent = cssChunks.join('\\n');
+        } else if (styleEl && styleEl.parentNode) {
+          styleEl.parentNode.removeChild(styleEl);
+        }
+
+        // Execute JS content scripts once per version/signature
+        if (jsChunks.length > 0) {
+          var sig = jsChunks.join('\\n/*---*/\\n');
+          if (extRunRegistry[ext.id] !== sig) {
+            if (extRunRegistry[ext.id]) notifyExtUnload(ext.id);
+            extRunRegistry[ext.id] = sig;
+            var chromeApi = createChromeEnvForExt(ext);
+            var gmAddStyle = function (cssText) {
+              if (!document.head) return;
+              var s = document.createElement('style');
+              s.setAttribute('data-fabinav-ext-id', ext.id);
+              s.textContent = String(cssText || '');
+              document.head.appendChild(s);
+            };
+            var gmInfo = { script: { name: ext.name, version: ext.version } };
+            jsChunks.forEach(function (code) {
+              try {
+                var runner = new Function('chrome', 'browser', 'GM_addStyle', 'GM_info', code);
+                runner(chromeApi, chromeApi, gmAddStyle, gmInfo);
+              } catch (err) {
+                try { console.warn('[FabiNav Ext]', ext.name, err); } catch (e) {}
+              }
+            });
+          }
+        }
+      });
+
+      // Keep legacy CSS tag cleared/updated for backward fallback only when no full ext payload was passed
       var customEl = document.getElementById('fabinav-custom-css');
-      if (!customEl && document.head) {
-        customEl = document.createElement('style');
-        customEl.id = 'fabinav-custom-css';
-        document.head.appendChild(customEl);
-      }
-      if (customEl) {
+      if (list.length === 0 && customEl) {
         customEl.textContent = typeof customCss === 'string' ? customCss : '';
+      } else if (customEl) {
+        customEl.textContent = '';
       }
     } catch (e) {}
   };
@@ -1775,7 +2351,38 @@ function sanitizeAndEnhanceHtml(
     if (d.type === 'fabinav:set-muted') {
       applyMute(!!d.muted);
     } else if (d.type === 'fabinav:apply-extensions') {
-      applyExtensions(d.modes, d.customCss);
+      applyExtensions(d.modes, d.customCss, d.extensions);
+    } else if (d.type === 'fabinav:ext-storage-changed' && d.extId) {
+      var sListeners = extStorageListeners[d.extId] || [];
+      sListeners.forEach(function (fn) { try { fn(d.changes || {}, 'local'); } catch (e) {} });
+    } else if (d.type === 'fabinav:ext-runtime-message' && d.extId) {
+      var mListeners = extMessageListeners[d.extId] || [];
+      var responded = false;
+      var sendResp = function (resp) {
+        if (responded) return;
+        responded = true;
+        if (d.requestId) {
+          try {
+            window.parent.postMessage({
+              type: 'fabinav:ext-message-response',
+              requestId: d.requestId,
+              response: resp
+            }, '*');
+          } catch (e) {}
+        }
+      };
+      mListeners.forEach(function (fn) {
+        try { fn(d.message, { id: d.extId, tab: { id: 1, url: currentUrl, title: document.title } }, sendResp); } catch (e) {}
+      });
+    } else if (d.type === 'fabinav:ext-scripting' && d.extId) {
+      if (d.action === 'insertCSS' && typeof d.css === 'string' && document.head) {
+        var s = document.createElement('style');
+        s.setAttribute('data-fabinav-ext-id', d.extId);
+        s.textContent = d.css;
+        document.head.appendChild(s);
+      } else if (d.action === 'executeScript' && typeof d.code === 'string') {
+        try { (new Function(d.code))(); } catch (e) {}
+      }
     } else if (d.type === 'fabinav:translate-request') {
       var collected = collectTranslatableNodes();
       try {
@@ -1941,6 +2548,130 @@ async function startServer() {
   loadNormalCookiesFromDisk();
   const app = express();
   app.use(express.json({ limit: '512kb' }));
+
+  // 0a-ext. Real WebExtension Package Importer (.zip, .crx, unpacked files, .user.js)
+  app.post('/api/extensions/import', express.json({ limit: '25mb' }), (req, res) => {
+    try {
+      const body = req.body as {
+        filename?: string;
+        base64?: string;
+        text?: string;
+        files?: Array<{ path: string; base64: string }>;
+      };
+
+      // Case 1: Unpacked folder files array from browser picker
+      if (Array.isArray(body?.files) && body.files.length > 0) {
+        const fileMap = new Map<string, Buffer>();
+        for (const item of body.files) {
+          if (!item?.path || typeof item.base64 !== 'string') continue;
+          const norm = item.path.replace(/\\/g, '/').replace(/^\/+/, '');
+          fileMap.set(norm, Buffer.from(item.base64, 'base64'));
+        }
+        // Strip top-level directory if all files share one
+        if (!fileMap.has('manifest.json')) {
+          const manifestKey = Array.from(fileMap.keys()).find((k) =>
+            k.toLowerCase().endsWith('/manifest.json')
+          );
+          if (manifestKey) {
+            const prefix = manifestKey.slice(0, manifestKey.lastIndexOf('manifest.json'));
+            const stripped = new Map<string, Buffer>();
+            for (const [k, v] of fileMap.entries()) {
+              if (k.startsWith(prefix)) stripped.set(k.slice(prefix.length), v);
+            }
+            const ext = buildExtensionFromFileMap(stripped, 'unpacked');
+            res.json({ ok: true, extension: ext });
+            return;
+          }
+        }
+        const ext = buildExtensionFromFileMap(fileMap, 'unpacked');
+        res.json({ ok: true, extension: ext });
+        return;
+      }
+
+      const filename = String(body?.filename || '').toLowerCase();
+
+      // Case 2: Userscript (.user.js / .js)
+      if (filename.endsWith('.js') || typeof body?.text === 'string') {
+        const scriptCode =
+          typeof body?.text === 'string'
+            ? body.text
+            : Buffer.from(String(body?.base64 || ''), 'base64').toString('utf8');
+        if (!scriptCode.trim()) {
+          res.status(400).json({ ok: false, error: 'El script está vacío.' });
+          return;
+        }
+        res.json({ ok: true, extension: parseUserscriptText(scriptCode) });
+        return;
+      }
+
+      // Case 3: .crx or .zip archive
+      if (typeof body?.base64 !== 'string' || !body.base64) {
+        res.status(400).json({ ok: false, error: 'Archivo de extensión inválido.' });
+        return;
+      }
+      const rawBuf = Buffer.from(body.base64, 'base64');
+      const isCrx =
+        filename.endsWith('.crx') ||
+        (rawBuf.length >= 4 && rawBuf.subarray(0, 4).toString('ascii') === 'Cr24');
+      const entries = extractZipOrCrxEntries(rawBuf);
+      const ext = buildExtensionFromFileMap(entries, isCrx ? 'crx' : 'zip');
+      res.json({ ok: true, extension: ext });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'No se pudo leer la extensión.'
+      });
+    }
+  });
+
+  // 0b-ext. Install directly from Chrome Web Store URL or Extension ID
+  app.post('/api/extensions/fetch-store', express.json({ limit: '64kb' }), async (req, res) => {
+    try {
+      const rawInput = String((req.body as { input?: string })?.input || '').trim();
+      const idMatch = rawInput.match(/([a-p]{32})/i);
+      if (!idMatch) {
+        res.status(400).json({
+          ok: false,
+          error: 'Introduce una URL válida de Chrome Web Store o un ID de 32 caracteres.'
+        });
+        return;
+      }
+      const extId = idMatch[1].toLowerCase();
+      const crxUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3D${extId}%26uc`;
+      const resp = await fetch(crxUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 Chrome/131.0.0.0 Safari/537.36' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!resp.ok) {
+        res.status(502).json({
+          ok: false,
+          error: `Chrome Web Store devolvió HTTP ${resp.status}. También puedes descargar el .crx/.zip e importarlo directamente.`
+        });
+        return;
+      }
+      const arrBuf = await resp.arrayBuffer();
+      const crxBuf = Buffer.from(arrBuf);
+      if (crxBuf.length < 32) {
+        res.status(502).json({
+          ok: false,
+          error: 'No se recibió un paquete CRX válido desde Chrome Web Store.'
+        });
+        return;
+      }
+      const entries = extractZipOrCrxEntries(crxBuf);
+      const ext = buildExtensionFromFileMap(entries, 'webstore');
+      res.json({ ok: true, extension: ext });
+    } catch (err) {
+      res.status(502).json({
+        ok: false,
+        error:
+          err instanceof Error
+            ? `Error al descargar de Chrome Web Store: ${err.message}`
+            : 'No se pudo descargar la extensión.'
+      });
+    }
+  });
 
   // 0a. Page Text Translation Endpoint (real free Google web translate endpoint)
   app.post('/api/translate', async (req, res) => {

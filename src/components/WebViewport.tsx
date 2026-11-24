@@ -316,6 +316,25 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     ? decodeURIComponent(tab.url.replace('fabinav://search?q=', ''))
     : '';
 
+  const activeExtensionsPayload = useMemo(
+    () =>
+      extensions
+        .filter((e) => e.enabled)
+        .map((e) => ({
+          id: e.id,
+          name: e.name,
+          version: e.version,
+          manifestVersion: e.manifestVersion || 3,
+          mode: e.mode,
+          contentScripts: e.contentScripts || [],
+          customCss: e.customCss || '',
+          customJs: e.customJs || '',
+          matchPatterns: e.matchPatterns || e.hostPermissions || ['<all_urls>'],
+          resources: e.resources || {}
+        })),
+    [extensions]
+  );
+
   const activeExtModes = useMemo(
     () =>
       extensions
@@ -335,11 +354,13 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
 
   const activeExtModesRef = useRef(activeExtModes);
   const activeCustomCssRef = useRef(activeCustomCss);
+  const activeExtensionsRef = useRef(activeExtensionsPayload);
   const isMutedRef = useRef(!!tab.isMuted);
   useEffect(() => {
     activeExtModesRef.current = activeExtModes;
     activeCustomCssRef.current = activeCustomCss;
-  }, [activeExtModes, activeCustomCss]);
+    activeExtensionsRef.current = activeExtensionsPayload;
+  }, [activeExtModes, activeCustomCss, activeExtensionsPayload]);
   useEffect(() => {
     isMutedRef.current = !!tab.isMuted;
   }, [tab.isMuted]);
@@ -380,6 +401,10 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         found?: boolean;
         texts?: string[];
         targetLang?: string;
+        requestId?: string;
+        response?: unknown;
+        extId?: string;
+        message?: unknown;
       };
       if (!payload || typeof payload !== 'object') return;
 
@@ -394,16 +419,30 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           {
             type: 'fabinav:apply-extensions',
             modes: activeExtModesRef.current,
-            customCss: activeCustomCssRef.current
+            customCss: activeCustomCssRef.current,
+            extensions: activeExtensionsRef.current
           },
           '*'
+        );
+      } else if (payload.type === 'fabinav:ext-message-response') {
+        window.dispatchEvent(
+          new CustomEvent('fabinav:ext-relay-response', {
+            detail: { requestId: payload.requestId, response: payload.response }
+          })
+        );
+      } else if (payload.type === 'fabinav:ext-content-message') {
+        window.dispatchEvent(
+          new CustomEvent('fabinav:ext-content-to-popup', {
+            detail: { extId: payload.extId, message: payload.message }
+          })
         );
       } else if (payload.type === 'fabinav:page-info') {
         iframeRef.current?.contentWindow?.postMessage(
           {
             type: 'fabinav:apply-extensions',
             modes: activeExtModesRef.current,
-            customCss: activeCustomCssRef.current
+            customCss: activeCustomCssRef.current,
+            extensions: activeExtensionsRef.current
           },
           '*'
         );
@@ -478,20 +517,29 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     );
   }, [tab.isMuted, isNewTab, isSearchPage, isFabiInternal]);
 
-  // Sync active extensions live CSS into proxied iframe without reloading
+  // Sync active extensions live JS/CSS into proxied iframe without reloading
   useEffect(() => {
     if (isNewTab || isSearchPage || isFabiInternal || tab.isDiscarded) return;
     iframeRef.current?.contentWindow?.postMessage(
       {
         type: 'fabinav:apply-extensions',
         modes: activeExtModes,
-        customCss: activeCustomCss
+        customCss: activeCustomCss,
+        extensions: activeExtensionsPayload
       },
       '*'
     );
-  }, [activeExtModes, activeCustomCss, isNewTab, isSearchPage, isFabiInternal, tab.isDiscarded]);
+  }, [
+    activeExtModes,
+    activeCustomCss,
+    activeExtensionsPayload,
+    isNewTab,
+    isSearchPage,
+    isFabiInternal,
+    tab.isDiscarded
+  ]);
 
-  // Forward Find-in-Page and Translate commands into active external iframe
+  // Forward Find-in-Page, Translate, and WebExtension popup commands into active external iframe
   useEffect(() => {
     if (!isPrimary || isNewTab || isSearchPage || isFabiInternal) return;
 
@@ -521,11 +569,64 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       );
     };
 
+    const handleExtDispatchMsg = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ extId?: string; requestId?: string; message?: unknown }>;
+      if (!customEv.detail) return;
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          type: 'fabinav:ext-runtime-message',
+          extId: customEv.detail.extId,
+          requestId: customEv.detail.requestId,
+          message: customEv.detail.message
+        },
+        '*'
+      );
+    };
+
+    const handleExtStorageChanged = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ extId?: string; changes?: unknown }>;
+      if (!customEv.detail) return;
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          type: 'fabinav:ext-storage-changed',
+          extId: customEv.detail.extId,
+          changes: customEv.detail.changes
+        },
+        '*'
+      );
+    };
+
+    const handleExtScripting = (ev: Event) => {
+      const customEv = ev as CustomEvent<{
+        extId?: string;
+        action?: string;
+        css?: string;
+        code?: string;
+      }>;
+      if (!customEv.detail) return;
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          type: 'fabinav:ext-scripting',
+          extId: customEv.detail.extId,
+          action: customEv.detail.action,
+          css: customEv.detail.css,
+          code: customEv.detail.code
+        },
+        '*'
+      );
+    };
+
     window.addEventListener('fabinav:dispatch-find', handleDispatchFind);
     window.addEventListener('fabinav:dispatch-translate', handleDispatchTranslate);
+    window.addEventListener('fabinav:ext-dispatch-message', handleExtDispatchMsg);
+    window.addEventListener('fabinav:ext-relay-storage', handleExtStorageChanged);
+    window.addEventListener('fabinav:ext-relay-scripting', handleExtScripting);
     return () => {
       window.removeEventListener('fabinav:dispatch-find', handleDispatchFind);
       window.removeEventListener('fabinav:dispatch-translate', handleDispatchTranslate);
+      window.removeEventListener('fabinav:ext-dispatch-message', handleExtDispatchMsg);
+      window.removeEventListener('fabinav:ext-relay-storage', handleExtStorageChanged);
+      window.removeEventListener('fabinav:ext-relay-scripting', handleExtScripting);
     };
   }, [
     isPrimary,
@@ -696,7 +797,8 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
                   {
                     type: 'fabinav:apply-extensions',
                     modes: activeExtModes,
-                    customCss: activeCustomCss
+                    customCss: activeCustomCss,
+                    extensions: activeExtensionsPayload
                   },
                   '*'
                 );
