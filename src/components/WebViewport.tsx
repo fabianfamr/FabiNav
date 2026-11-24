@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   WebTab,
@@ -308,6 +308,24 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   onTranslateStatus
 }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const webviewRef = useRef<
+    | (HTMLElement & {
+        loadURL?: (url: string) => Promise<void>;
+        getURL?: () => string;
+        getTitle?: () => string;
+        reload?: () => void;
+        setAudioMuted?: (muted: boolean) => void;
+        setZoomFactor?: (factor: number) => void;
+        insertCSS?: (css: string) => Promise<string>;
+        executeJavaScript?: (code: string) => Promise<unknown>;
+        findInPage?: (text: string, opts?: { forward?: boolean }) => number;
+      })
+    | null
+  >(null);
+  const lastWebviewUrlRef = useRef<string>('');
+  const [webviewError, setWebviewError] = useState<string | null>(null);
+  const [relaxedRetryUrl, setRelaxedRetryUrl] = useState<string | null>(null);
+  const isElectron = typeof window !== 'undefined' && !!window.fabinavDesktop?.isElectron;
   const isNewTab = tab.url === 'fabinav://newtab' || !tab.url;
   const isSearchPage = tab.url.startsWith('fabinav://search?q=');
   const isFabiInternal = tab.url.startsWith('fabinav://') && !isNewTab && !isSearchPage;
@@ -385,8 +403,122 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     return parts.join('\n');
   }, [activeExtModes, activeCustomCss, settings.theme]);
 
+  // Reset relaxed retry flag when navigating to a different URL
   useEffect(() => {
-    if (isNewTab || isSearchPage || isFabiInternal) return;
+    setRelaxedRetryUrl(null);
+    setWebviewError(null);
+  }, [tab.url]);
+
+  // Native Chromium <webview> lifecycle for Electron desktop (.exe)
+  useEffect(() => {
+    if (!isElectron || isNewTab || isSearchPage || isFabiInternal || tab.isDiscarded) return;
+    const wv = webviewRef.current;
+    if (!wv) return;
+
+    const onStartLoading = () => {
+      setWebviewError(null);
+    };
+    const onStopLoading = () => {
+      const currentTitle = wv.getTitle?.() || tab.title;
+      const currentWvUrl = wv.getURL?.() || tab.url;
+      onPageSecurityReport?.({
+        title: currentTitle,
+        url: currentWvUrl
+      });
+    };
+    const onTitleUpdated = (ev: Event) => {
+      const title = (ev as Event & { title?: string }).title;
+      if (title) {
+        onPageSecurityReport?.({ title, url: wv.getURL?.() || tab.url });
+      }
+    };
+    const onDidNavigate = (ev: Event) => {
+      const nextUrl = (ev as Event & { url?: string }).url;
+      if (nextUrl && /^https?:\/\//i.test(nextUrl) && nextUrl !== lastWebviewUrlRef.current) {
+        lastWebviewUrlRef.current = nextUrl;
+        onNavigate(nextUrl);
+      }
+    };
+    const onDidFailLoad = (ev: Event) => {
+      const failEv = ev as Event & {
+        errorCode?: number;
+        errorDescription?: string;
+        isMainFrame?: boolean;
+      };
+      if (failEv.isMainFrame !== false && failEv.errorCode && failEv.errorCode !== -3) {
+        setWebviewError(failEv.errorDescription || `Error de red (${failEv.errorCode})`);
+      }
+    };
+    const onDomReady = () => {
+      try {
+        wv.setAudioMuted?.(!!tab.isMuted);
+        wv.setZoomFactor?.(settings.zoomLevel / 100);
+        if (activeCustomCssRef.current) {
+          void wv.insertCSS?.(activeCustomCssRef.current);
+        }
+        activeExtensionsRef.current.forEach((ext) => {
+          (ext.contentScripts || []).forEach((cs) => {
+            (cs.css || []).forEach((cssCode) => {
+              void wv.insertCSS?.(cssCode);
+            });
+            (cs.js || []).forEach((jsCode) => {
+              void wv.executeJavaScript?.(jsCode).catch(() => {});
+            });
+          });
+          if (ext.customCss) void wv.insertCSS?.(ext.customCss);
+          if (ext.customJs) void wv.executeJavaScript?.(ext.customJs).catch(() => {});
+        });
+      } catch {
+        // ignore webview readiness race
+      }
+    };
+
+    wv.addEventListener('did-start-loading', onStartLoading);
+    wv.addEventListener('did-stop-loading', onStopLoading);
+    wv.addEventListener('page-title-updated', onTitleUpdated);
+    wv.addEventListener('did-navigate', onDidNavigate);
+    wv.addEventListener('did-navigate-in-page', onDidNavigate);
+    wv.addEventListener('did-fail-load', onDidFailLoad);
+    wv.addEventListener('dom-ready', onDomReady);
+
+    return () => {
+      wv.removeEventListener('did-start-loading', onStartLoading);
+      wv.removeEventListener('did-stop-loading', onStopLoading);
+      wv.removeEventListener('page-title-updated', onTitleUpdated);
+      wv.removeEventListener('did-navigate', onDidNavigate);
+      wv.removeEventListener('did-navigate-in-page', onDidNavigate);
+      wv.removeEventListener('did-fail-load', onDidFailLoad);
+      wv.removeEventListener('dom-ready', onDomReady);
+    };
+  }, [isElectron, tab.id, isNewTab, isSearchPage, isFabiInternal, tab.isDiscarded]);
+
+  // Navigate Electron <webview> only when tab.url changes externally (omnibox / bookmarks / back / forward)
+  useEffect(() => {
+    if (!isElectron || isNewTab || isSearchPage || isFabiInternal || tab.isDiscarded) return;
+    if (lastWebviewUrlRef.current && lastWebviewUrlRef.current !== tab.url) {
+      lastWebviewUrlRef.current = tab.url;
+      try {
+        void webviewRef.current?.loadURL?.(tab.url);
+      } catch {
+        // ignore
+      }
+    } else if (!lastWebviewUrlRef.current) {
+      lastWebviewUrlRef.current = tab.url;
+    }
+  }, [isElectron, tab.url, isNewTab, isSearchPage, isFabiInternal, tab.isDiscarded]);
+
+  // Sync Zoom on Electron <webview>
+  useEffect(() => {
+    if (!isElectron || isNewTab || isSearchPage || isFabiInternal) return;
+    try {
+      webviewRef.current?.setZoomFactor?.(settings.zoomLevel / 100);
+    } catch {
+      // ignore
+    }
+  }, [isElectron, settings.zoomLevel, isNewTab, isSearchPage, isFabiInternal]);
+
+  useEffect(() => {
+    if (isElectron || isNewTab || isSearchPage || isFabiInternal) return;
 
     const handleMessage = async (ev: MessageEvent) => {
       if (!iframeRef.current || ev.source !== iframeRef.current.contentWindow) return;
@@ -410,6 +542,12 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
 
       if (payload.type === 'fabinav:navigate' && typeof payload.url === 'string') {
         onNavigate(payload.url);
+      } else if (payload.type === 'fabinav:open-url-new-tab' && typeof payload.url === 'string') {
+        onOpenNewTab?.(payload.url);
+      } else if (payload.type === 'fabinav:retry-relaxed') {
+        setRelaxedRetryUrl(payload.url || tab.url);
+      } else if (payload.type === 'fabinav:navigate-state' && typeof payload.url === 'string') {
+        onPageSecurityReport?.({ url: payload.url });
       } else if (payload.type === 'fabinav:bridge-ready') {
         iframeRef.current?.contentWindow?.postMessage(
           { type: 'fabinav:set-muted', muted: isMutedRef.current },
@@ -497,25 +635,36 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [
+    isElectron,
     tab.id,
+    tab.url,
     isNewTab,
     isSearchPage,
     isFabiInternal,
     onNavigate,
+    onOpenNewTab,
     onPageSecurityReport,
     settings.translateTargetLang,
     settings.language,
     onTranslateStatus
   ]);
 
-  // Sync mute state into proxied iframe
+  // Sync mute state into proxied iframe or Electron webview
   useEffect(() => {
     if (isNewTab || isSearchPage || isFabiInternal) return;
+    if (isElectron) {
+      try {
+        webviewRef.current?.setAudioMuted?.(!!tab.isMuted);
+      } catch {
+        // ignore
+      }
+      return;
+    }
     iframeRef.current?.contentWindow?.postMessage(
       { type: 'fabinav:set-muted', muted: !!tab.isMuted },
       '*'
     );
-  }, [tab.isMuted, isNewTab, isSearchPage, isFabiInternal]);
+  }, [isElectron, tab.isMuted, isNewTab, isSearchPage, isFabiInternal]);
 
   // Sync active extensions live JS/CSS into proxied iframe without reloading
   useEffect(() => {
@@ -539,13 +688,47 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     tab.isDiscarded
   ]);
 
-  // Forward Find-in-Page, Translate, and WebExtension popup commands into active external iframe
+  const activeLists = (
+    shieldState.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
+  ).join(',');
+  const activeCustomRules = (shieldState.customFilterRules || []).join(',');
+
+  const isRelaxedRetry = relaxedRetryUrl === tab.url;
+
+  const proxySrc =
+    !isElectron && !isNewTab && !isSearchPage && !isFabiInternal
+      ? `/api/proxy?url=${encodeURIComponent(tab.url)}&partition=${
+          tab.tabMode === 'private' ? 'private' : 'normal'
+        }&shields=${shieldState.enabled ? '1' : '0'}&blockTrackers=${
+          shieldState.blockTrackersAndAds
+        }&blockScripts=${shieldState.blockScripts ? '1' : '0'}&blockCookies=${
+          shieldState.blockCrossSiteCookies ? '1' : '0'
+        }&fingerprint=${shieldState.blockFingerprinting}&upgradeHttps=${
+          shieldState.upgradeHttps ? '1' : '0'
+        }&strictTls=${shieldState.strictTls ? '1' : '0'}${
+          isRelaxedRetry ? '&relaxedTls=1&refresh=1' : ''
+        }&lists=${encodeURIComponent(activeLists)}&customRules=${encodeURIComponent(
+          activeCustomRules
+        )}`
+      : '';
+
+  // Forward Find-in-Page, Reload, Translate, and WebExtension popup commands into active external frame
   useEffect(() => {
     if (!isPrimary || isNewTab || isSearchPage || isFabiInternal) return;
 
     const handleDispatchFind = (ev: Event) => {
       const customEv = ev as CustomEvent<{ tabId?: string; query?: string; backwards?: boolean }>;
       if (!customEv.detail || customEv.detail.tabId !== tab.id || !customEv.detail.query) return;
+      if (isElectron) {
+        try {
+          webviewRef.current?.findInPage?.(customEv.detail.query, {
+            forward: !customEv.detail.backwards
+          });
+        } catch {
+          // ignore
+        }
+        return;
+      }
       iframeRef.current?.contentWindow?.postMessage(
         {
           type: 'fabinav:find',
@@ -554,6 +737,22 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         },
         '*'
       );
+    };
+
+    const handleDispatchReload = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ tabId?: string }>;
+      if (!customEv.detail || customEv.detail.tabId !== tab.id) return;
+      if (isElectron) {
+        try {
+          webviewRef.current?.reload?.();
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      if (iframeRef.current && proxySrc) {
+        iframeRef.current.src = `${proxySrc}&refresh=1&t=${Date.now()}`;
+      }
     };
 
     const handleDispatchTranslate = (ev: Event) => {
@@ -617,12 +816,14 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     };
 
     window.addEventListener('fabinav:dispatch-find', handleDispatchFind);
+    window.addEventListener('fabinav:dispatch-reload', handleDispatchReload);
     window.addEventListener('fabinav:dispatch-translate', handleDispatchTranslate);
     window.addEventListener('fabinav:ext-dispatch-message', handleExtDispatchMsg);
     window.addEventListener('fabinav:ext-relay-storage', handleExtStorageChanged);
     window.addEventListener('fabinav:ext-relay-scripting', handleExtScripting);
     return () => {
       window.removeEventListener('fabinav:dispatch-find', handleDispatchFind);
+      window.removeEventListener('fabinav:dispatch-reload', handleDispatchReload);
       window.removeEventListener('fabinav:dispatch-translate', handleDispatchTranslate);
       window.removeEventListener('fabinav:ext-dispatch-message', handleExtDispatchMsg);
       window.removeEventListener('fabinav:ext-relay-storage', handleExtStorageChanged);
@@ -630,33 +831,15 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     };
   }, [
     isPrimary,
+    isElectron,
     tab.id,
+    proxySrc,
     isNewTab,
     isSearchPage,
     isFabiInternal,
     settings.translateTargetLang,
     settings.language
   ]);
-
-  const activeLists = (
-    shieldState.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
-  ).join(',');
-  const activeCustomRules = (shieldState.customFilterRules || []).join(',');
-
-  const proxySrc =
-    !isNewTab && !isSearchPage && !isFabiInternal
-      ? `/api/proxy?url=${encodeURIComponent(tab.url)}&partition=${
-          tab.tabMode === 'private' ? 'private' : 'normal'
-        }&shields=${shieldState.enabled ? '1' : '0'}&blockTrackers=${
-          shieldState.blockTrackersAndAds
-        }&blockScripts=${shieldState.blockScripts ? '1' : '0'}&blockCookies=${
-          shieldState.blockCrossSiteCookies ? '1' : '0'
-        }&fingerprint=${shieldState.blockFingerprinting}&upgradeHttps=${
-          shieldState.upgradeHttps ? '1' : '0'
-        }&strictTls=${shieldState.strictTls ? '1' : '0'}&lists=${encodeURIComponent(
-          activeLists
-        )}&customRules=${encodeURIComponent(activeCustomRules)}`
-      : '';
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-[var(--bn-surface)]">
@@ -775,6 +958,40 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
             </button>
           </div>
         </div>
+      ) : isElectron ? (
+        <div className="flex-1 w-full h-full relative bg-white flex flex-col">
+          {webviewError && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--bn-surface)] p-6">
+              <div className="max-w-md w-full rounded-2xl border border-[var(--bn-border)] bg-[var(--bn-surface-alt)] p-6 text-center space-y-4 shadow-xl">
+                <h2 className="text-sm font-semibold text-[var(--bn-text-strong)]">
+                  No se pudo cargar este sitio
+                </h2>
+                <p className="text-xs font-mono text-[var(--bn-danger-text)] break-words">
+                  {webviewError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebviewError(null);
+                    webviewRef.current?.reload?.();
+                  }}
+                  className="px-5 py-2 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-2 transition-colors"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Reintentar</span>
+                </button>
+              </div>
+            </div>
+          )}
+          {React.createElement('webview', {
+            ref: webviewRef,
+            key: tab.id,
+            src: tab.url,
+            partition: tab.tabMode === 'private' ? 'private' : 'persist:normal',
+            allowpopups: 'true',
+            className: 'w-full h-full border-none bg-white flex-1'
+          })}
+        </div>
       ) : (
         <div className="flex-1 w-full h-full relative bg-white flex flex-col">
           <div
@@ -804,7 +1021,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
                 );
               }}
               className="w-full h-full border-none bg-white"
-              sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+              sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals allow-presentation"
             />
           </div>
         </div>

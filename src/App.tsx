@@ -299,6 +299,8 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const handleNewTabRef = useRef<(url?: string, mode?: 'normal' | 'private') => void>(() => {});
+
   // Listen to native Electron window state & auto-updater events (if running in desktop app)
   useEffect(() => {
     const bridge = window.fabinavDesktop;
@@ -318,9 +320,16 @@ export default function App() {
       }
     });
 
+    const unsubOpenTab = bridge.onOpenUrlInTab?.((targetUrl) => {
+      if (targetUrl) {
+        handleNewTabRef.current(targetUrl);
+      }
+    });
+
     return () => {
       unsubWin?.();
       unsubUpd?.();
+      unsubOpenTab?.();
     };
   }, [showToast]);
 
@@ -510,8 +519,9 @@ export default function App() {
       !target.startsWith('https://') &&
       !target.startsWith('fabinav://')
     ) {
-      if (target.includes('.') && !target.includes(' ')) {
-        const useHttps = shieldState.upgradeHttps && shieldState.enabled;
+      const isLocalHostTarget = /^localhost(:\d+)?(\/.*)?$/i.test(target);
+      if ((target.includes('.') || isLocalHostTarget) && !target.includes(' ')) {
+        const useHttps = !isLocalHostTarget && shieldState.upgradeHttps && shieldState.enabled;
         target = `${useHttps ? 'https' : 'http'}://${target}`;
         if (useHttps) upgradedHttps = true;
       } else {
@@ -682,6 +692,7 @@ export default function App() {
 
     return newId;
   };
+  handleNewTabRef.current = handleNewTab;
 
   const extractHost = (rawUrl: string): string | null => {
     if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) return null;
@@ -1041,6 +1052,7 @@ export default function App() {
     const target = tabs.find((t) => t.id === tabId);
     if (!target) return;
     reportedPageKeysRef.current.delete(`${target.id}:${target.url}`);
+    window.dispatchEvent(new CustomEvent('fabinav:dispatch-reload', { detail: { tabId } }));
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, isLoading: true } : t)));
     setTimeout(() => {
       setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, isLoading: false } : t)));

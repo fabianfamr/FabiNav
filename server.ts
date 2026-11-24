@@ -1365,8 +1365,9 @@ function fetchViaNodeHttp(
     blockCookies: boolean;
     strictTls: boolean;
     upgradeHttps: boolean;
+    explicitProtocol?: boolean;
   },
-  redirectsLeft = 5
+  redirectsLeft = 10
 ): Promise<ProxyFetchOutcome> {
   return new Promise((resolve, reject) => {
     let parsed: URL;
@@ -1388,7 +1389,8 @@ function fetchViaNodeHttp(
     }
 
     let upgradedHttps = false;
-    if (parsed.protocol === 'http:' && options.upgradeHttps) {
+    const originalWasHttp = parsed.protocol === 'http:';
+    if (originalWasHttp && options.upgradeHttps) {
       parsed.protocol = 'https:';
       upgradedHttps = true;
     }
@@ -1404,20 +1406,62 @@ function fetchViaNodeHttp(
       method: 'GET',
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Sec-Ch-Ua': '"Chromium";v="131", "Not_A Brand";v="24"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
         DNT: '1',
         ...(cookieHeader ? { Cookie: cookieHeader } : {})
       },
-      timeout: 9000
+      timeout: 18000
     };
 
     if (isHttps) {
       reqOptions.minVersion = 'TLSv1.2';
       reqOptions.rejectUnauthorized = options.strictTls;
     }
+
+    const tryFallbackFetch = async (urlToTry: string): Promise<ProxyFetchOutcome | null> => {
+      try {
+        const resp = await fetch(urlToTry, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            Accept:
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+            ...(cookieHeader ? { Cookie: cookieHeader } : {})
+          },
+          signal: AbortSignal.timeout(15000)
+        });
+        const ab = await resp.arrayBuffer();
+        const headersObj: http.IncomingHttpHeaders = {};
+        resp.headers.forEach((v, k) => {
+          headersObj[k.toLowerCase()] = v;
+        });
+        return {
+          status: resp.status,
+          headers: headersObj,
+          body: Buffer.from(ab),
+          finalUrl: resp.url || urlToTry,
+          cookiesBlocked: 0,
+          upgradedHttps
+        };
+      } catch {
+        return null;
+      }
+    };
 
     const req = transport.request(reqOptions, (res) => {
       const status = res.statusCode || 200;
@@ -1434,7 +1478,14 @@ function fetchViaNodeHttp(
         res.resume();
         try {
           const nextUrl = new URL(res.headers.location, parsed.href).href;
-          fetchViaNodeHttp(nextUrl, options, redirectsLeft - 1)
+          fetchViaNodeHttp(
+            nextUrl,
+            {
+              ...options,
+              upgradeHttps: nextUrl.startsWith('http://') ? false : options.upgradeHttps
+            },
+            redirectsLeft - 1
+          )
             .then((nextOutcome) => {
               resolve({
                 ...nextOutcome,
@@ -1451,7 +1502,7 @@ function fetchViaNodeHttp(
 
       const chunks: Buffer[] = [];
       let totalBytes = 0;
-      const MAX_BYTES = 5 * 1024 * 1024; // 5MB safety limit
+      const MAX_BYTES = 8 * 1024 * 1024; // 8MB safety limit
 
       res.on('data', (chunk: Buffer) => {
         totalBytes += chunk.length;
@@ -1483,6 +1534,14 @@ function fetchViaNodeHttp(
           zlib.inflate(rawBuf, (err, decoded) => finishDecompressed(err ? rawBuf : decoded));
         } else if (encoding === 'br') {
           zlib.brotliDecompress(rawBuf, (err, decoded) => finishDecompressed(err ? rawBuf : decoded));
+        } else if (
+          encoding === 'zstd' &&
+          typeof (zlib as unknown as { zstdDecompress?: typeof zlib.gunzip }).zstdDecompress === 'function'
+        ) {
+          (zlib as unknown as { zstdDecompress: typeof zlib.gunzip }).zstdDecompress(
+            rawBuf,
+            (err, decoded) => finishDecompressed(err ? rawBuf : decoded)
+          );
         } else {
           finishDecompressed(rawBuf);
         }
@@ -1493,7 +1552,31 @@ function fetchViaNodeHttp(
       req.destroy(new Error('Tiempo de espera agotado al conectar con el sitio'));
     });
 
-    req.on('error', (err) => reject(err));
+    req.on('error', async (err) => {
+      // If automatic HTTPS upgrade failed, retry on plain HTTP before giving up
+      if (upgradedHttps && originalWasHttp) {
+        try {
+          const httpOutcome = await fetchViaNodeHttp(
+            targetUrlStr,
+            { ...options, upgradeHttps: false },
+            redirectsLeft
+          );
+          resolve(httpOutcome);
+          return;
+        } catch {
+          // fall through to fetch fallback
+        }
+      }
+      // Fallback to Node fetch (undici) for servers rejecting node:https TLS/ALPN
+      if (options.strictTls) {
+        const fallback = await tryFallbackFetch(parsed.href);
+        if (fallback) {
+          resolve(fallback);
+          return;
+        }
+      }
+      reject(err);
+    });
     req.end();
   });
 }
@@ -1943,10 +2026,29 @@ function sanitizeAndEnhanceHtml(
     }
   };
 
-  // Strip meta CSP frame-ancestors tags if present
+  // Strip meta CSP frame-ancestors tags and prior <base> tags so relative URLs resolve cleanly
   html = html.replace(
     /<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi,
     ''
+  );
+  html = html.replace(/<base\b[^>]*>/gi, '');
+  // Prevent target="_top" or target="_parent" from silently failing inside sandboxed iframe
+  html = html.replace(/\btarget\s*=\s*["']?(_top|_parent)["']?/gi, 'target="_self"');
+  // Rewrite meta refresh redirects so they navigate through FabiNav instead of breaking out of proxy
+  html = html.replace(
+    /<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*content\s*=\s*["']([^"']+)["'][^>]*>/gi,
+    (fullTag, contentVal) => {
+      const m = String(contentVal || '').match(/^\s*(\d+)\s*;\s*url\s*=\s*(.+)\s*$/i);
+      if (!m) return fullTag;
+      const delayMs = Math.max(0, Number(m[1]) || 0) * 1000;
+      const rawTarget = m[2].replace(/^['"]|['"]$/g, '').trim();
+      try {
+        const resolvedRefresh = new URL(rawTarget, finalUrl).href;
+        return `<script data-fabinav-refresh="1">setTimeout(function(){try{window.parent.postMessage({type:'fabinav:navigate',url:${JSON.stringify(resolvedRefresh)}},'*');}catch(e){}},${delayMs});</script>`;
+      } catch {
+        return fullTag;
+      }
+    }
   );
 
   // Filter tracker scripts & tracking pixels/iframes when Shields are enabled
@@ -2069,8 +2171,82 @@ function sanitizeAndEnhanceHtml(
   const initialExtCss = buildBuiltInExtensionCss(options.extModes || []);
   const extStyleTag = `<style id="fabinav-extensions-style">${initialExtCss}</style><style id="fabinav-custom-css"></style>`;
 
-  // Insert <base href="..."> + Fingerprint guard + Cookie annoyances + Extensions style
-  const baseTag = `<base href="${escapeHtml(finalUrl)}">${cookieBannerGuard}${extStyleTag}${fingerprintGuard}`;
+  const compatShim = `
+<script data-fabinav-shim="1">
+(function () {
+  var currentHref = ${JSON.stringify(finalUrl)};
+  var makeMemStorage = function () {
+    var map = Object.create(null);
+    return {
+      get length() { return Object.keys(map).length; },
+      clear: function () { map = Object.create(null); },
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(map, String(k)) ? map[String(k)] : null; },
+      key: function (i) { var keys = Object.keys(map); return keys[i] || null; },
+      removeItem: function (k) { delete map[String(k)]; },
+      setItem: function (k, v) { map[String(k)] = String(v); }
+    };
+  };
+  ['localStorage', 'sessionStorage'].forEach(function (prop) {
+    try {
+      var test = window[prop];
+      var k = '__fabinav_test__';
+      test.setItem(k, '1');
+      test.removeItem(k);
+    } catch (e) {
+      try {
+        var mem = makeMemStorage();
+        Object.defineProperty(window, prop, { get: function () { return mem; }, configurable: true });
+      } catch (e2) {}
+    }
+  });
+  try {
+    var origPush = history.pushState;
+    var origReplace = history.replaceState;
+    var notifyRoute = function (urlArg) {
+      if (!urlArg) return;
+      try {
+        var resolved = new URL(String(urlArg), currentHref).href;
+        currentHref = resolved;
+        window.parent.postMessage({ type: 'fabinav:navigate-state', url: resolved }, '*');
+      } catch (e) {}
+    };
+    history.pushState = function (state, title, urlArg) {
+      try { return origPush.apply(history, arguments); } catch (e) { notifyRoute(urlArg); }
+    };
+    history.replaceState = function (state, title, urlArg) {
+      try { return origReplace.apply(history, arguments); } catch (e) { notifyRoute(urlArg); }
+    };
+  } catch (e) {}
+  try {
+    var _cookieTest = document.cookie;
+  } catch (e) {
+    try {
+      var memCookies = '';
+      Object.defineProperty(document, 'cookie', {
+        get: function () { return memCookies; },
+        set: function (v) { memCookies = String(v || ''); },
+        configurable: true
+      });
+    } catch (e2) {}
+  }
+  try {
+    window.open = function (targetUrl) {
+      if (targetUrl && typeof targetUrl === 'string') {
+        try {
+          var abs = new URL(targetUrl, currentHref).href;
+          if (/^https?:\\/\\//i.test(abs)) {
+            window.parent.postMessage({ type: 'fabinav:open-url-new-tab', url: abs }, '*');
+          }
+        } catch (e) {}
+      }
+      return null;
+    };
+  } catch (e) {}
+})();
+</script>`;
+
+  // Insert <base href="..."> + Compatibility shim + Fingerprint guard + Cookie annoyances + Extensions style
+  const baseTag = `<base href="${escapeHtml(finalUrl)}">${compatShim}${cookieBannerGuard}${extStyleTag}${fingerprintGuard}`;
   if (/<head[^>]*>/i.test(html)) {
     html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${baseTag}`);
   } else {
@@ -2476,9 +2652,19 @@ function sanitizeAndEnhanceHtml(
   return { html, trackersBlocked, blockedTrackerUrls };
 }
 
-function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): string {
+function renderProxyFallbackHtml(
+  targetUrl: string,
+  errorMessage: string,
+  customHeading?: string,
+  customDesc?: string
+): string {
   const safeUrl = escapeHtml(targetUrl);
   const safeErr = escapeHtml(errorMessage);
+  const heading = escapeHtml(customHeading || 'No se pudo abrir esta página dentro del visor');
+  const desc = escapeHtml(
+    customDesc ||
+      'El servidor remoto rechazó la conexión TLS/proxy o requiere verificación directa del navegador.'
+  );
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -2497,7 +2683,7 @@ function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): strin
       padding: 24px;
     }
     .card {
-      max-width: 480px;
+      max-width: 500px;
       width: 100%;
       background: #27292e;
       border: 1px solid #34363e;
@@ -2518,7 +2704,12 @@ function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): strin
       margin-bottom: 16px;
       word-break: break-word;
     }
-    a.btn {
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -2529,16 +2720,27 @@ function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): strin
       font-weight: 600;
       padding: 9px 16px;
       border-radius: 999px;
+      border: 0;
+      cursor: pointer;
     }
-    a.btn:hover { background: #e0441e; }
+    .btn:hover { background: #e0441e; }
+    .btn-sec {
+      background: #32353d;
+      color: #e2e4ea;
+      border: 1px solid #444752;
+    }
+    .btn-sec:hover { background: #3e424c; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>No se pudo abrir esta página dentro del visor</h1>
-    <p>El servidor remoto rechazó la conexión TLS/proxy o requiere ejecución nativa fuera del entorno embebido.</p>
+    <h1>${heading}</h1>
+    <p>${desc}</p>
     <div class="err">${safeErr}</div>
-    <a class="btn" href="${safeUrl}" target="_blank" rel="noopener noreferrer">Abrir sitio en una ventana nueva &#8599;</a>
+    <div class="actions">
+      <button type="button" class="btn btn-sec" onclick="try{window.parent.postMessage({type:'fabinav:retry-relaxed',url:${JSON.stringify(targetUrl)}},'*');}catch(e){location.reload();}">Reintentar sin TLS estricto</button>
+      <a class="btn" href="${safeUrl}" target="_blank" rel="noopener noreferrer">Abrir sitio directamente &#8599;</a>
+    </div>
   </div>
 </body>
 </html>`;
@@ -2547,25 +2749,28 @@ function renderProxyFallbackHtml(targetUrl: string, errorMessage: string): strin
 async function startServer() {
   loadNormalCookiesFromDisk();
   const app = express();
-  app.use(express.json({ limit: '512kb' }));
 
   // 0a-ext. Real WebExtension Package Importer (.zip, .crx, unpacked files, .user.js)
+  // Registered BEFORE global 512kb JSON limit so multi-megabyte .crx/.zip extensions are accepted.
   app.post('/api/extensions/import', express.json({ limit: '25mb' }), (req, res) => {
     try {
       const body = req.body as {
         filename?: string;
+        fileName?: string;
         base64?: string;
+        contentBase64?: string;
         text?: string;
-        files?: Array<{ path: string; base64: string }>;
+        files?: Array<{ path: string; base64?: string; contentBase64?: string }>;
       };
 
       // Case 1: Unpacked folder files array from browser picker
       if (Array.isArray(body?.files) && body.files.length > 0) {
         const fileMap = new Map<string, Buffer>();
         for (const item of body.files) {
-          if (!item?.path || typeof item.base64 !== 'string') continue;
+          const itemBase64 = item?.base64 || item?.contentBase64;
+          if (!item?.path || typeof itemBase64 !== 'string') continue;
           const norm = item.path.replace(/\\/g, '/').replace(/^\/+/, '');
-          fileMap.set(norm, Buffer.from(item.base64, 'base64'));
+          fileMap.set(norm, Buffer.from(itemBase64, 'base64'));
         }
         // Strip top-level directory if all files share one
         if (!fileMap.has('manifest.json')) {
@@ -2588,14 +2793,15 @@ async function startServer() {
         return;
       }
 
-      const filename = String(body?.filename || '').toLowerCase();
+      const filename = String(body?.filename || body?.fileName || '').toLowerCase();
+      const rawBase64 = body?.base64 || body?.contentBase64 || '';
 
       // Case 2: Userscript (.user.js / .js)
       if (filename.endsWith('.js') || typeof body?.text === 'string') {
         const scriptCode =
           typeof body?.text === 'string'
             ? body.text
-            : Buffer.from(String(body?.base64 || ''), 'base64').toString('utf8');
+            : Buffer.from(String(rawBase64), 'base64').toString('utf8');
         if (!scriptCode.trim()) {
           res.status(400).json({ ok: false, error: 'El script está vacío.' });
           return;
@@ -2605,11 +2811,11 @@ async function startServer() {
       }
 
       // Case 3: .crx or .zip archive
-      if (typeof body?.base64 !== 'string' || !body.base64) {
+      if (typeof rawBase64 !== 'string' || !rawBase64) {
         res.status(400).json({ ok: false, error: 'Archivo de extensión inválido.' });
         return;
       }
-      const rawBuf = Buffer.from(body.base64, 'base64');
+      const rawBuf = Buffer.from(rawBase64, 'base64');
       const isCrx =
         filename.endsWith('.crx') ||
         (rawBuf.length >= 4 && rawBuf.subarray(0, 4).toString('ascii') === 'Cr24');
@@ -2623,6 +2829,8 @@ async function startServer() {
       });
     }
   });
+
+  app.use(express.json({ limit: '512kb' }));
 
   // 0b-ext. Install directly from Chrome Web Store URL or Extension ID
   app.post('/api/extensions/fetch-store', express.json({ limit: '64kb' }), async (req, res) => {
@@ -3023,10 +3231,11 @@ async function startServer() {
     const fpRaw = String(req.query.fingerprint || 'standard');
     const blockFingerprinting: 'standard' | 'strict' | 'disabled' =
       fpRaw === 'strict' || fpRaw === 'disabled' ? fpRaw : 'standard';
-    const upgradeHttps = req.query.upgradeHttps !== '0';
-    const strictTls = req.query.strictTls !== '0';
+    const relaxedTls = req.query.relaxedTls === '1';
+    const upgradeHttps = !relaxedTls && req.query.upgradeHttps !== '0';
+    const strictTls = !relaxedTls && req.query.strictTls !== '0';
     const rawDownload = req.query.raw === '1';
-    const refresh = req.query.refresh === '1';
+    const refresh = req.query.refresh === '1' || relaxedTls;
     const filterListsRaw = String(req.query.lists || 'core-trackers,cookie-notices,url-tracking');
     const filterLists = filterListsRaw
       .split(',')
@@ -3068,17 +3277,44 @@ async function startServer() {
         partition,
         blockCookies: shields && blockCookies,
         strictTls,
-        upgradeHttps: shields && upgradeHttps
+        upgradeHttps
       });
 
       const contentType = String(outcome.headers['content-type'] || 'text/html');
-      if (contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
-        const rawHtml = outcome.body.toString('utf-8');
+      if (
+        contentType.includes('text/html') ||
+        contentType.includes('application/xhtml+xml') ||
+        contentType.includes('text/plain')
+      ) {
+        const isLatin1 = /charset\s*=\s*(iso-8859-1|latin1|windows-1252)/i.test(contentType);
+        const rawHtml = outcome.body.toString(isLatin1 ? 'latin1' : 'utf-8');
         if (rawDownload) {
           res.status(outcome.status >= 400 ? outcome.status : 200);
           res.setHeader('Content-Type', 'text/html; charset=utf-8');
           res.setHeader('Cache-Control', 'no-store');
           res.send(rawHtml);
+          return;
+        }
+
+        // Detect anti-bot / Cloudflare Turnstile challenge pages that cannot complete inside a sandboxed proxy iframe
+        const cfMitigated = String(outcome.headers['cf-mitigated'] || '').toLowerCase() === 'challenge';
+        const isBotChallenge =
+          cfMitigated ||
+          ((outcome.status === 403 || outcome.status === 429 || outcome.status === 503) &&
+            (/<title>\s*(just a moment|attention required|access denied|robot or human)/i.test(rawHtml) ||
+              /challenge-platform|cf-turnstile|ddos-guard|perimeterx/i.test(rawHtml)));
+
+        if (isBotChallenge) {
+          res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.send(
+            renderProxyFallbackHtml(
+              outcome.finalUrl || targetUrl,
+              `HTTP ${outcome.status} · Protección anti-bots detectada`,
+              'Este sitio requiere verificación anti-bots directa',
+              'En la versión web, el visor proxy no puede completar captchas o desafíos de Cloudflare en tu nombre. Puedes abrir el sitio directamente o usar FabiNav Escritorio (.exe) donde las páginas cargan de forma nativa.'
+            )
+          );
           return;
         }
 

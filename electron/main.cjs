@@ -125,7 +125,8 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webviewTag: true
     }
   });
 
@@ -162,10 +163,26 @@ async function createWindow() {
     return { action: 'deny' };
   });
 
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    details.requestHeaders['DNT'] = '1';
-    callback({ requestHeaders: details.requestHeaders });
-  });
+  const cleanChromeUa = (app.userAgentFallback || '')
+    .replace(/\s*Electron\/[^\s]+/gi, '')
+    .replace(/\s*FabiNav\/[^\s]+/gi, '');
+  if (cleanChromeUa) {
+    app.userAgentFallback = cleanChromeUa;
+  }
+
+  const configureWebSession = (targetSession) => {
+    if (!targetSession) return;
+    targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      details.requestHeaders['DNT'] = '1';
+      if (cleanChromeUa) {
+        details.requestHeaders['User-Agent'] = cleanChromeUa;
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  };
+  configureWebSession(session.defaultSession);
+  configureWebSession(session.fromPartition('persist:normal'));
+  configureWebSession(session.fromPartition('private'));
 
   await mainWindow.loadURL(startUrl);
 
@@ -504,6 +521,33 @@ app.whenReady().then(async () => {
       // ignore missing/invalid unpacked extension on startup
     }
   }
+  app.on('web-contents-created', (_event, contents) => {
+    if (contents.getType() === 'webview') {
+      contents.setWindowOpenHandler(({ url }) => {
+        if (isAllowedOAuthPopup(url)) {
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              width: 520,
+              height: 660,
+              autoHideMenuBar: true,
+              backgroundColor: '#ffffff',
+              webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: true
+              }
+            }
+          };
+        }
+        if (mainWindow && !mainWindow.isDestroyed() && /^https?:\/\//i.test(url)) {
+          mainWindow.webContents.send('fabinav:webview-new-tab', url);
+        }
+        return { action: 'deny' };
+      });
+    }
+  });
+
   await createWindow();
 
   app.on('activate', async () => {

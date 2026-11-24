@@ -10,7 +10,7 @@ import {
 } from '../types';
 export { INITIAL_EXTENSIONS } from './defaultExtensions';
 
-export const APP_VERSION = '1.17.0';
+export const APP_VERSION = '1.18.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {

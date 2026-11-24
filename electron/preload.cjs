@@ -29,5 +29,11 @@ contextBridge.exposeInMainWorld('fabinavDesktop', {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('fabinav:update-status', listener);
     return () => ipcRenderer.removeListener('fabinav:update-status', listener);
+  },
+  onOpenUrlInTab: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, url) => callback(url);
+    ipcRenderer.on('fabinav:webview-new-tab', listener);
+    return () => ipcRenderer.removeListener('fabinav:webview-new-tab', listener);
   }
 });

@@ -399,6 +399,7 @@ export interface FabiNavDesktopBridge {
   removeNativeExtension?: (nativeId: string, localPath?: string) => Promise<{ ok: boolean }>;
   onWindowState?: (callback: (state: { isMaximized: boolean }) => void) => () => void;
   onUpdateStatus?: (callback: (status: DesktopUpdateStatus) => void) => () => void;
+  onOpenUrlInTab?: (callback: (url: string) => void) => () => void;
 }
 
 declare global {
