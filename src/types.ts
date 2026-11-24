@@ -162,6 +162,34 @@ export interface BrowserSettings {
   translateOffer?: boolean;
   translateTargetLang?: AppLanguage;
   reduceMotion?: boolean;
+  notificationsEnabled?: boolean;
+  notificationDefaultPolicy?: 'ask' | 'block';
+  notificationDesktopRelay?: boolean;
+  notificationSound?: boolean;
+  notificationDoNotDisturb?: boolean;
+  notificationPermissions?: Record<string, 'allow' | 'block'>;
+}
+
+export interface BrowserNotificationItem {
+  id: string;
+  tabId?: string;
+  origin: string;
+  title: string;
+  body: string;
+  icon?: string;
+  tag?: string;
+  url?: string;
+  createdAt: number;
+  read: boolean;
+}
+
+export interface PendingNotificationPermission {
+  id: string;
+  tabId?: string;
+  origin: string;
+  url?: string;
+  source: 'iframe' | 'webview';
+  requestId?: string;
 }
 
 export interface AutofillEntry {
@@ -345,6 +373,21 @@ export interface FabiNavDesktopBridge {
   onWindowState?: (callback: (state: { isMaximized: boolean }) => void) => () => void;
   onUpdateStatus?: (callback: (status: DesktopUpdateStatus) => void) => () => void;
   onOpenUrlInTab?: (callback: (url: string) => void) => () => void;
+  showDesktopNotification?: (payload: {
+    id: string;
+    title: string;
+    body: string;
+    origin?: string;
+    tabId?: string;
+    url?: string;
+  }) => Promise<boolean>;
+  respondNotificationPermission?: (requestId: string, granted: boolean) => void;
+  onNotificationPermissionRequest?: (
+    callback: (req: { requestId: string; origin: string; url?: string }) => void
+  ) => () => void;
+  onNotificationClicked?: (
+    callback: (payload: { id: string; tabId?: string; url?: string }) => void
+  ) => () => void;
 }
 
 declare global {

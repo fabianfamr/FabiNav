@@ -19,7 +19,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Code2,
-  Compass,
   Copy,
   ExternalLink,
   GitFork,
@@ -38,6 +37,7 @@ import {
   Video,
   X
 } from 'lucide-react';
+import { FabiNavLogo } from './FabiNavLogo';
 import {
   ArchiveOrgIcon,
   GitHubIcon,
@@ -634,12 +634,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                 title="Volver a Nueva pestaña"
                 className="flex items-center gap-2.5 shrink-0 group whitespace-nowrap"
               >
-                <span
-                  className="w-8 h-8 rounded-xl flex items-center justify-center shadow-xs transition-transform fabi-transition-s group-hover:scale-105"
-                  style={{ background: 'var(--fabi-gradient-brand)' }}
-                >
-                  <Compass className="w-4 h-4 text-white" />
-                </span>
+                <FabiNavLogo className="w-8 h-8 rounded-xl shadow-xs transition-transform fabi-transition-s group-hover:scale-105" />
                 <span className="hidden sm:inline text-base font-bold text-[var(--bn-text-strong)] tracking-tight">
                   FabiNav
                 </span>

@@ -17,6 +17,7 @@ import {
   TopSiteItem
 } from '../types';
 import { FabiSwitch } from './FabiSwitch';
+import { FabiNavLogo } from './FabiNavLogo';
 import { t, getDateLocale } from '../i18n/translations';
 
 interface FabiNewTabViewProps {
@@ -241,8 +242,20 @@ export const FabiNewTabView: React.FC<FabiNewTabViewProps> = ({
         )}
       </div>
 
-      {/* Center: FabiNav Search Pill + Top Sites Grid */}
+      {/* Center: FabiNav Emblem + Search Pill + Top Sites Grid */}
       <div className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl mx-auto my-8 z-20">
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: FABI_EASE_OUT }}
+          className="flex items-center gap-3 mb-5"
+        >
+          <FabiNavLogo className="w-11 h-11 rounded-2xl shadow-xl" />
+          <span className="text-2xl font-bold tracking-tight text-white drop-shadow">
+            FabiNav
+          </span>
+        </motion.div>
+
         <motion.form
           onSubmit={handleSearchSubmit}
           initial={{ opacity: 0, y: 8 }}

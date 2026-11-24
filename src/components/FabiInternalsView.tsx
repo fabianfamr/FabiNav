@@ -26,7 +26,6 @@ import {
   Power,
   RotateCcw,
   X,
-  Compass,
   Languages,
   Filter,
   KeyRound,
@@ -36,8 +35,10 @@ import {
   CreditCard,
   MapPin,
   Phone,
-  Globe
+  Globe,
+  Bell
 } from 'lucide-react';
+import { FabiNavLogo } from './FabiNavLogo';
 import {
   FabiShieldState,
   BrowserSettings,
@@ -84,12 +85,14 @@ interface FabiInternalsViewProps {
   autofillEntries?: AutofillEntry[];
   onAddAutofill?: (entry: Omit<AutofillEntry, 'id' | 'createdAt'>) => void;
   onRemoveAutofill?: (id: string) => void;
+  onSendTestNotification?: () => void;
 }
 
 type SettingsSection =
   | 'tu-google'
   | 'autocompletar'
   | 'escudos'
+  | 'notificaciones'
   | 'rendimiento'
   | 'apariencia'
   | 'idiomas'
@@ -128,7 +131,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   onNavigate,
   autofillEntries = [],
   onAddAutofill,
-  onRemoveAutofill
+  onRemoveAutofill,
+  onSendTestNotification
 }) => {
   const [historyFilter, setHistoryFilter] = useState('');
   const [bookmarkFilter, setBookmarkFilter] = useState('');
@@ -160,6 +164,11 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   const [afSecondary, setAfSecondary] = useState('');
   const [copiedAfId, setCopiedAfId] = useState<string | null>(null);
   const [alwaysActiveInput, setAlwaysActiveInput] = useState('');
+  const [notifOriginInput, setNotifOriginInput] = useState('');
+  const [notifOriginPermInput, setNotifOriginPermInput] = useState<'allow' | 'block'>('allow');
+  const [hostNotifStatus, setHostNotifStatus] = useState<string>(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filtersSectionRef = useRef<HTMLDivElement>(null);
@@ -269,6 +278,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
         'tu-google',
         'autocompletar',
         'escudos',
+        'notificaciones',
         'rendimiento',
         'apariencia',
         'idiomas',
@@ -1152,13 +1162,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       <div className="w-full h-full overflow-y-auto bg-[var(--bn-surface)] text-[var(--bn-text)] p-6 sm:p-10">
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="flex items-center justify-between pb-5 border-b border-[var(--bn-border)]">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-11 h-11 rounded-2xl text-white flex items-center justify-center font-bold text-lg shadow"
-                style={{ background: 'var(--fabi-gradient-brand)' }}
-              >
-                F
-              </div>
+            <div className="flex items-center gap-3.5">
+              <FabiNavLogo className="w-12 h-12 rounded-2xl shadow-lg" />
               <div>
                 <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">
                   {t(lang, 'secAbout')}
@@ -1241,6 +1246,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       { id: 'tu-google', label: t(lang, 'secYouAndGoogle'), icon: User },
       { id: 'autocompletar', label: t(lang, 'secAutofill'), icon: KeyRound },
       { id: 'escudos', label: t(lang, 'secPrivacy'), icon: ShieldCheck },
+      { id: 'notificaciones', label: 'Notificaciones', icon: Bell },
       { id: 'rendimiento', label: t(lang, 'secPerformance'), icon: Gauge },
       { id: 'apariencia', label: t(lang, 'secDesign'), icon: Palette },
       { id: 'buscador', label: t(lang, 'secSearchEngine'), icon: Search },
@@ -1289,6 +1295,12 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       'cookies',
       'huellas',
       'borrar',
+      'notificaciones',
+      'alertas',
+      'permisos',
+      'sonido',
+      'no molestar',
+      'notifications',
       'rendimiento',
       'memoria',
       'ahorro',
@@ -1350,12 +1362,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
       {/* Chrome-style Settings Top Header Bar with Search */}
       <div className="h-14 px-4 sm:px-6 border-b border-[var(--bn-border)] bg-[var(--bn-toolbar)]/75 flex items-center gap-4 shrink-0">
         <div className="md:w-60 flex items-center gap-3 shrink-0">
-          <div
-            className="w-7 h-7 rounded-full text-white flex items-center justify-center shadow-xs shrink-0"
-            style={{ background: 'var(--fabi-gradient-brand)' }}
-          >
-            <Compass className="w-4 h-4" />
-          </div>
+          <FabiNavLogo className="w-8 h-8 rounded-xl shadow-xs" />
           <h1 className="text-[16px] font-semibold text-[var(--bn-text-strong)] tracking-tight">
             {t(lang, 'settingsTitle')}
           </h1>
@@ -1961,6 +1968,287 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                         </div>
                         <ChevronRight className="w-4 h-4 text-[var(--bn-text-muted)] shrink-0" />
                       </button>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* 2C. NOTIFICACIONES DE PÁGINAS */}
+              {showSection(
+                'notificaciones',
+                'notificaciones',
+                'alertas',
+                'permisos',
+                'sonido',
+                'no molestar',
+                'notifications'
+              ) && (
+                <section className="space-y-3">
+                  <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
+                    Notificaciones de páginas
+                  </h2>
+
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl divide-y divide-[var(--bn-border)] text-xs overflow-hidden">
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Servicio de notificaciones del navegador
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Captura avisos de páginas web (mensajería, correo, avisos) y los muestra en FabiNav
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={settings.notificationsEnabled !== false}
+                        onChange={(v) => onUpdateSettings({ notificationsEnabled: v })}
+                        ariaLabel="Activar servicio de notificaciones del navegador"
+                      />
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Comportamiento predeterminado de los sitios
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Elige si las páginas pueden pedirte permiso o si se bloquean automáticamente
+                        </div>
+                      </div>
+                      <select
+                        value={settings.notificationDefaultPolicy || 'ask'}
+                        onChange={(e) =>
+                          onUpdateSettings({
+                            notificationDefaultPolicy: e.target.value as 'ask' | 'block'
+                          })
+                        }
+                        className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                      >
+                        <option value="ask">Preguntar antes de permitir</option>
+                        <option value="block">Bloquear automáticamente</option>
+                      </select>
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Reenviar alertas al sistema operativo
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Muestra también las notificaciones autorizadas en Windows, macOS o Linux
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={settings.notificationDesktopRelay !== false}
+                        onChange={(v) => onUpdateSettings({ notificationDesktopRelay: v })}
+                        ariaLabel="Reenviar alertas al sistema operativo"
+                      />
+                    </div>
+
+                    {!window.fabinavDesktop?.isElectron &&
+                      typeof window !== 'undefined' &&
+                      'Notification' in window && (
+                        <div className="px-5 py-3.5 flex items-center justify-between gap-4 bg-[var(--bn-surface)]/40">
+                          <div>
+                            <div className="font-medium text-[var(--bn-text-strong)]">
+                              Permiso del navegador anfitrión
+                            </div>
+                            <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                              Estado actual:{' '}
+                              {hostNotifStatus === 'granted'
+                                ? 'Autorizado'
+                                : hostNotifStatus === 'denied'
+                                ? 'Bloqueado en el navegador'
+                                : 'Pendiente de autorización'}
+                            </div>
+                          </div>
+                          {hostNotifStatus !== 'granted' && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const res = await Notification.requestPermission();
+                                  setHostNotifStatus(res);
+                                } catch {
+                                  // ignore
+                                }
+                              }}
+                              className="px-3.5 py-1.5 rounded-full bg-[var(--bn-surface)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[11px] font-medium text-[var(--bn-text-strong)] shrink-0 transition-colors"
+                            >
+                              Autorizar avisos
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Sonido sutil al recibir alertas
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Reproduce un tono breve cuando llega una nueva notificación de página
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={settings.notificationSound !== false}
+                        onChange={(v) => onUpdateSettings({ notificationSound: v })}
+                        ariaLabel="Sonido sutil al recibir alertas"
+                      />
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Modo No molestar
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Guarda las notificaciones en la campana sin mostrar tarjetas emergentes ni sonido
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={!!settings.notificationDoNotDisturb}
+                        onChange={(v) => onUpdateSettings({ notificationDoNotDisturb: v })}
+                        ariaLabel="Modo No molestar"
+                      />
+                    </div>
+
+                    {onSendTestNotification && (
+                      <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                        <div>
+                          <div className="font-medium text-[var(--bn-text-strong)]">
+                            Comprobar funcionamiento
+                          </div>
+                          <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                            Envía una notificación de prueba al centro de alertas y al escritorio
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={onSendTestNotification}
+                          className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-[11px] font-medium shrink-0 transition-colors"
+                        >
+                          Enviar notificación de prueba
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Permisos personalizados por sitio */}
+                  <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl p-5 space-y-3 text-xs">
+                    <div>
+                      <div className="font-semibold text-[var(--bn-text-strong)]">
+                        Permisos personalizados por sitio
+                      </div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                        Controla qué dominios tienen permiso directo o están bloqueados para enviarte notificaciones
+                      </div>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const cleaned = notifOriginInput.trim().toLowerCase();
+                        if (!cleaned) return;
+                        let normalizedOrigin = cleaned;
+                        try {
+                          const withProto = /^https?:\/\//i.test(cleaned)
+                            ? cleaned
+                            : `https://${cleaned}`;
+                          normalizedOrigin = new URL(withProto).origin;
+                        } catch {
+                          // fallback
+                        }
+                        onUpdateSettings({
+                          notificationPermissions: {
+                            ...(settings.notificationPermissions || {}),
+                            [normalizedOrigin]: notifOriginPermInput
+                          }
+                        });
+                        setNotifOriginInput('');
+                      }}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={notifOriginInput}
+                        onChange={(e) => setNotifOriginInput(e.target.value)}
+                        placeholder="Ej. web.whatsapp.com o mail.google.com"
+                        className="flex-1 min-w-[200px] px-3.5 py-1.5 rounded-xl bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] text-xs text-[var(--bn-text-strong)] placeholder-[var(--bn-text-muted)] focus:outline-none focus:border-[var(--bn-accent)] select-text"
+                      />
+                      <select
+                        value={notifOriginPermInput}
+                        onChange={(e) =>
+                          setNotifOriginPermInput(e.target.value as 'allow' | 'block')
+                        }
+                        className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)]"
+                      >
+                        <option value="allow">Permitir</option>
+                        <option value="block">Bloquear</option>
+                      </select>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Guardar sitio</span>
+                      </button>
+                    </form>
+
+                    {Object.keys(settings.notificationPermissions || {}).length === 0 ? (
+                      <p className="text-[11px] text-[var(--bn-text-muted)] pt-1">
+                        Aún no hay sitios configurados manualmente. Aparecerán aquí cuando respondas a una solicitud o añadas un dominio.
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-[var(--bn-border)] border border-[var(--bn-border)] rounded-xl overflow-hidden bg-[var(--bn-surface)]">
+                        {Object.entries(settings.notificationPermissions || {}).map(
+                          ([originKey, permVal]) => (
+                            <div
+                              key={originKey}
+                              className="px-4 py-2.5 flex items-center justify-between gap-3"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Globe className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />
+                                <span className="font-mono text-[11px] text-[var(--bn-text-strong)] truncate">
+                                  {originKey}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <select
+                                  value={permVal}
+                                  onChange={(e) => {
+                                    onUpdateSettings({
+                                      notificationPermissions: {
+                                        ...(settings.notificationPermissions || {}),
+                                        [originKey]: e.target.value as 'allow' | 'block'
+                                      }
+                                    });
+                                  }}
+                                  className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-lg px-2.5 py-1 text-[11px] text-[var(--bn-text-strong)]"
+                                >
+                                  <option value="allow">Permitido</option>
+                                  <option value="block">Bloqueado</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextMap = { ...(settings.notificationPermissions || {}) };
+                                    delete nextMap[originKey];
+                                    onUpdateSettings({ notificationPermissions: nextMap });
+                                  }}
+                                  title="Restablecer permiso"
+                                  className="p-1.5 rounded-lg text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] hover:bg-[var(--bn-hover)]"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
                     )}
                   </div>
                 </section>
@@ -2850,12 +3138,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                   </h2>
                   <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl overflow-hidden p-5 space-y-4 text-xs">
                     <div className="flex items-center gap-3.5">
-                      <div
-                        className="w-11 h-11 rounded-2xl text-white flex items-center justify-center font-bold text-base shrink-0"
-                        style={{ background: 'var(--fabi-gradient-brand)' }}
-                      >
-                        F
-                      </div>
+                      <FabiNavLogo className="w-12 h-12 rounded-2xl shadow-md" />
                       <div>
                         <div className="text-sm font-semibold text-[var(--bn-text-strong)]">
                           FabiNav v{APP_VERSION}

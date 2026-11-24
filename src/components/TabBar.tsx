@@ -15,11 +15,11 @@ import {
   RotateCcw,
   Search,
   Copy,
-  Columns,
-  Compass
+  Columns
 } from 'lucide-react';
 import { WebTab, ClosedTabRecord, AppLanguage } from '../types';
 import { t } from '../i18n/translations';
+import { FabiNavFaviconMark } from './FabiNavLogo';
 
 interface TabBarProps {
   tabs: WebTab[];
@@ -134,13 +134,7 @@ export const TabBar: React.FC<TabBarProps> = ({
       return <Lock className="w-3.5 h-3.5 text-[var(--bn-private-text)]" />;
     }
     if (tab.url === 'fabinav://newtab' || !tab.url) {
-      return (
-        <Compass
-          className={`w-3.5 h-3.5 ${
-            isActive ? 'text-[var(--bn-text-strong)]' : 'text-[var(--bn-text-muted)]'
-          }`}
-        />
-      );
+      return <FabiNavFaviconMark className="w-3.5 h-3.5 shrink-0" />;
     }
     if (tab.url.startsWith('fabinav://search')) {
       return <Search className="w-3.5 h-3.5 text-[var(--bn-accent)]" />;

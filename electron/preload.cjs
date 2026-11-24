@@ -32,5 +32,20 @@ contextBridge.exposeInMainWorld('fabinavDesktop', {
     const listener = (_event, url) => callback(url);
     ipcRenderer.on('fabinav:webview-new-tab', listener);
     return () => ipcRenderer.removeListener('fabinav:webview-new-tab', listener);
+  },
+  showDesktopNotification: (payload) => ipcRenderer.invoke('fabinav:show-desktop-notification', payload),
+  respondNotificationPermission: (requestId, granted) =>
+    ipcRenderer.send('fabinav:notif-permission-response', { requestId, granted: !!granted }),
+  onNotificationPermissionRequest: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, req) => callback(req);
+    ipcRenderer.on('fabinav:webview-notif-permission-req', listener);
+    return () => ipcRenderer.removeListener('fabinav:webview-notif-permission-req', listener);
+  },
+  onNotificationClicked: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('fabinav:notification-clicked', listener);
+    return () => ipcRenderer.removeListener('fabinav:notification-clicked', listener);
   }
 });

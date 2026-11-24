@@ -9,7 +9,7 @@ import {
   LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.19.0';
+export const APP_VERSION = '1.20.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -189,7 +189,13 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   spellCheck: true,
   translateOffer: true,
   translateTargetLang: 'es',
-  reduceMotion: false
+  reduceMotion: false,
+  notificationsEnabled: true,
+  notificationDefaultPolicy: 'ask',
+  notificationDesktopRelay: true,
+  notificationSound: true,
+  notificationDoNotDisturb: false,
+  notificationPermissions: {}
 };
 
 

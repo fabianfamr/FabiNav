@@ -1834,6 +1834,122 @@ function sanitizeAndEnhanceHtml(
       return null;
     };
   } catch (e) {}
+  try {
+    var safeOrigin = '';
+    try { safeOrigin = new URL(currentHref).origin; } catch (e) { safeOrigin = currentHref; }
+    var notifPerm = 'default';
+    var pendingPermReqs = Object.create(null);
+    window.__fabinavSetNotifPerm = function (perm, reqId) {
+      if (perm === 'granted' || perm === 'denied' || perm === 'default') {
+        notifPerm = perm;
+      }
+      if (reqId && pendingPermReqs[reqId]) {
+        var cbs = pendingPermReqs[reqId];
+        delete pendingPermReqs[reqId];
+        for (var i = 0; i < cbs.length; i++) {
+          try { cbs[i](notifPerm); } catch (e) {}
+        }
+      }
+    };
+    var emitNotif = function (title, opts) {
+      try {
+        window.parent.postMessage({
+          type: 'fabinav:page-notification',
+          origin: safeOrigin,
+          url: currentHref,
+          title: String(title || ''),
+          body: String((opts && opts.body) || ''),
+          icon: opts && typeof opts.icon === 'string' ? opts.icon : '',
+          tag: opts && typeof opts.tag === 'string' ? opts.tag : ''
+        }, '*');
+      } catch (e) {}
+    };
+    var FabiNotification = function (title, opts) {
+      var self = this;
+      this.title = String(title || '');
+      this.body = String((opts && opts.body) || '');
+      this.icon = (opts && opts.icon) || '';
+      this.tag = (opts && opts.tag) || '';
+      this.data = opts ? opts.data : null;
+      this.onclick = null;
+      this.onshow = null;
+      this.onerror = null;
+      this.onclose = null;
+      this._listeners = Object.create(null);
+      if (notifPerm === 'denied') {
+        setTimeout(function () {
+          if (typeof self.onerror === 'function') {
+            try { self.onerror(new Event('error')); } catch (e) {}
+          }
+        }, 0);
+        return;
+      }
+      emitNotif(title, opts || {});
+      setTimeout(function () {
+        if (typeof self.onshow === 'function') {
+          try { self.onshow(new Event('show')); } catch (e) {}
+        }
+      }, 0);
+    };
+    FabiNotification.prototype.close = function () {
+      if (typeof this.onclose === 'function') {
+        try { this.onclose(new Event('close')); } catch (e) {}
+      }
+    };
+    FabiNotification.prototype.addEventListener = function (t, fn) {
+      if (!this._listeners[t]) this._listeners[t] = [];
+      this._listeners[t].push(fn);
+    };
+    FabiNotification.prototype.removeEventListener = function (t, fn) {
+      if (!this._listeners[t]) return;
+      this._listeners[t] = this._listeners[t].filter(function (f) { return f !== fn; });
+    };
+    Object.defineProperty(FabiNotification, 'permission', {
+      get: function () { return notifPerm; },
+      configurable: true
+    });
+    FabiNotification.maxActions = 2;
+    FabiNotification.requestPermission = function (cb) {
+      if (notifPerm !== 'default') {
+        if (typeof cb === 'function') { try { cb(notifPerm); } catch (e) {} }
+        return Promise.resolve(notifPerm);
+      }
+      return new Promise(function (resolve) {
+        var reqId = 'nreq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+        pendingPermReqs[reqId] = [function (res) {
+          if (typeof cb === 'function') { try { cb(res); } catch (e) {} }
+          resolve(res);
+        }];
+        try {
+          window.parent.postMessage({
+            type: 'fabinav:notif-request-permission',
+            origin: safeOrigin,
+            url: currentHref,
+            requestId: reqId
+          }, '*');
+        } catch (e) {
+          resolve('denied');
+        }
+      });
+    };
+    try {
+      Object.defineProperty(window, 'Notification', {
+        value: FabiNotification,
+        writable: true,
+        configurable: true
+      });
+    } catch (e) {
+      window.Notification = FabiNotification;
+    }
+    if (window.ServiceWorkerRegistration && ServiceWorkerRegistration.prototype) {
+      ServiceWorkerRegistration.prototype.showNotification = function (title, opts) {
+        if (notifPerm !== 'denied') {
+          emitNotif(title, opts || {});
+        }
+        return Promise.resolve();
+      };
+    }
+  } catch (e) {}
 })();
 </script>`;
 
@@ -1917,6 +2033,10 @@ function sanitizeAndEnhanceHtml(
       try {
         window.parent.postMessage({ type: 'fabinav:find-result', found: found }, '*');
       } catch (e) {}
+    } else if (d.type === 'fabinav:notif-permission-sync' || d.type === 'fabinav:notif-permission-result') {
+      if (typeof window.__fabinavSetNotifPerm === 'function') {
+        window.__fabinavSetNotifPerm(d.permission, d.requestId);
+      }
     }
   });
   try {

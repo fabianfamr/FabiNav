@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -170,6 +170,22 @@ async function createWindow() {
     app.userAgentFallback = cleanChromeUa;
   }
 
+  const pendingNotifPermissions = new Map();
+
+  ipcMain.on('fabinav:notif-permission-response', (_event, payload) => {
+    if (!payload || !payload.requestId) return;
+    const entry = pendingNotifPermissions.get(payload.requestId);
+    if (entry) {
+      pendingNotifPermissions.delete(payload.requestId);
+      clearTimeout(entry.timer);
+      try {
+        entry.callback(!!payload.granted);
+      } catch {
+        // ignore
+      }
+    }
+  });
+
   const configureWebSession = (targetSession) => {
     if (!targetSession) return;
     targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -179,6 +195,44 @@ async function createWindow() {
       }
       callback({ requestHeaders: details.requestHeaders });
     });
+
+    if (typeof targetSession.setPermissionRequestHandler === 'function') {
+      targetSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+        if (permission !== 'notifications') {
+          callback(false);
+          return;
+        }
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          callback(false);
+          return;
+        }
+        const rawUrl = (details && details.requestingUrl) || (webContents && webContents.getURL ? webContents.getURL() : '');
+        let origin = rawUrl;
+        try {
+          origin = new URL(rawUrl).origin;
+        } catch {
+          // keep raw
+        }
+        const requestId = `np-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timer = setTimeout(() => {
+          const item = pendingNotifPermissions.get(requestId);
+          if (item) {
+            pendingNotifPermissions.delete(requestId);
+            try {
+              item.callback(false);
+            } catch {
+              // ignore
+            }
+          }
+        }, 30000);
+        pendingNotifPermissions.set(requestId, { callback, timer });
+        mainWindow.webContents.send('fabinav:webview-notif-permission-req', {
+          requestId,
+          origin,
+          url: rawUrl
+        });
+      });
+    }
   };
   configureWebSession(session.defaultSession);
   configureWebSession(session.fromPartition('persist:normal'));
@@ -213,6 +267,39 @@ ipcMain.on('fabinav:win-close', () => {
     mainWindow.close();
   } else {
     app.quit();
+  }
+});
+
+ipcMain.handle('fabinav:show-desktop-notification', async (_event, payload) => {
+  try {
+    if (!Notification || typeof Notification.isSupported !== 'function' || !Notification.isSupported()) {
+      return false;
+    }
+    const title = payload && payload.title ? String(payload.title) : 'FabiNav';
+    const origin = payload && payload.origin ? String(payload.origin) : '';
+    const bodyText = payload && payload.body ? String(payload.body) : '';
+    const fullBody = origin ? `${origin}${bodyText ? ` — ${bodyText}` : ''}` : bodyText;
+    const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
+    const notif = new Notification({
+      title,
+      body: fullBody,
+      icon: fs.existsSync(iconPath) ? iconPath : undefined
+    });
+    notif.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send('fabinav:notification-clicked', {
+          id: payload?.id || '',
+          tabId: payload?.tabId,
+          url: payload?.url
+        });
+      }
+    });
+    notif.show();
+    return true;
+  } catch {
+    return false;
   }
 });
 

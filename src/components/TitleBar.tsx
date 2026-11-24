@@ -31,7 +31,6 @@ import {
   Cookie,
   Trash2,
   X,
-  Compass,
   ChevronRight,
   Minus,
   Maximize2,
@@ -56,6 +55,7 @@ import {
   Command,
   Languages
 } from 'lucide-react';
+import { FabiNavLogo, FabiNavFaviconMark } from './FabiNavLogo';
 import {
   WebTab,
   Bookmark,
@@ -64,10 +64,12 @@ import {
   BrowserSettings,
   GoogleUserProfile,
   TlsInspectionResult,
-  StoredCookieItem
+  StoredCookieItem,
+  BrowserNotificationItem
 } from '../types';
 import { t } from '../i18n/translations';
 import { FabiSwitch } from './FabiSwitch';
+import { NotificationBellButton } from './NotificationCenter';
 
 interface TitleBarProps {
   currentTab?: WebTab;
@@ -116,6 +118,14 @@ interface TitleBarProps {
   isSplitActive: boolean;
   shieldCount: number;
   isShieldActive: boolean;
+  notifications: BrowserNotificationItem[];
+  onToggleDoNotDisturb: () => void;
+  onMarkAllNotificationsRead: () => void;
+  onClearNotifications: () => void;
+  onRemoveNotification: (id: string) => void;
+  onSelectNotification: (item: BrowserNotificationItem) => void;
+  onBlockNotificationOrigin: (origin: string) => void;
+  onSendTestNotification: () => void;
 }
 
 const INTERNAL_SUGGESTIONS = [
@@ -185,7 +195,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onCloseWindow,
   isSplitActive,
   shieldCount,
-  isShieldActive
+  isShieldActive,
+  notifications,
+  onToggleDoNotDisturb,
+  onMarkAllNotificationsRead,
+  onClearNotifications,
+  onRemoveNotification,
+  onSelectNotification,
+  onBlockNotificationOrigin,
+  onSendTestNotification
 }) => {
   const [inputUrl, setInputUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -398,7 +416,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const renderSuggestionIcon = (kind: string) => {
     if (kind === 'Marcador') return <Star className="w-3.5 h-3.5 text-[var(--bn-accent)] shrink-0" />;
     if (kind === 'Historial') return <History className="w-3.5 h-3.5 text-[var(--bn-info-text)] shrink-0" />;
-    if (kind === 'FabiNav') return <Compass className="w-3.5 h-3.5 text-[var(--bn-accent)] shrink-0" />;
+    if (kind === 'FabiNav') return <FabiNavFaviconMark className="w-3.5 h-3.5 shrink-0" />;
     if (kind === 'Búsqueda') return <Search className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />;
     return <Globe className="w-3.5 h-3.5 text-[var(--bn-text-muted)] shrink-0" />;
   };
@@ -814,6 +832,19 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <PanelRight className="w-4 h-4" />
         </button>
 
+        <NotificationBellButton
+          notifications={notifications}
+          doNotDisturb={!!settings.notificationDoNotDisturb}
+          onToggleDoNotDisturb={onToggleDoNotDisturb}
+          onMarkAllRead={onMarkAllNotificationsRead}
+          onClearAll={onClearNotifications}
+          onRemoveOne={onRemoveNotification}
+          onSelectNotification={onSelectNotification}
+          onBlockOrigin={onBlockNotificationOrigin}
+          onOpenSettings={() => onNavigate('fabinav://settings#notificaciones')}
+          onSendTestNotification={onSendTestNotification}
+        />
+
         <button
           type="button"
           onClick={onOpenBackupModal}
@@ -886,10 +917,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                         referrerPolicy="no-referrer"
                         className="w-7 h-7 rounded-full object-cover border border-[var(--bn-border-strong)] shrink-0"
                       />
-                    ) : (
+                    ) : googleUser?.displayName ? (
                       <span className="w-7 h-7 rounded-full bg-[var(--bn-accent)] text-white text-[11px] font-semibold flex items-center justify-center shrink-0">
-                        {googleUser?.displayName?.[0]?.toUpperCase() || <User className="w-3.5 h-3.5" />}
+                        {googleUser.displayName[0].toUpperCase()}
                       </span>
+                    ) : (
+                      <FabiNavLogo className="w-7 h-7 rounded-full shrink-0" />
                     )}
                     <div className="min-w-0">
                       <div className="font-semibold text-[var(--bn-text-strong)] truncate">

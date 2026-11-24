@@ -67,6 +67,18 @@ interface WebViewportProps {
   onOpenNewTab?: (url?: string) => void;
   onWakeTab?: (tabId: string) => void;
   onTranslateStatus?: (msg: string) => void;
+  onPageNotification?: (
+    tabId: string,
+    notif: { origin: string; title: string; body: string; icon?: string; tag?: string; url?: string }
+  ) => void;
+  onRequestNotificationPermission?: (req: {
+    tabId: string;
+    origin: string;
+    url?: string;
+    source: 'iframe' | 'webview';
+    requestId?: string;
+  }) => void;
+  onSendTestNotification?: () => void;
 }
 
 export const WebViewport: React.FC<WebViewportProps> = ({
@@ -107,7 +119,10 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   onRemoveAutofill,
   onOpenNewTab,
   onWakeTab,
-  onTranslateStatus
+  onTranslateStatus,
+  onPageNotification,
+  onRequestNotificationPermission,
+  onSendTestNotification
 }) => {
   const isSplit = !!splitTab;
 
@@ -144,7 +159,10 @@ export const WebViewport: React.FC<WebViewportProps> = ({
     onRemoveAutofill,
     onOpenNewTab,
     onWakeTab,
-    onTranslateStatus
+    onTranslateStatus,
+    onPageNotification,
+    onRequestNotificationPermission,
+    onSendTestNotification
   };
 
   return (
@@ -160,7 +178,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
         <SingleTabFrame
           tab={primaryTab}
           isPrimary={true}
-          onNavigate={(url) => onNavigate(primaryTab.id, url)}
+              onNavigate={(url) => onNavigate(primaryTab.id, url)}
           onPageSecurityReport={(report) => onPageSecurityReport?.(primaryTab.id, report)}
           onCloseSplit={isSplit && splitTab ? () => onToggleSplitTab?.(splitTab.id) : undefined}
           isSplit={isSplit}
@@ -237,6 +255,18 @@ interface SingleTabFrameProps {
   onOpenNewTab?: (url?: string) => void;
   onWakeTab?: (tabId: string) => void;
   onTranslateStatus?: (msg: string) => void;
+  onPageNotification?: (
+    tabId: string,
+    notif: { origin: string; title: string; body: string; icon?: string; tag?: string; url?: string }
+  ) => void;
+  onRequestNotificationPermission?: (req: {
+    tabId: string;
+    origin: string;
+    url?: string;
+    source: 'iframe' | 'webview';
+    requestId?: string;
+  }) => void;
+  onSendTestNotification?: () => void;
 }
 
 const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
@@ -279,7 +309,10 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   onRemoveAutofill,
   onOpenNewTab,
   onWakeTab,
-  onTranslateStatus
+  onTranslateStatus,
+  onPageNotification,
+  onRequestNotificationPermission,
+  onSendTestNotification
 }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const webviewRef = useRef<
@@ -312,6 +345,29 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   useEffect(() => {
     isMutedRef.current = !!tab.isMuted;
   }, [tab.isMuted]);
+
+  const resolveOriginNotifPerm = (rawUrl: string): 'default' | 'granted' | 'denied' => {
+    if (settings.notificationsEnabled === false) return 'denied';
+    let origin = rawUrl;
+    try {
+      origin = new URL(rawUrl).origin;
+    } catch {
+      // keep raw
+    }
+    const saved = settings.notificationPermissions?.[origin];
+    if (saved === 'allow') return 'granted';
+    if (saved === 'block') return 'denied';
+    return settings.notificationDefaultPolicy === 'block' ? 'denied' : 'default';
+  };
+
+  const resolveNotifPermRef = useRef(resolveOriginNotifPerm);
+  resolveNotifPermRef.current = resolveOriginNotifPerm;
+
+  const onPageNotificationRef = useRef(onPageNotification);
+  onPageNotificationRef.current = onPageNotification;
+
+  const onRequestNotifPermissionRef = useRef(onRequestNotificationPermission);
+  onRequestNotifPermissionRef.current = onRequestNotificationPermission;
 
   // Reset relaxed retry flag when navigating to a different URL
   useEffect(() => {
@@ -363,8 +419,80 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       try {
         wv.setAudioMuted?.(!!tab.isMuted);
         wv.setZoomFactor?.(settings.zoomLevel / 100);
+        void wv.executeJavaScript?.(`
+          (function () {
+            if (window.__fabinavNotifHooked) return;
+            window.__fabinavNotifHooked = true;
+            var relay = function (title, opts) {
+              try {
+                console.debug('__FABINAV_NOTIF__' + JSON.stringify({
+                  origin: location.origin || location.href,
+                  url: location.href,
+                  title: String(title || ''),
+                  body: String((opts && opts.body) || ''),
+                  icon: opts && typeof opts.icon === 'string' ? opts.icon : '',
+                  tag: opts && typeof opts.tag === 'string' ? opts.tag : ''
+                }));
+              } catch (e) {}
+            };
+            try {
+              var OrigNotif = window.Notification;
+              if (OrigNotif) {
+                var WrappedNotif = function (title, opts) {
+                  relay(title, opts || {});
+                  return new OrigNotif(title, opts);
+                };
+                WrappedNotif.prototype = OrigNotif.prototype;
+                Object.defineProperty(WrappedNotif, 'permission', {
+                  get: function () { return OrigNotif.permission; },
+                  configurable: true
+                });
+                WrappedNotif.requestPermission = function (cb) {
+                  return OrigNotif.requestPermission(cb);
+                };
+                if ('maxActions' in OrigNotif) WrappedNotif.maxActions = OrigNotif.maxActions;
+                window.Notification = WrappedNotif;
+              }
+            } catch (e) {}
+            try {
+              if (window.ServiceWorkerRegistration && ServiceWorkerRegistration.prototype && ServiceWorkerRegistration.prototype.showNotification) {
+                var origShow = ServiceWorkerRegistration.prototype.showNotification;
+                ServiceWorkerRegistration.prototype.showNotification = function (title, opts) {
+                  relay(title, opts || {});
+                  return origShow.apply(this, arguments);
+                };
+              }
+            } catch (e) {}
+          })();
+        `);
       } catch {
         // ignore webview readiness race
+      }
+    };
+    const onConsoleMessage = (ev: Event) => {
+      const msg = (ev as Event & { message?: string }).message;
+      if (typeof msg !== 'string' || !msg.startsWith('__FABINAV_NOTIF__')) return;
+      try {
+        const parsed = JSON.parse(msg.slice('__FABINAV_NOTIF__'.length)) as {
+          origin?: string;
+          url?: string;
+          title?: string;
+          body?: string;
+          icon?: string;
+          tag?: string;
+        };
+        if (parsed.title || parsed.body) {
+          onPageNotificationRef.current?.(tab.id, {
+            origin: parsed.origin || tab.url,
+            title: parsed.title || 'Notificación',
+            body: parsed.body || '',
+            icon: parsed.icon,
+            tag: parsed.tag,
+            url: parsed.url || tab.url
+          });
+        }
+      } catch {
+        // ignore malformed notification JSON
       }
     };
 
@@ -375,6 +503,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     wv.addEventListener('did-navigate-in-page', onDidNavigate);
     wv.addEventListener('did-fail-load', onDidFailLoad);
     wv.addEventListener('dom-ready', onDomReady);
+    wv.addEventListener('console-message', onConsoleMessage);
 
     return () => {
       wv.removeEventListener('did-start-loading', onStartLoading);
@@ -384,6 +513,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       wv.removeEventListener('did-navigate-in-page', onDidNavigate);
       wv.removeEventListener('did-fail-load', onDidFailLoad);
       wv.removeEventListener('dom-ready', onDomReady);
+      wv.removeEventListener('console-message', onConsoleMessage);
     };
   }, [isElectron, tab.id, isNewTab, isSearchPage, isFabiInternal, tab.isDiscarded]);
 
@@ -428,6 +558,11 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         found?: boolean;
         texts?: string[];
         targetLang?: string;
+        origin?: string;
+        body?: string;
+        icon?: string;
+        tag?: string;
+        requestId?: string;
       };
       if (!payload || typeof payload !== 'object') return;
 
@@ -444,6 +579,42 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           { type: 'fabinav:set-muted', muted: isMutedRef.current },
           '*'
         );
+        iframeRef.current?.contentWindow?.postMessage(
+          {
+            type: 'fabinav:notif-permission-sync',
+            permission: resolveNotifPermRef.current(payload.url || tab.url)
+          },
+          '*'
+        );
+      } else if (payload.type === 'fabinav:page-notification') {
+        onPageNotificationRef.current?.(tab.id, {
+          origin: payload.origin || tab.url,
+          title: payload.title || 'Notificación',
+          body: payload.body || '',
+          icon: payload.icon,
+          tag: payload.tag,
+          url: payload.url || tab.url
+        });
+      } else if (payload.type === 'fabinav:notif-request-permission' && payload.requestId) {
+        const perm = resolveNotifPermRef.current(payload.url || payload.origin || tab.url);
+        if (perm !== 'default') {
+          iframeRef.current?.contentWindow?.postMessage(
+            {
+              type: 'fabinav:notif-permission-result',
+              requestId: payload.requestId,
+              permission: perm
+            },
+            '*'
+          );
+        } else {
+          onRequestNotifPermissionRef.current?.({
+            tabId: tab.id,
+            origin: payload.origin || tab.url,
+            url: payload.url || tab.url,
+            source: 'iframe',
+            requestId: payload.requestId
+          });
+        }
       } else if (payload.type === 'fabinav:page-info') {
         onPageSecurityReport?.({
           title: payload.title,
@@ -493,8 +664,25 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       }
     };
 
+    const handlePermissionReply = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ tabId?: string; requestId?: string; permission?: string }>).detail;
+      if (!detail || (detail.tabId && detail.tabId !== tab.id)) return;
+      iframeRef.current?.contentWindow?.postMessage(
+        {
+          type: 'fabinav:notif-permission-result',
+          requestId: detail.requestId,
+          permission: detail.permission || 'denied'
+        },
+        '*'
+      );
+    };
+
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    window.addEventListener('fabinav:notif-permission-reply', handlePermissionReply);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('fabinav:notif-permission-reply', handlePermissionReply);
+    };
   }, [
     isElectron,
     tab.id,
@@ -526,6 +714,27 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       '*'
     );
   }, [isElectron, tab.isMuted, isNewTab, isSearchPage, isFabiInternal]);
+
+  // Keep proxied iframe Notification.permission synced when user updates permissions
+  useEffect(() => {
+    if (isElectron || isNewTab || isSearchPage || isFabiInternal) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        type: 'fabinav:notif-permission-sync',
+        permission: resolveOriginNotifPerm(tab.url)
+      },
+      '*'
+    );
+  }, [
+    isElectron,
+    isNewTab,
+    isSearchPage,
+    isFabiInternal,
+    tab.url,
+    settings.notificationsEnabled,
+    settings.notificationDefaultPolicy,
+    settings.notificationPermissions
+  ]);
 
   const activeLists = (
     shieldState.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
@@ -713,6 +922,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           autofillEntries={autofillEntries}
           onAddAutofill={onAddAutofill}
           onRemoveAutofill={onRemoveAutofill}
+          onSendTestNotification={onSendTestNotification}
         />
       ) : tab.isDiscarded ? (
         <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--bn-surface)] p-6">
@@ -787,6 +997,13 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
               onLoad={() => {
                 iframeRef.current?.contentWindow?.postMessage(
                   { type: 'fabinav:set-muted', muted: !!tab.isMuted },
+                  '*'
+                );
+                iframeRef.current?.contentWindow?.postMessage(
+                  {
+                    type: 'fabinav:notif-permission-sync',
+                    permission: resolveOriginNotifPerm(tab.url)
+                  },
                   '*'
                 );
               }}

@@ -15,7 +15,9 @@ import {
   HistoryEntry,
   TopSiteItem,
   GoogleUserProfile,
-  AutofillEntry
+  AutofillEntry,
+  BrowserNotificationItem,
+  PendingNotificationPermission
 } from './types';
 import {
   INITIAL_TABS,
@@ -40,6 +42,11 @@ import { FabiShieldModal } from './components/FabiShieldModal';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
 import { QrCodeModal } from './components/QrCodeModal';
 import { TaskManagerModal } from './components/TaskManagerModal';
+import {
+  NotificationPermissionPrompt,
+  NotificationAlertStack,
+  playNotificationChime
+} from './components/NotificationCenter';
 import {
   Plus,
   X,
@@ -248,11 +255,18 @@ export default function App() {
   const [windowMode, setWindowMode] = useState<'maximized' | 'restored' | 'minimized' | 'closed'>('maximized');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<BrowserNotificationItem[]>(() =>
+    loadStored<BrowserNotificationItem[]>('notifications', [])
+  );
+  const [liveAlerts, setLiveAlerts] = useState<BrowserNotificationItem[]>([]);
+  const [permissionQueue, setPermissionQueue] = useState<PendingNotificationPermission[]>([]);
+  const pendingNotifPermission = permissionQueue[0] || null;
 
   const omniboxRef = useRef<HTMLInputElement | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const reportedPageKeysRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<number | null>(null);
+  const alertTimersRef = useRef<Map<string, number>>(new Map());
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -266,6 +280,13 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const splitTab = splitTabId ? tabs.find((t) => t.id === splitTabId) : null;
+
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
 
   // Listen to Firebase/Google Auth state
   useEffect(() => {
@@ -308,12 +329,76 @@ export default function App() {
       }
     });
 
+    const unsubNotifPerm = bridge.onNotificationPermissionRequest?.((req) => {
+      let origin = req.origin || req.url || '';
+      try {
+        origin = new URL(origin).origin;
+      } catch {
+        // keep raw
+      }
+      const cur = settingsRef.current;
+      const sitePerm = cur.notificationPermissions?.[origin] || 'default';
+
+      if (cur.notificationsEnabled === false || sitePerm === 'block') {
+        bridge.respondNotificationPermission?.(req.requestId, false);
+        return;
+      }
+      if (sitePerm === 'allow') {
+        bridge.respondNotificationPermission?.(req.requestId, true);
+        return;
+      }
+      if (cur.notificationDefaultPolicy === 'block') {
+        bridge.respondNotificationPermission?.(req.requestId, false);
+        return;
+      }
+
+      const matchedTab =
+        tabsRef.current.find((t) => origin && t.url.startsWith(origin)) || activeTabRef.current;
+
+      setPermissionQueue((prev) => {
+        if (prev.some((p) => p.source === 'webview' && p.origin === origin)) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            id: req.requestId,
+            tabId: matchedTab?.id || '',
+            origin,
+            url: req.url,
+            source: 'webview',
+            requestId: req.requestId
+          }
+        ];
+      });
+    });
+
+    const unsubNotifClick = bridge.onNotificationClicked?.((payload) => {
+      if (payload.tabId && tabsRef.current.some((t) => t.id === payload.tabId)) {
+        setActiveTabId(payload.tabId);
+        return;
+      }
+      if (payload.url && (payload.url.startsWith('http://') || payload.url.startsWith('https://'))) {
+        handleNewTabRef.current(payload.url);
+      }
+    });
+
     return () => {
       unsubWin?.();
       unsubUpd?.();
       unsubOpenTab?.();
+      unsubNotifPerm?.();
+      unsubNotifClick?.();
     };
   }, [showToast]);
+
+  useEffect(() => {
+    const timers = alertTimersRef.current;
+    return () => {
+      timers.forEach((timerId) => window.clearTimeout(timerId));
+      timers.clear();
+    };
+  }, []);
 
   const handleMinimizeBrowserWindow = useCallback(() => {
     if (window.fabinavDesktop?.isElectron) {
@@ -395,6 +480,10 @@ export default function App() {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}backup_meta`, JSON.stringify(backupMeta));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}notes`, JSON.stringify(sessionNotes));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}window_title`, JSON.stringify(customWindowTitle));
+      localStorage.setItem(
+        `${STORAGE_KEY_PREFIX}notifications`,
+        JSON.stringify(notifications.slice(0, 50))
+      );
     } catch {
       // Ignore quota errors
     }
@@ -410,7 +499,8 @@ export default function App() {
     topSites,
     backupMeta,
     sessionNotes,
-    customWindowTitle
+    customWindowTitle,
+    notifications
   ]);
 
   // Apply FabiNav theme class & document title
@@ -1274,6 +1364,270 @@ export default function App() {
     }
   };
 
+  // Browser Notification Service
+  const normalizeNotificationOrigin = (rawUrl: string): string => {
+    try {
+      return new URL(rawUrl).origin;
+    } catch {
+      return rawUrl || 'https://fabinav.local';
+    }
+  };
+
+  const dismissLiveAlert = useCallback((id: string) => {
+    const existingTimer = alertTimersRef.current.get(id);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      alertTimersRef.current.delete(id);
+    }
+    setLiveAlerts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handlePageNotification = useCallback(
+    (
+      tabId: string,
+      notif: { origin: string; title: string; body: string; icon?: string; tag?: string; url?: string }
+    ) => {
+      const cur = settingsRef.current;
+      if (cur.notificationsEnabled === false) return;
+
+      const origin = normalizeNotificationOrigin(notif.origin || notif.url || '');
+      const sitePerm = cur.notificationPermissions?.[origin] || 'default';
+      if (sitePerm === 'block') return;
+      if (sitePerm === 'default' && cur.notificationDefaultPolicy === 'block') return;
+
+      const item: BrowserNotificationItem = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tabId,
+        origin,
+        title: (notif.title || 'Notificación').slice(0, 140),
+        body: (notif.body || '').slice(0, 320),
+        icon: notif.icon,
+        tag: notif.tag,
+        url: notif.url || origin,
+        createdAt: Date.now(),
+        read: false
+      };
+
+      setNotifications((prev) => {
+        const filtered = notif.tag
+          ? prev.filter((n) => !(n.origin === origin && n.tag === notif.tag))
+          : prev;
+        return [item, ...filtered].slice(0, 50);
+      });
+
+      appendLog('info', `Notificación de ${origin}: ${item.title}`, 'Notificaciones');
+
+      if (!cur.notificationDoNotDisturb) {
+        setLiveAlerts((prev) => {
+          const filtered = notif.tag
+            ? prev.filter((n) => !(n.origin === origin && n.tag === notif.tag))
+            : prev;
+          return [item, ...filtered].slice(0, 5);
+        });
+
+        const timerId = window.setTimeout(() => {
+          alertTimersRef.current.delete(item.id);
+          setLiveAlerts((prev) => prev.filter((n) => n.id !== item.id));
+        }, 6500);
+        alertTimersRef.current.set(item.id, timerId);
+
+        if (cur.notificationSound !== false) {
+          playNotificationChime();
+        }
+
+        if (cur.notificationDesktopRelay !== false) {
+          if (window.fabinavDesktop?.showDesktopNotification) {
+            window.fabinavDesktop.showDesktopNotification({
+              id: item.id,
+              title: item.title,
+              body: item.body,
+              origin: item.origin,
+              url: item.url,
+              tabId: item.tabId
+            });
+          } else if (
+            typeof window.Notification === 'function' &&
+            window.Notification.permission === 'granted'
+          ) {
+            try {
+              const osNotif = new window.Notification(item.title, {
+                body: item.body,
+                icon: item.icon,
+                tag: item.tag
+              });
+              osNotif.onclick = () => {
+                window.focus();
+                if (tabsRef.current.some((t) => t.id === item.tabId)) {
+                  setActiveTabId(item.tabId);
+                }
+                osNotif.close();
+              };
+            } catch {
+              // ignore host notification block
+            }
+          }
+        }
+      }
+    },
+    []
+  );
+
+  const handleRequestNotificationPermission = useCallback(
+    (req: {
+      tabId: string;
+      origin: string;
+      url?: string;
+      source: 'iframe' | 'webview';
+      requestId?: string;
+    }) => {
+      const origin = normalizeNotificationOrigin(req.origin || req.url || '');
+      const cur = settingsRef.current;
+      const sitePerm = cur.notificationPermissions?.[origin] || 'default';
+
+      const replyIframe = (permission: 'granted' | 'denied') => {
+        window.dispatchEvent(
+          new CustomEvent('fabinav:notif-permission-reply', {
+            detail: { tabId: req.tabId, requestId: req.requestId, permission }
+          })
+        );
+      };
+
+      if (cur.notificationsEnabled === false || sitePerm === 'block') {
+        replyIframe('denied');
+        return;
+      }
+      if (sitePerm === 'allow') {
+        replyIframe('granted');
+        return;
+      }
+      if (cur.notificationDefaultPolicy === 'block') {
+        replyIframe('denied');
+        return;
+      }
+
+      setPermissionQueue((prev) => {
+        if (prev.some((p) => p.source === req.source && p.origin === origin && p.tabId === req.tabId)) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            id: req.requestId || `perm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            tabId: req.tabId,
+            origin,
+            url: req.url,
+            source: req.source,
+            requestId: req.requestId
+          }
+        ];
+      });
+    },
+    []
+  );
+
+  const handleRespondNotificationPermission = (granted: boolean) => {
+    const current = permissionQueue[0];
+    if (!current) return;
+
+    setSettings((prev) => ({
+      ...prev,
+      notificationPermissions: {
+        ...(prev.notificationPermissions || {}),
+        [current.origin]: granted ? 'allow' : 'block'
+      }
+    }));
+
+    if (current.source === 'webview') {
+      window.fabinavDesktop?.respondNotificationPermission?.(current.id, granted);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('fabinav:notif-permission-reply', {
+          detail: {
+            tabId: current.tabId,
+            requestId: current.requestId,
+            permission: granted ? 'granted' : 'denied'
+          }
+        })
+      );
+    }
+
+    setPermissionQueue((prev) => prev.slice(1));
+    let host = current.origin;
+    try {
+      host = new URL(current.origin).hostname.replace(/^www\./, '') || current.origin;
+    } catch {
+      // keep raw
+    }
+    showToast(
+      granted
+        ? `Notificaciones permitidas para ${host}`
+        : `Notificaciones bloqueadas para ${host}`
+    );
+  };
+
+  const handleDismissNotificationPermission = () => {
+    const current = permissionQueue[0];
+    if (!current) return;
+    if (current.source === 'webview') {
+      window.fabinavDesktop?.respondNotificationPermission?.(current.id, false);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('fabinav:notif-permission-reply', {
+          detail: {
+            tabId: current.tabId,
+            requestId: current.requestId,
+            permission: 'denied'
+          }
+        })
+      );
+    }
+    setPermissionQueue((prev) => prev.slice(1));
+  };
+
+  const handleSelectNotification = (item: BrowserNotificationItem) => {
+    setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
+    dismissLiveAlert(item.id);
+    if (tabs.some((t) => t.id === item.tabId)) {
+      handleSelectTab(item.tabId);
+    } else if (item.url && (item.url.startsWith('http://') || item.url.startsWith('https://'))) {
+      handleNewTab(item.url);
+    }
+  };
+
+  const handleBlockNotificationOrigin = (origin: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      notificationPermissions: {
+        ...(prev.notificationPermissions || {}),
+        [origin]: 'block'
+      }
+    }));
+    setLiveAlerts((prev) => prev.filter((item) => item.origin !== origin));
+    let host = origin;
+    try {
+      host = new URL(origin).hostname.replace(/^www\./, '') || origin;
+    } catch {
+      // keep raw
+    }
+    showToast(`Notificaciones silenciadas para ${host}`);
+  };
+
+  const handleSendTestNotification = () => {
+    if (settings.notificationsEnabled === false) {
+      showToast('Activa primero el servicio de notificaciones');
+      return;
+    }
+    handlePageNotification(activeTab?.id || '', {
+      origin: 'https://fabinav.local',
+      title: 'Servicio de notificaciones activo',
+      body: 'Las alertas de páginas web aparecerán aquí y en tu escritorio cuando estén permitidas.',
+      url: activeTab?.url || 'fabinav://settings#notificaciones'
+    });
+    if (settings.notificationDoNotDisturb) {
+      showToast('Modo No molestar activo: aviso guardado en la campana');
+    }
+  };
+
   // Safe DevTools Console Evaluator
   const handleRunConsoleCommand = (cmd: string) => {
     const normalized = cmd.trim().toLowerCase();
@@ -1761,6 +2115,23 @@ export default function App() {
       action: () => handleNavigate(activeTab.id, 'fabinav://settings')
     },
     {
+      id: 'cmd-notifications-settings',
+      title: 'Notificaciones de páginas',
+      subtitle: 'Configurar alertas, sonido, modo No molestar y permisos por sitio',
+      category: 'Ajustes',
+      action: () => handleNavigate(activeTab.id, 'fabinav://settings#notificaciones')
+    },
+    {
+      id: 'cmd-notifications-dnd',
+      title: settings.notificationDoNotDisturb
+        ? 'Desactivar No molestar en notificaciones'
+        : 'Activar No molestar en notificaciones',
+      subtitle: 'Silenciar tarjetas flotantes y sonido temporalmente',
+      category: 'Ajustes',
+      action: () =>
+        handleUpdateSettings({ notificationDoNotDisturb: !settings.notificationDoNotDisturb })
+    },
+    {
       id: 'cmd-performance',
       title: 'Rendimiento y ahorro de memoria',
       subtitle: 'Configurar suspensión de pestañas inactivas',
@@ -2085,6 +2456,22 @@ export default function App() {
               : 0
           }
           isShieldActive={shieldState.enabled}
+          notifications={notifications}
+          onToggleDoNotDisturb={() =>
+            handleUpdateSettings({
+              notificationDoNotDisturb: !settings.notificationDoNotDisturb
+            })
+          }
+          onMarkAllNotificationsRead={() =>
+            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+          }
+          onClearNotifications={() => setNotifications([])}
+          onRemoveNotification={(id) =>
+            setNotifications((prev) => prev.filter((n) => n.id !== id))
+          }
+          onSelectNotification={handleSelectNotification}
+          onBlockNotificationOrigin={handleBlockNotificationOrigin}
+          onSendTestNotification={handleSendTestNotification}
         />
 
         {settings.showBookmarksBar &&
@@ -2314,6 +2701,9 @@ export default function App() {
           onOpenNewTab={(url) => handleNewTab(url)}
           onWakeTab={handleWakeTab}
           onTranslateStatus={(msg) => showToast(msg)}
+          onPageNotification={handlePageNotification}
+          onRequestNotificationPermission={handleRequestNotificationPermission}
+          onSendTestNotification={handleSendTestNotification}
         />
 
         {/* Right FabiNav Sidebar */}
@@ -2487,6 +2877,20 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Notification Permission Prompt & Live Alert Stack */}
+      <NotificationPermissionPrompt
+        pending={pendingNotifPermission}
+        onRespond={handleRespondNotificationPermission}
+        onDismiss={handleDismissNotificationPermission}
+      />
+
+      <NotificationAlertStack
+        alerts={liveAlerts}
+        onDismiss={dismissLiveAlert}
+        onOpen={handleSelectNotification}
+        onSilenceOrigin={handleBlockNotificationOrigin}
+      />
       </div>
     </div>
   );
