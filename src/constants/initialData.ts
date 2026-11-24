@@ -10,7 +10,7 @@ import {
   BrowserExtension
 } from '../types';
 
-export const APP_VERSION = '1.15.0';
+export const APP_VERSION = '1.16.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -177,6 +177,9 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   sidebarMode: 'on',
   sidebarPosition: 'right',
   showBookmarksBar: true,
+  autoHideBookmarksBar: false,
+  autoHideSidebarIdle: false,
+  barsAutoHideDelaySec: 15,
   useVerticalTabs: false,
   showHomeButton: false,
   zoomLevel: 100,
@@ -234,7 +237,7 @@ export const INITIAL_EXTENSIONS: BrowserExtension[] = [
     accentColor: '#14b8a6',
     mode: 'stylus',
     customCss:
-      '/* CSS personalizado de Stylus */\nbody {\n  scroll-behavior: smooth;\n}\na:hover {\n  text-decoration-thickness: 2px;\n}',
+      '/* CSS personalizado de Stylus */\nbody {\n  scroll-behavior: smooth;\n  -webkit-font-smoothing: antialiased;\n}\na {\n  text-decoration-thickness: 1.5px;\n  text-underline-offset: 3px;\n}\n::selection {\n  background: rgba(255, 111, 76, 0.28);\n}',
     builtIn: true
   },
   {

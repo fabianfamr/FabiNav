@@ -55,7 +55,8 @@ import {
   PanelTop,
   Command,
   Puzzle,
-  Languages
+  Languages,
+  Pin
 } from 'lucide-react';
 import {
   WebTab,
@@ -69,6 +70,7 @@ import {
   BrowserExtension
 } from '../types';
 import { t } from '../i18n/translations';
+import { FabiSwitch } from './FabiSwitch';
 
 interface TitleBarProps {
   currentTab?: WebTab;
@@ -86,6 +88,7 @@ interface TitleBarProps {
   onGoHome: () => void;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   onToggleExtension?: (id: string) => void;
+  onUpdateExtension?: (id: string, updates: Partial<BrowserExtension>) => void;
   onTranslatePage?: () => void;
   onResetZoom: () => void;
   onToggleBookmark: () => void;
@@ -159,6 +162,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onGoHome,
   onUpdateSettings,
   onToggleExtension,
+  onUpdateExtension,
   onTranslatePage,
   onResetZoom,
   onToggleBookmark,
@@ -198,6 +202,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const [showMainMenu, setShowMainMenu] = useState(false);
   const [activeSubmenu, setActiveSubmenu] = useState<MenuSubmenuId | null>(null);
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
+  const [showExtensionsPopover, setShowExtensionsPopover] = useState(false);
   const [tlsInfo, setTlsInfo] = useState<TlsInspectionResult | null>(null);
   const [siteCookies, setSiteCookies] = useState<StoredCookieItem[]>([]);
   const [loadingSecurity, setLoadingSecurity] = useState(false);
@@ -205,6 +210,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const lang = settings.language || 'es';
   const menuRef = useRef<HTMLDivElement>(null);
   const securityRef = useRef<HTMLDivElement>(null);
+  const extensionsRef = useRef<HTMLDivElement>(null);
   const submenuCloseTimer = useRef<number | null>(null);
 
   const openSubmenu = (id: MenuSubmenuId | null) => {
@@ -246,12 +252,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       if (securityRef.current && !securityRef.current.contains(e.target as Node)) {
         setShowSecurityPopover(false);
       }
+      if (extensionsRef.current && !extensionsRef.current.contains(e.target as Node)) {
+        setShowExtensionsPopover(false);
+      }
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowMainMenu(false);
         setActiveSubmenu(null);
         setShowSecurityPopover(false);
+        setShowExtensionsPopover(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -818,18 +828,147 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             </button>
           ))}
 
-        <button
-          type="button"
-          onClick={() => onNavigate('fabinav://extensions')}
-          title={t(lang, 'secExtensions')}
-          className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
-            currentTab?.url.startsWith('fabinav://extensions')
-              ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
-              : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
-          }`}
-        >
-          <Puzzle className="w-4 h-4" />
-        </button>
+        <div className="relative" ref={extensionsRef}>
+          {(() => {
+            const activeExtCount = extensions.filter((e) => e.enabled).length;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExtensionsPopover((v) => !v);
+                  setShowMainMenu(false);
+                  setShowSecurityPopover(false);
+                }}
+                title={`${t(lang, 'secExtensions')}${activeExtCount > 0 ? ` (${activeExtCount} activas)` : ''}`}
+                className={`relative w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all fabi-transition-xs ${
+                  showExtensionsPopover || currentTab?.url.startsWith('fabinav://extensions')
+                    ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
+                    : 'text-[var(--bn-text)] hover:bg-[var(--bn-hover)]'
+                }`}
+              >
+                <Puzzle className="w-4 h-4" />
+                {activeExtCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-[var(--bn-accent)] text-white text-[9px] font-semibold flex items-center justify-center tabular-nums shadow">
+                    {activeExtCount}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
+
+          <AnimatePresence>
+            {showExtensionsPopover && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                transition={{ duration: 0.14, ease: EASE_OUT }}
+                className="absolute right-0 top-10 w-[320px] rounded-2xl overflow-hidden bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-xs text-[var(--bn-text)] origin-top-right"
+              >
+                <div className="px-4 py-3 bg-[var(--bn-toolbar)] border-b border-[var(--bn-border)] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 font-semibold text-[var(--bn-text-strong)]">
+                    <Puzzle className="w-4 h-4 text-[var(--bn-accent)]" />
+                    <span>{t(lang, 'secExtensions')}</span>
+                  </div>
+                  <span className="text-[11px] text-[var(--bn-text-muted)] tabular-nums">
+                    {extensions.filter((e) => e.enabled).length} / {extensions.length} activas
+                  </span>
+                </div>
+
+                <div className="max-h-80 overflow-y-auto divide-y divide-[var(--bn-border)]">
+                  {extensions.length === 0 ? (
+                    <div className="p-5 text-center text-[11px] text-[var(--bn-text-muted)]">
+                      No hay extensiones instaladas.
+                    </div>
+                  ) : (
+                    extensions.map((ext) => (
+                      <div
+                        key={ext.id}
+                        className="px-3.5 py-2.5 flex items-center justify-between gap-2.5 hover:bg-[var(--bn-hover)]/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <span
+                            className="w-7 h-7 rounded-lg text-white font-bold text-xs flex items-center justify-center shrink-0"
+                            style={{
+                              backgroundColor: ext.enabled
+                                ? ext.accentColor
+                                : 'var(--bn-border-strong)'
+                            }}
+                          >
+                            {ext.name[0]?.toUpperCase() || 'E'}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-medium text-[var(--bn-text-strong)] truncate">
+                              {ext.name}
+                            </div>
+                            <div className="text-[10px] text-[var(--bn-text-muted)] truncate">
+                              {ext.enabled ? 'Activa en páginas' : 'Desactivada'} · v{ext.version}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {onUpdateExtension && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdateExtension(ext.id, { pinned: !ext.pinned })
+                              }
+                              title={
+                                ext.pinned
+                                  ? 'Desfijar de la barra'
+                                  : 'Fijar en la barra'
+                              }
+                              className={`p-1.5 rounded-full transition-colors ${
+                                ext.pinned
+                                  ? 'text-[var(--bn-accent)] bg-[var(--bn-accent-soft)]'
+                                  : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]'
+                              }`}
+                            >
+                              <Pin className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <FabiSwitch
+                            size="sm"
+                            checked={ext.enabled}
+                            onChange={() => onToggleExtension?.(ext.id)}
+                            ariaLabel={ext.name}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="px-3.5 py-2.5 bg-[var(--bn-toolbar)] border-t border-[var(--bn-border)] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExtensionsPopover(false);
+                      onNavigate('fabinav://extensions');
+                    }}
+                    className="text-[11px] font-medium text-[var(--bn-accent)] hover:underline flex items-center gap-1.5"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Administrar extensiones</span>
+                  </button>
+                  {extensions.some((e) => e.mode === 'stylus' || e.mode === 'custom-css') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExtensionsPopover(false);
+                        onNavigate('fabinav://extensions');
+                      }}
+                      className="text-[11px] text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:underline"
+                    >
+                      Editar CSS
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         <div className="h-4 w-[1px] bg-[var(--bn-border)] mx-0.5 hidden sm:block" />
 

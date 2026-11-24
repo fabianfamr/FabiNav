@@ -14,7 +14,6 @@ import {
   ArrowUpRight,
   BookOpen,
   Calculator,
-  Calendar,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -23,30 +22,47 @@ import {
   Compass,
   Copy,
   ExternalLink,
-  FileText,
-  FolderOpen,
   GitFork,
   Globe,
-  HardDrive,
   Image as ImageIcon,
-  Languages,
-  LayoutGrid,
-  Lightbulb,
   Lock,
-  Mail,
   MapPin,
   Newspaper,
   Play,
   RotateCw,
   Search,
   Share2,
-  ShoppingBag,
   SlidersHorizontal,
   Star,
   User,
   Video,
   X
 } from 'lucide-react';
+import {
+  ArchiveOrgIcon,
+  GitHubIcon,
+  GmailIcon,
+  GoogleAccountIcon,
+  GoogleCalendarIcon,
+  GoogleContactsIcon,
+  GoogleDocsIcon,
+  GoogleDriveIcon,
+  GoogleEarthIcon,
+  GoogleGIcon,
+  GoogleKeepIcon,
+  GoogleMapsIcon,
+  GoogleMeetIcon,
+  GoogleNewsIcon,
+  GooglePhotosIcon,
+  GooglePlayIcon,
+  GoogleSheetsIcon,
+  GoogleShoppingIcon,
+  GoogleSlidesIcon,
+  GoogleTranslateIcon,
+  NineDotsIcon,
+  WikipediaIcon,
+  YouTubeIcon
+} from './OfficialAppIcons';
 import {
   evaluateLocalInstantAnswer,
   getDomainVisuals,
@@ -75,7 +91,6 @@ interface LauncherAppItem {
   id: string;
   label: string;
   url: string;
-  color: string;
   icon: React.ReactNode;
 }
 
@@ -84,64 +99,55 @@ const FAVORITE_APPS: LauncherAppItem[] = [
     id: 'account',
     label: 'Cuenta',
     url: 'fabinav://settings#tu-google',
-    color: 'bg-sky-500/15 text-sky-400',
-    icon: <User className="w-5 h-5" />
+    icon: <GoogleAccountIcon className="w-9 h-9" />
   },
   {
     id: 'drive',
     label: 'Drive',
     url: 'https://drive.google.com',
-    color: 'bg-amber-500/15 text-amber-400',
-    icon: <HardDrive className="w-5 h-5" />
+    icon: <GoogleDriveIcon className="w-9 h-9" />
   },
   {
     id: 'gmail',
     label: 'Gmail',
     url: 'https://mail.google.com',
-    color: 'bg-rose-500/15 text-rose-400',
-    icon: <Mail className="w-5 h-5" />
+    icon: <GmailIcon className="w-9 h-9" />
   },
   {
     id: 'maps',
     label: 'Maps',
     url: 'https://www.openstreetmap.org',
-    color: 'bg-emerald-500/15 text-emerald-400',
-    icon: <MapPin className="w-5 h-5" />
+    icon: <GoogleMapsIcon className="w-9 h-9" />
   },
   {
     id: 'search',
     label: 'Búsqueda',
     url: 'fabinav://newtab',
-    color: 'bg-blue-500/15 text-blue-400',
-    icon: <Search className="w-5 h-5" />
+    icon: <GoogleGIcon className="w-8 h-8" />
   },
   {
     id: 'calendar',
     label: 'Calendario',
     url: 'https://calendar.google.com',
-    color: 'bg-indigo-500/15 text-indigo-400',
-    icon: <Calendar className="w-5 h-5" />
+    icon: <GoogleCalendarIcon className="w-9 h-9" />
   },
   {
     id: 'news',
     label: 'Noticias',
     url: 'https://news.google.com',
-    color: 'bg-cyan-500/15 text-cyan-400',
-    icon: <Newspaper className="w-5 h-5" />
+    icon: <GoogleNewsIcon className="w-9 h-9" />
   },
   {
     id: 'photos',
     label: 'Fotos',
     url: 'https://photos.google.com',
-    color: 'bg-yellow-500/15 text-yellow-400',
-    icon: <ImageIcon className="w-5 h-5" />
+    icon: <GooglePhotosIcon className="w-9 h-9" />
   },
   {
     id: 'translate',
     label: 'Traductor',
     url: 'https://translate.google.com',
-    color: 'bg-blue-500/15 text-blue-300',
-    icon: <Languages className="w-5 h-5" />
+    icon: <GoogleTranslateIcon className="w-9 h-9" />
   }
 ];
 
@@ -150,64 +156,79 @@ const MORE_LAUNCHER_APPS: LauncherAppItem[] = [
     id: 'meet',
     label: 'Meet',
     url: 'https://meet.google.com',
-    color: 'bg-teal-500/15 text-teal-400',
-    icon: <Video className="w-5 h-5" />
+    icon: <GoogleMeetIcon className="w-9 h-9" />
+  },
+  {
+    id: 'sheets',
+    label: 'Hojas de cálculo',
+    url: 'https://docs.google.com/spreadsheets',
+    icon: <GoogleSheetsIcon className="w-9 h-9" />
   },
   {
     id: 'docs',
     label: 'Documentos',
     url: 'https://docs.google.com/document',
-    color: 'bg-blue-500/15 text-blue-400',
-    icon: <FileText className="w-5 h-5" />
+    icon: <GoogleDocsIcon className="w-9 h-9" />
+  },
+  {
+    id: 'slides',
+    label: 'Presentaciones',
+    url: 'https://docs.google.com/presentation',
+    icon: <GoogleSlidesIcon className="w-9 h-9" />
   },
   {
     id: 'youtube',
     label: 'YouTube',
     url: 'https://www.youtube.com',
-    color: 'bg-red-500/15 text-red-400',
-    icon: <Play className="w-5 h-5" />
+    icon: <YouTubeIcon className="w-9 h-9" />
   },
   {
     id: 'keep',
     label: 'Keep',
     url: 'https://keep.google.com',
-    color: 'bg-amber-500/15 text-amber-300',
-    icon: <Lightbulb className="w-5 h-5" />
+    icon: <GoogleKeepIcon className="w-9 h-9" />
   },
   {
     id: 'shopping',
     label: 'Shopping',
     url: 'https://shopping.google.com',
-    color: 'bg-lime-500/15 text-lime-400',
-    icon: <ShoppingBag className="w-5 h-5" />
+    icon: <GoogleShoppingIcon className="w-9 h-9" />
+  },
+  {
+    id: 'play',
+    label: 'Play',
+    url: 'https://play.google.com',
+    icon: <GooglePlayIcon className="w-9 h-9" />
+  },
+  {
+    id: 'earth',
+    label: 'Earth',
+    url: 'https://earth.google.com',
+    icon: <GoogleEarthIcon className="w-9 h-9" />
+  },
+  {
+    id: 'contacts',
+    label: 'Contactos',
+    url: 'https://contacts.google.com',
+    icon: <GoogleContactsIcon className="w-9 h-9" />
   },
   {
     id: 'wikipedia',
     label: 'Wikipedia',
     url: 'https://es.wikipedia.org',
-    color: 'bg-zinc-500/15 text-zinc-300',
-    icon: <BookOpen className="w-5 h-5" />
+    icon: <WikipediaIcon className="w-9 h-9" />
   },
   {
     id: 'github',
     label: 'GitHub',
     url: 'https://github.com',
-    color: 'bg-purple-500/15 text-purple-300',
-    icon: <Code2 className="w-5 h-5" />
-  },
-  {
-    id: 'files',
-    label: 'Marcadores',
-    url: 'fabinav://bookmarks',
-    color: 'bg-orange-500/15 text-orange-300',
-    icon: <FolderOpen className="w-5 h-5" />
+    icon: <GitHubIcon className="w-9 h-9" />
   },
   {
     id: 'archive',
     label: 'Archive',
     url: 'https://archive.org',
-    color: 'bg-slate-500/15 text-slate-300',
-    icon: <Archive className="w-5 h-5" />
+    icon: <ArchiveOrgIcon className="w-9 h-9" />
   }
 ];
 
@@ -754,7 +775,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                       : 'text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] hover:bg-[var(--bn-hover)]'
                   }`}
                 >
-                  <LayoutGrid className="w-4 h-4" />
+                  <NineDotsIcon className="w-[18px] h-[18px]" />
                 </button>
 
                 <AnimatePresence>
@@ -796,10 +817,17 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                                 }}
                                 className="p-2 rounded-2xl hover:bg-[var(--bn-hover)] transition-colors flex flex-col items-center gap-1.5 text-center overflow-hidden"
                               >
-                                <span
-                                  className={`w-10 h-10 rounded-xl flex items-center justify-center ${app.color}`}
-                                >
-                                  {app.icon}
+                                <span className="w-10 h-10 flex items-center justify-center">
+                                  {app.id === 'account' && googleUser?.photoUrl ? (
+                                    <img
+                                      src={googleUser.photoUrl}
+                                      alt={googleUser.displayName}
+                                      referrerPolicy="no-referrer"
+                                      className="w-9 h-9 rounded-full object-cover border border-[var(--bn-border-strong)]"
+                                    />
+                                  ) : (
+                                    app.icon
+                                  )}
                                 </span>
                                 <span className="text-[11px] text-[var(--bn-text-strong)] truncate w-full">
                                   {app.label}
@@ -821,9 +849,7 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
                               }}
                               className="p-2 rounded-2xl hover:bg-[var(--bn-hover)] transition-colors flex flex-col items-center gap-1.5 text-center overflow-hidden"
                             >
-                              <span
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center ${app.color}`}
-                              >
+                              <span className="w-10 h-10 flex items-center justify-center">
                                 {app.icon}
                               </span>
                               <span className="text-[11px] text-[var(--bn-text)] truncate w-full">
@@ -842,13 +868,17 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigate('fabinav://settings#tu-google')}
-                title={googleUser ? `${googleUser.name} (${googleUser.email})` : 'Cuenta de FabiNav'}
+                title={
+                  googleUser
+                    ? `${googleUser.displayName} (${googleUser.email})`
+                    : 'Cuenta de FabiNav'
+                }
                 className="w-8 h-8 rounded-full border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] hover:border-[var(--bn-accent)] flex items-center justify-center overflow-hidden transition-colors shrink-0 ml-0.5"
               >
                 {googleUser?.photoUrl ? (
                   <img
                     src={googleUser.photoUrl}
-                    alt={googleUser.name}
+                    alt={googleUser.displayName}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
@@ -1132,8 +1162,8 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
             <div className="rounded-2xl border border-[var(--bn-border-strong)] bg-[var(--bn-surface-alt)] overflow-hidden">
               <div className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--bn-border)]">
                 <div className="flex items-start gap-3.5 min-w-0">
-                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
-                    <MapPin className="w-5 h-5" />
+                  <div className="w-11 h-11 rounded-2xl bg-[var(--bn-surface)] border border-[var(--bn-border)] flex items-center justify-center shrink-0">
+                    <GoogleMapsIcon className="w-7 h-7" />
                   </div>
                   <div className="min-w-0">
                     <h2 className="text-base font-semibold text-[var(--bn-text-strong)] truncate">

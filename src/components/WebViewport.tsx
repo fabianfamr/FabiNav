@@ -333,6 +333,37 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     [extensions]
   );
 
+  const activeExtModesRef = useRef(activeExtModes);
+  const activeCustomCssRef = useRef(activeCustomCss);
+  const isMutedRef = useRef(!!tab.isMuted);
+  useEffect(() => {
+    activeExtModesRef.current = activeExtModes;
+    activeCustomCssRef.current = activeCustomCss;
+  }, [activeExtModes, activeCustomCss]);
+  useEffect(() => {
+    isMutedRef.current = !!tab.isMuted;
+  }, [tab.isMuted]);
+
+  const scopeSearchCustomCss = useMemo(() => {
+    const parts: string[] = [];
+    const isLightTheme = settings.theme === 'fabi-light' || settings.theme === 'brave-light';
+    if (activeExtModes.includes('dark-web') && isLightTheme) {
+      parts.push(
+        '.fabinav-search-ext-scope { filter: invert(0.91) hue-rotate(180deg); } .fabinav-search-ext-scope img, .fabinav-search-ext-scope video, .fabinav-search-ext-scope svg { filter: invert(1) hue-rotate(180deg); }'
+      );
+    }
+    if (activeExtModes.includes('reader')) {
+      parts.push(
+        '.fabinav-search-ext-scope { font-family: Georgia, "Times New Roman", serif !important; } .fabinav-search-ext-scope p, .fabinav-search-ext-scope article { font-size: 16px !important; line-height: 1.72 !important; }'
+      );
+    }
+    if (activeCustomCss.trim()) {
+      const scoped = activeCustomCss.replace(/body\b/gi, '.fabinav-search-ext-scope');
+      parts.push(scoped);
+    }
+    return parts.join('\n');
+  }, [activeExtModes, activeCustomCss, settings.theme]);
+
   useEffect(() => {
     if (isNewTab || isSearchPage || isFabiInternal) return;
 
@@ -354,7 +385,28 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
 
       if (payload.type === 'fabinav:navigate' && typeof payload.url === 'string') {
         onNavigate(payload.url);
+      } else if (payload.type === 'fabinav:bridge-ready') {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: 'fabinav:set-muted', muted: isMutedRef.current },
+          '*'
+        );
+        iframeRef.current?.contentWindow?.postMessage(
+          {
+            type: 'fabinav:apply-extensions',
+            modes: activeExtModesRef.current,
+            customCss: activeCustomCssRef.current
+          },
+          '*'
+        );
       } else if (payload.type === 'fabinav:page-info') {
+        iframeRef.current?.contentWindow?.postMessage(
+          {
+            type: 'fabinav:apply-extensions',
+            modes: activeExtModesRef.current,
+            customCss: activeCustomCssRef.current
+          },
+          '*'
+        );
         onPageSecurityReport?.({
           title: payload.title,
           url: payload.url,
@@ -555,12 +607,15 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onOpenShieldModal={onOpenShieldModal}
         />
       ) : isSearchPage ? (
-        <FabiSearchView
-          query={searchQuery}
-          defaultEngine={settings.defaultSearchEngine}
-          googleUser={googleUser}
-          onNavigate={onNavigate}
-        />
+        <div className="fabinav-search-ext-scope flex-1 flex flex-col overflow-hidden h-full">
+          {scopeSearchCustomCss && <style>{scopeSearchCustomCss}</style>}
+          <FabiSearchView
+            query={searchQuery}
+            defaultEngine={settings.defaultSearchEngine}
+            googleUser={googleUser}
+            onNavigate={onNavigate}
+          />
+        </div>
       ) : isFabiInternal ? (
         <FabiInternalsView
           url={tab.url}

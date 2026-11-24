@@ -148,6 +148,9 @@ export interface BrowserSettings {
   sidebarMode?: 'on' | 'auto' | 'off';
   sidebarPosition: 'left' | 'right';
   showBookmarksBar: boolean;
+  autoHideBookmarksBar?: boolean;
+  autoHideSidebarIdle?: boolean;
+  barsAutoHideDelaySec?: 5 | 10 | 15 | 30 | 60;
   useVerticalTabs: boolean;
   showHomeButton: boolean;
   zoomLevel: number;

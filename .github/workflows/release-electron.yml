@@ -19,12 +19,8 @@ permissions:
 
 jobs:
   build:
-    name: Build FabiNav (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+    name: Build FabiNav (.exe)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
@@ -42,46 +38,28 @@ jobs:
       - name: Install Electron desktop toolchain
         run: npm run electron:setup
 
-      - name: Build Web App and Electron Installers
+      - name: Build Web App and Electron Exe
         run: npm run build:electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload built installers
+      - name: Upload built .exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fabinav-${{ runner.os }}
-          path: |
-            dist-electron/*.exe
-            dist-electron/*.blockmap
-            dist-electron/*.yml
-            dist-electron/*.AppImage
-            dist-electron/*.deb
-            dist-electron/*.dmg
-            dist-electron/*.zip
+          name: fabinav-windows-exe
+          path: dist-electron/*.exe
           if-no-files-found: error
-
-  release:
-    name: Create or Update GitHub Release
-    needs: build
-    if: ${{ github.event_name == 'push' || inputs.publish_release == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
       - name: Get version from package.json
         id: pkg
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Download built installers
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-          merge-multiple: true
+        if: ${{ github.event_name == 'push' || inputs.publish_release == 'true' }}
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Create or Update Release
+        if: ${{ github.event_name == 'push' || inputs.publish_release == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           name: FabiNav v${{ steps.pkg.outputs.version }}
@@ -91,21 +69,11 @@ jobs:
             ## FabiNav v${{ steps.pkg.outputs.version }}
 
             ### Instalación
-            - **Windows**: descarga el instalador `.exe` (`FabiNav-*-win-x64-nsis.exe`) y ejecútalo, o usa la versión portable.
-            - **Linux**: descarga el `.AppImage` o `.deb`.
-            - **macOS**: descarga el `.dmg`.
+            Descarga el archivo `.exe` y ejecútalo para instalar FabiNav en Windows.
 
             ### Actualización desde versión anterior
-            Si ya tienes FabiNav instalado, la app buscará y descargará las actualizaciones automáticamente desde GitHub Releases al abrir una nueva sesión.
-
-            > No necesitas desinstalar la versión anterior para actualizar FabiNav.
+            Si ya tienes FabiNav instalado, solo ejecuta el nuevo instalador `.exe` y actualizará tu instalación conservando tus datos locales.
           files: |
-            release-artifacts/*.exe
-            release-artifacts/*.blockmap
-            release-artifacts/*.yml
-            release-artifacts/*.AppImage
-            release-artifacts/*.deb
-            release-artifacts/*.dmg
-            release-artifacts/*.zip
+            dist-electron/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

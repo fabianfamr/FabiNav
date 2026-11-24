@@ -229,6 +229,11 @@ export default function App() {
   // Modals, Toast, Window Controls & Sidebar
   const [activeSidebarView, setActiveSidebarView] = useState<SidebarPanelView>(null);
   const [isSidebarAutoHovered, setIsSidebarAutoHovered] = useState(false);
+  const [isSidebarIdleHidden, setIsSidebarIdleHidden] = useState(false);
+  const [sidebarActivityTick, setSidebarActivityTick] = useState(0);
+  const [isBookmarksZoneHovered, setIsBookmarksZoneHovered] = useState(false);
+  const [isBookmarksBarIdleHidden, setIsBookmarksBarIdleHidden] = useState(false);
+  const [bookmarksActivityTick, setBookmarksActivityTick] = useState(0);
   const [isShieldsModalOpen, setIsShieldsModalOpen] = useState(false);
   const [blockedUrlsByTab, setBlockedUrlsByTab] = useState<Record<string, string[]>>({});
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
@@ -717,6 +722,55 @@ export default function App() {
     settings.alwaysActiveDomains,
     activeTabId,
     splitTabId
+  ]);
+
+  const autoHideDelayMs = (settings.barsAutoHideDelaySec || 15) * 1000;
+
+  // Auto-hide Bookmarks Bar after inactivity
+  useEffect(() => {
+    if (!settings.showBookmarksBar || !settings.autoHideBookmarksBar) {
+      setIsBookmarksBarIdleHidden(false);
+      return;
+    }
+    if (isBookmarksZoneHovered) {
+      setIsBookmarksBarIdleHidden(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setIsBookmarksBarIdleHidden(true);
+    }, autoHideDelayMs);
+    return () => window.clearTimeout(timer);
+  }, [
+    settings.showBookmarksBar,
+    settings.autoHideBookmarksBar,
+    isBookmarksZoneHovered,
+    bookmarksActivityTick,
+    autoHideDelayMs
+  ]);
+
+  // Auto-hide Sidebar after inactivity
+  useEffect(() => {
+    const mode = settings.sidebarMode || (settings.showSidebar ? 'on' : 'off');
+    if (mode === 'off' || !settings.autoHideSidebarIdle) {
+      setIsSidebarIdleHidden(false);
+      return;
+    }
+    if (isSidebarAutoHovered || activeSidebarView !== null) {
+      setIsSidebarIdleHidden(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setIsSidebarIdleHidden(true);
+    }, autoHideDelayMs);
+    return () => window.clearTimeout(timer);
+  }, [
+    settings.sidebarMode,
+    settings.showSidebar,
+    settings.autoHideSidebarIdle,
+    isSidebarAutoHovered,
+    activeSidebarView,
+    sidebarActivityTick,
+    autoHideDelayMs
   ]);
 
   const forgetDomainsIfClosed = (closedList: WebTab[], remainingTabs: WebTab[]) => {
@@ -1782,7 +1836,9 @@ export default function App() {
     const mode = settings.sidebarMode || (settings.showSidebar ? 'on' : 'off');
     if (mode === 'off') return null;
 
-    const stripVisible = mode === 'on' || isSidebarAutoHovered || activeSidebarView !== null;
+    const hiddenByIdle = !!settings.autoHideSidebarIdle && isSidebarIdleHidden;
+    const stripVisible =
+      (mode === 'on' && !hiddenByIdle) || isSidebarAutoHovered || activeSidebarView !== null;
 
     const strip = stripVisible ? (
       <ActivityBar
@@ -1841,12 +1897,21 @@ export default function App() {
         </>
       );
 
-    if (mode === 'auto') {
+    if (mode === 'auto' || settings.autoHideSidebarIdle) {
       return (
         <div
           className="flex h-full shrink-0"
-          onMouseEnter={() => setIsSidebarAutoHovered(true)}
+          onMouseEnter={() => {
+            setIsSidebarAutoHovered(true);
+            setIsSidebarIdleHidden(false);
+            setSidebarActivityTick((n) => n + 1);
+          }}
           onMouseLeave={() => setIsSidebarAutoHovered(false)}
+          onPointerMove={() => setSidebarActivityTick((n) => n + 1)}
+          onPointerDown={() => {
+            setIsSidebarIdleHidden(false);
+            setSidebarActivityTick((n) => n + 1);
+          }}
         >
           {content}
         </div>
@@ -1957,97 +2022,132 @@ export default function App() {
         onCloseWindow={handleCloseBrowserWindow}
       />
 
-      {/* 2. FabiNav Main Toolbar + Omnibox + Menu Panel */}
-      <TitleBar
-        currentTab={activeTab}
-        googleUser={googleUser}
-        bookmarks={bookmarks}
-        historyEntries={historyEntries}
-        closedTabs={closedTabs}
-        settings={settings}
-        extensions={extensions}
-        omniboxRef={omniboxRef}
-        onNavigate={(url) => handleNavigate(activeTab.id, url)}
-        onGoBack={handleGoBack}
-        onGoForward={handleGoForward}
-        onReload={handleReload}
-        onGoHome={handleGoHome}
-        onUpdateSettings={handleUpdateSettings}
-        onToggleExtension={handleToggleExtension}
-        onTranslatePage={handleTranslatePage}
-        onResetZoom={() => {
-          handleUpdateSettings({ zoomLevel: 100 });
-          showToast('Zoom restablecido al 100%');
+      {/* 2 & 3. FabiNav Main Toolbar + Bookmarks Bar (supports auto-hide after inactivity) */}
+      <div
+        className="flex flex-col shrink-0 relative z-40"
+        onMouseEnter={() => {
+          setIsBookmarksZoneHovered(true);
+          setIsBookmarksBarIdleHidden(false);
+          setBookmarksActivityTick((n) => n + 1);
         }}
-        onToggleBookmark={handleToggleBookmark}
-        onToggleSplitMode={() => {
-          if (splitTabId) {
-            setSplitTabId(null);
-          } else if (tabs.length > 1) {
-            const nextT = tabs.find((t) => t.id !== activeTabId);
-            if (nextT) setSplitTabId(nextT.id);
-          } else {
-            handleNewTab('https://es.wikipedia.org/wiki/Wikipedia:Portada');
-          }
+        onMouseLeave={() => setIsBookmarksZoneHovered(false)}
+        onPointerMove={() => setBookmarksActivityTick((n) => n + 1)}
+        onPointerDown={() => {
+          setIsBookmarksBarIdleHidden(false);
+          setBookmarksActivityTick((n) => n + 1);
         }}
-        onToggleShieldsModal={() => setIsShieldsModalOpen((prev) => !prev)}
-        onToggleSidebar={() => {
-          const nextShow = !settings.showSidebar;
-          handleUpdateSettings({ showSidebar: nextShow, sidebarMode: nextShow ? 'on' : 'off' });
-        }}
-        onOpenBackupModal={() => setIsBackupModalOpen(true)}
-        onOpenElectronModal={() => setIsElectronModalOpen(true)}
-        onOpenDevTools={() => {
-          handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
-          setActiveSidebarView('devtools');
-        }}
-        onOpenNotes={() => {
-          handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
-          setActiveSidebarView('notes');
-        }}
-        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-        onNewTab={() => handleNewTab()}
-        onNewWindow={handleNewWindow}
-        onNewPrivateTab={() => handleNewTab('fabinav://newtab', 'private')}
-        onReopenClosedTab={handleReopenClosedTab}
-        canReopenClosedTab={closedTabs.length > 0}
-        onToggleBookmarksBar={() =>
-          handleUpdateSettings({ showBookmarksBar: !settings.showBookmarksBar })
-        }
-        onClearBrowsingData={handleClearBrowsingData}
-        onOpenFindInPage={handleOpenFindInPage}
-        onEditAction={handleEditAction}
-        onSavePageAs={handleSavePageAs}
-        onCaptureView={handleCaptureView}
-        onCopyLink={handleCopyLink}
-        onOpenQrModal={() => setIsQrModalOpen(true)}
-        onOpenTabSearch={() => setTabSearchSignal((n) => n + 1)}
-        onOpenRenameWindow={() => {
-          setRenameInput(customWindowTitle);
-          setIsRenameWindowOpen(true);
-        }}
-        onOpenTaskManager={() => setIsTaskManagerOpen(true)}
-        isFullscreen={isFullscreen}
-        onToggleFullscreen={handleToggleFullscreen}
-        onCloseWindow={handleCloseBrowserWindow}
-        isSplitActive={!!splitTabId}
-        shieldCount={
-          activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://')
-            ? (blockedUrlsByTab[activeTab.id] || []).length
-            : 0
-        }
-        isShieldActive={shieldState.enabled}
-      />
-
-      {/* 3. FabiNav Bookmarks Bar */}
-      {settings.showBookmarksBar && (
-        <BookmarksBar
+      >
+        <TitleBar
+          currentTab={activeTab}
+          googleUser={googleUser}
           bookmarks={bookmarks}
+          historyEntries={historyEntries}
+          closedTabs={closedTabs}
+          settings={settings}
+          extensions={extensions}
+          omniboxRef={omniboxRef}
           onNavigate={(url) => handleNavigate(activeTab.id, url)}
-          onAddBookmark={handleToggleBookmark}
-          onOpenBookmarksPage={() => handleNavigate(activeTab.id, 'fabinav://bookmarks')}
+          onGoBack={handleGoBack}
+          onGoForward={handleGoForward}
+          onReload={handleReload}
+          onGoHome={handleGoHome}
+          onUpdateSettings={handleUpdateSettings}
+          onToggleExtension={handleToggleExtension}
+          onUpdateExtension={handleUpdateExtension}
+          onTranslatePage={handleTranslatePage}
+          onResetZoom={() => {
+            handleUpdateSettings({ zoomLevel: 100 });
+            showToast('Zoom restablecido al 100%');
+          }}
+          onToggleBookmark={handleToggleBookmark}
+          onToggleSplitMode={() => {
+            if (splitTabId) {
+              setSplitTabId(null);
+            } else if (tabs.length > 1) {
+              const nextT = tabs.find((t) => t.id !== activeTabId);
+              if (nextT) setSplitTabId(nextT.id);
+            } else {
+              handleNewTab('https://es.wikipedia.org/wiki/Wikipedia:Portada');
+            }
+          }}
+          onToggleShieldsModal={() => setIsShieldsModalOpen((prev) => !prev)}
+          onToggleSidebar={() => {
+            const nextShow = !settings.showSidebar;
+            handleUpdateSettings({ showSidebar: nextShow, sidebarMode: nextShow ? 'on' : 'off' });
+            if (nextShow) {
+              setIsSidebarIdleHidden(false);
+              setSidebarActivityTick((n) => n + 1);
+            }
+          }}
+          onOpenBackupModal={() => setIsBackupModalOpen(true)}
+          onOpenElectronModal={() => setIsElectronModalOpen(true)}
+          onOpenDevTools={() => {
+            handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
+            setActiveSidebarView('devtools');
+          }}
+          onOpenNotes={() => {
+            handleUpdateSettings({ showSidebar: true, sidebarMode: 'on' });
+            setActiveSidebarView('notes');
+          }}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          onNewTab={() => handleNewTab()}
+          onNewWindow={handleNewWindow}
+          onNewPrivateTab={() => handleNewTab('fabinav://newtab', 'private')}
+          onReopenClosedTab={handleReopenClosedTab}
+          canReopenClosedTab={closedTabs.length > 0}
+          onToggleBookmarksBar={() => {
+            const next = !settings.showBookmarksBar;
+            handleUpdateSettings({ showBookmarksBar: next });
+            if (next) {
+              setIsBookmarksBarIdleHidden(false);
+              setBookmarksActivityTick((n) => n + 1);
+            }
+          }}
+          onClearBrowsingData={handleClearBrowsingData}
+          onOpenFindInPage={handleOpenFindInPage}
+          onEditAction={handleEditAction}
+          onSavePageAs={handleSavePageAs}
+          onCaptureView={handleCaptureView}
+          onCopyLink={handleCopyLink}
+          onOpenQrModal={() => setIsQrModalOpen(true)}
+          onOpenTabSearch={() => setTabSearchSignal((n) => n + 1)}
+          onOpenRenameWindow={() => {
+            setRenameInput(customWindowTitle);
+            setIsRenameWindowOpen(true);
+          }}
+          onOpenTaskManager={() => setIsTaskManagerOpen(true)}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
+          onCloseWindow={handleCloseBrowserWindow}
+          isSplitActive={!!splitTabId}
+          shieldCount={
+            activeTab.url.startsWith('http://') || activeTab.url.startsWith('https://')
+              ? (blockedUrlsByTab[activeTab.id] || []).length
+              : 0
+          }
+          isShieldActive={shieldState.enabled}
         />
-      )}
+
+        {settings.showBookmarksBar &&
+          (!settings.autoHideBookmarksBar || !isBookmarksBarIdleHidden || isBookmarksZoneHovered) && (
+            <BookmarksBar
+              bookmarks={bookmarks}
+              onNavigate={(url) => handleNavigate(activeTab.id, url)}
+              onAddBookmark={handleToggleBookmark}
+              onOpenBookmarksPage={() => handleNavigate(activeTab.id, 'fabinav://bookmarks')}
+            />
+          )}
+
+        {settings.showBookmarksBar &&
+          settings.autoHideBookmarksBar &&
+          isBookmarksBarIdleHidden &&
+          !isBookmarksZoneHovered && (
+            <div
+              className="h-1.5 w-full bg-transparent hover:bg-[var(--bn-accent)]/35 border-b border-transparent hover:border-[var(--bn-accent)]/40 transition-colors shrink-0"
+              title="Pasa el ratón para mostrar la barra de favoritos"
+            />
+          )}
+      </div>
 
       {/* 4. Main Workspace */}
       <div className="flex-1 flex overflow-hidden relative">

@@ -2590,6 +2590,10 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                 'claro',
                 'inicio',
                 'marcadores',
+                'favoritos',
+                'ocultar',
+                'inactividad',
+                'barras',
                 'pestañas',
                 'verticales',
                 'zoom',
@@ -2741,6 +2745,68 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                       >
                         <option value="right">A la derecha</option>
                         <option value="left">A la izquierda</option>
+                      </select>
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Ocultar barra de favoritos si no se usa
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Oculta la barra de marcadores tras un tiempo sin usarla y reaparece al acercar el ratón arriba
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={!!settings.autoHideBookmarksBar}
+                        onChange={(v) => onUpdateSettings({ autoHideBookmarksBar: v })}
+                        ariaLabel="Ocultar barra de favoritos tras inactividad"
+                      />
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Ocultar barra lateral si no se usa
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Repliega la barra lateral tras un tiempo sin interacción y vuelve al pasar el ratón por el borde
+                        </div>
+                      </div>
+                      <FabiSwitch
+                        size="md"
+                        checked={!!settings.autoHideSidebarIdle}
+                        onChange={(v) => onUpdateSettings({ autoHideSidebarIdle: v })}
+                        ariaLabel="Ocultar barra lateral tras inactividad"
+                      />
+                    </div>
+
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div>
+                        <div className="font-medium text-[var(--bn-text-strong)]">
+                          Tiempo de espera para ocultar barras
+                        </div>
+                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                          Segundos de inactividad antes de ocultar la barra de favoritos o la barra lateral
+                        </div>
+                      </div>
+                      <select
+                        value={settings.barsAutoHideDelaySec || 15}
+                        onChange={(e) =>
+                          onUpdateSettings({
+                            barsAutoHideDelaySec: Number(
+                              e.target.value
+                            ) as BrowserSettings['barsAutoHideDelaySec']
+                          })
+                        }
+                        className="bg-[var(--bn-omnibox)] border border-[var(--bn-border-strong)] rounded-xl px-3 py-1.5 text-xs text-[var(--bn-text-strong)] tabular-nums"
+                      >
+                        {[5, 10, 15, 30, 60].map((sec) => (
+                          <option key={sec} value={sec}>
+                            {sec} segundos
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
