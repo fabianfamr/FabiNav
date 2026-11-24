@@ -2157,13 +2157,6 @@ export const FabiSearchView: React.FC<FabiSearchViewProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => onNavigate('fabinav://extensions')}
-            className="hover:text-[var(--bn-text-strong)] transition-colors"
-          >
-            Extensiones
-          </button>
-          <button
-            type="button"
             onClick={() => onNavigate('fabinav://history')}
             className="hover:text-[var(--bn-text-strong)] transition-colors"
           >

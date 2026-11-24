@@ -262,23 +262,11 @@ const ES_MESSAGES = {
   checkUpdatesBtn: 'Buscar actualizaciones',
   restartInstallBtn: 'Reiniciar e instalar',
   viewShortcutsLink: 'Ver atajos de teclado y detalles',
-  menuExtensions: 'Extensiones',
-  menuManageExtensions: 'Administrar extensiones',
   menuTranslate: 'Traducir...',
   menuProfileSignedIn: 'Accediste a tu cuenta',
   menuProfileSignIn: 'Iniciar sesión en FabiNav',
   secAutofill: 'Autocompletar y contraseñas',
-  secPerformance: 'Rendimiento',
-  secExtensions: 'Extensiones',
-  extensionsTitle: 'Extensiones',
-  extensionsSearchPlaceholder: 'Buscar extensiones',
-  developerMode: 'Modo de desarrollador',
-  pinNewExtensions: 'Fijar las nuevas extensiones en la barra de herramientas',
-  myExtensions: 'Mis extensiones',
-  shortcutsTab: 'Accesos directos',
-  allExtensions: 'Todas las extensiones',
-  detailsBtn: 'Detalles',
-  removeBtn: 'Quitar'
+  secPerformance: 'Rendimiento'
 } as const;
 
 export type TranslationKey = keyof typeof ES_MESSAGES;
@@ -446,23 +434,11 @@ const EN_MESSAGES: Record<TranslationKey, string> = {
   checkUpdatesBtn: 'Check for updates',
   restartInstallBtn: 'Restart and install',
   viewShortcutsLink: 'View keyboard shortcuts & details',
-  menuExtensions: 'Extensions',
-  menuManageExtensions: 'Manage extensions',
   menuTranslate: 'Translate...',
   menuProfileSignedIn: 'Signed in',
   menuProfileSignIn: 'Sign in to FabiNav',
   secAutofill: 'Autofill and passwords',
-  secPerformance: 'Performance',
-  secExtensions: 'Extensions',
-  extensionsTitle: 'Extensions',
-  extensionsSearchPlaceholder: 'Search extensions',
-  developerMode: 'Developer mode',
-  pinNewExtensions: 'Pin new extensions to toolbar',
-  myExtensions: 'My extensions',
-  shortcutsTab: 'Keyboard shortcuts',
-  allExtensions: 'All extensions',
-  detailsBtn: 'Details',
-  removeBtn: 'Remove'
+  secPerformance: 'Performance'
 };
 
 const JA_MESSAGES: Record<TranslationKey, string> = {
@@ -628,23 +604,11 @@ const JA_MESSAGES: Record<TranslationKey, string> = {
   checkUpdatesBtn: 'アップデートを確認',
   restartInstallBtn: '再起動してインストール',
   viewShortcutsLink: 'キーボードショートカットと詳細',
-  menuExtensions: '拡張機能',
-  menuManageExtensions: '拡張機能を管理',
   menuTranslate: '翻訳...',
   menuProfileSignedIn: 'ログイン済み',
   menuProfileSignIn: 'FabiNav にログイン',
   secAutofill: '自動入力とパスワード',
-  secPerformance: 'パフォーマンス',
-  secExtensions: '拡張機能',
-  extensionsTitle: '拡張機能',
-  extensionsSearchPlaceholder: '拡張機能を検索',
-  developerMode: 'デベロッパーモード',
-  pinNewExtensions: '新しい拡張機能をツールバーに固定',
-  myExtensions: 'マイ拡張機能',
-  shortcutsTab: 'キーボードショートカット',
-  allExtensions: 'すべての拡張機能',
-  detailsBtn: '詳細',
-  removeBtn: '削除'
+  secPerformance: 'パフォーマンス'
 };
 
 export const TRANSLATIONS: Record<AppLanguage, Record<TranslationKey, string>> = {

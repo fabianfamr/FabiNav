@@ -10,7 +10,6 @@ import {
   DownloadItem,
   TopSiteItem,
   GoogleUserProfile,
-  BrowserExtension,
   AutofillEntry
 } from '../types';
 import { Columns, Gauge, RotateCw } from 'lucide-react';
@@ -62,11 +61,6 @@ interface WebViewportProps {
   googleUser?: GoogleUserProfile | null;
   onGoogleSignIn?: () => void;
   onGoogleSignOut?: () => void;
-  extensions?: BrowserExtension[];
-  onUpdateExtension?: (id: string, updates: Partial<BrowserExtension>) => void;
-  onAddExtension?: (ext: Omit<BrowserExtension, 'id'>) => void;
-  onRemoveExtension?: (id: string) => void;
-  onResetExtensions?: () => void;
   autofillEntries?: AutofillEntry[];
   onAddAutofill?: (entry: Omit<AutofillEntry, 'id' | 'createdAt'>) => void;
   onRemoveAutofill?: (id: string) => void;
@@ -108,11 +102,6 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   googleUser,
   onGoogleSignIn,
   onGoogleSignOut,
-  extensions = [],
-  onUpdateExtension,
-  onAddExtension,
-  onRemoveExtension,
-  onResetExtensions,
   autofillEntries = [],
   onAddAutofill,
   onRemoveAutofill,
@@ -150,11 +139,6 @@ export const WebViewport: React.FC<WebViewportProps> = ({
     googleUser,
     onGoogleSignIn,
     onGoogleSignOut,
-    extensions,
-    onUpdateExtension,
-    onAddExtension,
-    onRemoveExtension,
-    onResetExtensions,
     autofillEntries,
     onAddAutofill,
     onRemoveAutofill,
@@ -247,11 +231,6 @@ interface SingleTabFrameProps {
   googleUser?: GoogleUserProfile | null;
   onGoogleSignIn?: () => void;
   onGoogleSignOut?: () => void;
-  extensions?: BrowserExtension[];
-  onUpdateExtension?: (id: string, updates: Partial<BrowserExtension>) => void;
-  onAddExtension?: (ext: Omit<BrowserExtension, 'id'>) => void;
-  onRemoveExtension?: (id: string) => void;
-  onResetExtensions?: () => void;
   autofillEntries?: AutofillEntry[];
   onAddAutofill?: (entry: Omit<AutofillEntry, 'id' | 'createdAt'>) => void;
   onRemoveAutofill?: (id: string) => void;
@@ -295,11 +274,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   googleUser,
   onGoogleSignIn,
   onGoogleSignOut,
-  extensions = [],
-  onUpdateExtension,
-  onAddExtension,
-  onRemoveExtension,
-  onResetExtensions,
   autofillEntries = [],
   onAddAutofill,
   onRemoveAutofill,
@@ -334,74 +308,10 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     ? decodeURIComponent(tab.url.replace('fabinav://search?q=', ''))
     : '';
 
-  const activeExtensionsPayload = useMemo(
-    () =>
-      extensions
-        .filter((e) => e.enabled)
-        .map((e) => ({
-          id: e.id,
-          name: e.name,
-          version: e.version,
-          manifestVersion: e.manifestVersion || 3,
-          mode: e.mode,
-          contentScripts: e.contentScripts || [],
-          customCss: e.customCss || '',
-          customJs: e.customJs || '',
-          matchPatterns: e.matchPatterns || e.hostPermissions || ['<all_urls>'],
-          resources: e.resources || {}
-        })),
-    [extensions]
-  );
-
-  const activeExtModes = useMemo(
-    () =>
-      extensions
-        .filter((e) => e.enabled && (e.mode === 'dark-web' || e.mode === 'reader' || e.mode === 'ad-cosmetic'))
-        .map((e) => e.mode),
-    [extensions]
-  );
-
-  const activeCustomCss = useMemo(
-    () =>
-      extensions
-        .filter((e) => e.enabled && (e.mode === 'stylus' || e.mode === 'custom-css') && e.customCss)
-        .map((e) => e.customCss)
-        .join('\n'),
-    [extensions]
-  );
-
-  const activeExtModesRef = useRef(activeExtModes);
-  const activeCustomCssRef = useRef(activeCustomCss);
-  const activeExtensionsRef = useRef(activeExtensionsPayload);
   const isMutedRef = useRef(!!tab.isMuted);
-  useEffect(() => {
-    activeExtModesRef.current = activeExtModes;
-    activeCustomCssRef.current = activeCustomCss;
-    activeExtensionsRef.current = activeExtensionsPayload;
-  }, [activeExtModes, activeCustomCss, activeExtensionsPayload]);
   useEffect(() => {
     isMutedRef.current = !!tab.isMuted;
   }, [tab.isMuted]);
-
-  const scopeSearchCustomCss = useMemo(() => {
-    const parts: string[] = [];
-    const isLightTheme = settings.theme === 'fabi-light' || settings.theme === 'brave-light';
-    if (activeExtModes.includes('dark-web') && isLightTheme) {
-      parts.push(
-        '.fabinav-search-ext-scope { filter: invert(0.91) hue-rotate(180deg); } .fabinav-search-ext-scope img, .fabinav-search-ext-scope video, .fabinav-search-ext-scope svg { filter: invert(1) hue-rotate(180deg); }'
-      );
-    }
-    if (activeExtModes.includes('reader')) {
-      parts.push(
-        '.fabinav-search-ext-scope { font-family: Georgia, "Times New Roman", serif !important; } .fabinav-search-ext-scope p, .fabinav-search-ext-scope article { font-size: 16px !important; line-height: 1.72 !important; }'
-      );
-    }
-    if (activeCustomCss.trim()) {
-      const scoped = activeCustomCss.replace(/body\b/gi, '.fabinav-search-ext-scope');
-      parts.push(scoped);
-    }
-    return parts.join('\n');
-  }, [activeExtModes, activeCustomCss, settings.theme]);
 
   // Reset relaxed retry flag when navigating to a different URL
   useEffect(() => {
@@ -453,21 +363,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       try {
         wv.setAudioMuted?.(!!tab.isMuted);
         wv.setZoomFactor?.(settings.zoomLevel / 100);
-        if (activeCustomCssRef.current) {
-          void wv.insertCSS?.(activeCustomCssRef.current);
-        }
-        activeExtensionsRef.current.forEach((ext) => {
-          (ext.contentScripts || []).forEach((cs) => {
-            (cs.css || []).forEach((cssCode) => {
-              void wv.insertCSS?.(cssCode);
-            });
-            (cs.js || []).forEach((jsCode) => {
-              void wv.executeJavaScript?.(jsCode).catch(() => {});
-            });
-          });
-          if (ext.customCss) void wv.insertCSS?.(ext.customCss);
-          if (ext.customJs) void wv.executeJavaScript?.(ext.customJs).catch(() => {});
-        });
       } catch {
         // ignore webview readiness race
       }
@@ -533,10 +428,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         found?: boolean;
         texts?: string[];
         targetLang?: string;
-        requestId?: string;
-        response?: unknown;
-        extId?: string;
-        message?: unknown;
       };
       if (!payload || typeof payload !== 'object') return;
 
@@ -553,37 +444,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           { type: 'fabinav:set-muted', muted: isMutedRef.current },
           '*'
         );
-        iframeRef.current?.contentWindow?.postMessage(
-          {
-            type: 'fabinav:apply-extensions',
-            modes: activeExtModesRef.current,
-            customCss: activeCustomCssRef.current,
-            extensions: activeExtensionsRef.current
-          },
-          '*'
-        );
-      } else if (payload.type === 'fabinav:ext-message-response') {
-        window.dispatchEvent(
-          new CustomEvent('fabinav:ext-relay-response', {
-            detail: { requestId: payload.requestId, response: payload.response }
-          })
-        );
-      } else if (payload.type === 'fabinav:ext-content-message') {
-        window.dispatchEvent(
-          new CustomEvent('fabinav:ext-content-to-popup', {
-            detail: { extId: payload.extId, message: payload.message }
-          })
-        );
       } else if (payload.type === 'fabinav:page-info') {
-        iframeRef.current?.contentWindow?.postMessage(
-          {
-            type: 'fabinav:apply-extensions',
-            modes: activeExtModesRef.current,
-            customCss: activeCustomCssRef.current,
-            extensions: activeExtensionsRef.current
-          },
-          '*'
-        );
         onPageSecurityReport?.({
           title: payload.title,
           url: payload.url,
@@ -666,28 +527,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     );
   }, [isElectron, tab.isMuted, isNewTab, isSearchPage, isFabiInternal]);
 
-  // Sync active extensions live JS/CSS into proxied iframe without reloading
-  useEffect(() => {
-    if (isNewTab || isSearchPage || isFabiInternal || tab.isDiscarded) return;
-    iframeRef.current?.contentWindow?.postMessage(
-      {
-        type: 'fabinav:apply-extensions',
-        modes: activeExtModes,
-        customCss: activeCustomCss,
-        extensions: activeExtensionsPayload
-      },
-      '*'
-    );
-  }, [
-    activeExtModes,
-    activeCustomCss,
-    activeExtensionsPayload,
-    isNewTab,
-    isSearchPage,
-    isFabiInternal,
-    tab.isDiscarded
-  ]);
-
   const activeLists = (
     shieldState.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
   ).join(',');
@@ -712,7 +551,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         )}`
       : '';
 
-  // Forward Find-in-Page, Reload, Translate, and WebExtension popup commands into active external frame
+  // Forward Find-in-Page, Reload, and Translate commands into active external frame
   useEffect(() => {
     if (!isPrimary || isNewTab || isSearchPage || isFabiInternal) return;
 
@@ -768,66 +607,13 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       );
     };
 
-    const handleExtDispatchMsg = (ev: Event) => {
-      const customEv = ev as CustomEvent<{ extId?: string; requestId?: string; message?: unknown }>;
-      if (!customEv.detail) return;
-      iframeRef.current?.contentWindow?.postMessage(
-        {
-          type: 'fabinav:ext-runtime-message',
-          extId: customEv.detail.extId,
-          requestId: customEv.detail.requestId,
-          message: customEv.detail.message
-        },
-        '*'
-      );
-    };
-
-    const handleExtStorageChanged = (ev: Event) => {
-      const customEv = ev as CustomEvent<{ extId?: string; changes?: unknown }>;
-      if (!customEv.detail) return;
-      iframeRef.current?.contentWindow?.postMessage(
-        {
-          type: 'fabinav:ext-storage-changed',
-          extId: customEv.detail.extId,
-          changes: customEv.detail.changes
-        },
-        '*'
-      );
-    };
-
-    const handleExtScripting = (ev: Event) => {
-      const customEv = ev as CustomEvent<{
-        extId?: string;
-        action?: string;
-        css?: string;
-        code?: string;
-      }>;
-      if (!customEv.detail) return;
-      iframeRef.current?.contentWindow?.postMessage(
-        {
-          type: 'fabinav:ext-scripting',
-          extId: customEv.detail.extId,
-          action: customEv.detail.action,
-          css: customEv.detail.css,
-          code: customEv.detail.code
-        },
-        '*'
-      );
-    };
-
     window.addEventListener('fabinav:dispatch-find', handleDispatchFind);
     window.addEventListener('fabinav:dispatch-reload', handleDispatchReload);
     window.addEventListener('fabinav:dispatch-translate', handleDispatchTranslate);
-    window.addEventListener('fabinav:ext-dispatch-message', handleExtDispatchMsg);
-    window.addEventListener('fabinav:ext-relay-storage', handleExtStorageChanged);
-    window.addEventListener('fabinav:ext-relay-scripting', handleExtScripting);
     return () => {
       window.removeEventListener('fabinav:dispatch-find', handleDispatchFind);
       window.removeEventListener('fabinav:dispatch-reload', handleDispatchReload);
       window.removeEventListener('fabinav:dispatch-translate', handleDispatchTranslate);
-      window.removeEventListener('fabinav:ext-dispatch-message', handleExtDispatchMsg);
-      window.removeEventListener('fabinav:ext-relay-storage', handleExtStorageChanged);
-      window.removeEventListener('fabinav:ext-relay-scripting', handleExtScripting);
     };
   }, [
     isPrimary,
@@ -891,8 +677,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onOpenShieldModal={onOpenShieldModal}
         />
       ) : isSearchPage ? (
-        <div className="fabinav-search-ext-scope flex-1 flex flex-col overflow-hidden h-full">
-          {scopeSearchCustomCss && <style>{scopeSearchCustomCss}</style>}
+        <div className="flex-1 flex flex-col overflow-hidden h-full">
           <FabiSearchView
             query={searchQuery}
             defaultEngine={settings.defaultSearchEngine}
@@ -925,15 +710,9 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onResetSettings={onResetSettings}
           onOpenElectronModal={onOpenElectronModal}
           onNavigate={onNavigate}
-          extensions={extensions}
-          onUpdateExtension={onUpdateExtension}
-          onAddExtension={onAddExtension}
-          onRemoveExtension={onRemoveExtension}
-          onResetExtensions={onResetExtensions}
           autofillEntries={autofillEntries}
           onAddAutofill={onAddAutofill}
           onRemoveAutofill={onRemoveAutofill}
-          onOpenNewTab={onOpenNewTab}
         />
       ) : tab.isDiscarded ? (
         <div className="flex-1 w-full h-full flex items-center justify-center bg-[var(--bn-surface)] p-6">
@@ -1008,15 +787,6 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
               onLoad={() => {
                 iframeRef.current?.contentWindow?.postMessage(
                   { type: 'fabinav:set-muted', muted: !!tab.isMuted },
-                  '*'
-                );
-                iframeRef.current?.contentWindow?.postMessage(
-                  {
-                    type: 'fabinav:apply-extensions',
-                    modes: activeExtModes,
-                    customCss: activeCustomCss,
-                    extensions: activeExtensionsPayload
-                  },
                   '*'
                 );
               }}

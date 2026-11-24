@@ -15,9 +15,6 @@ contextBridge.exposeInMainWorld('fabinavDesktop', {
   checkForUpdates: () => ipcRenderer.invoke('fabinav:check-updates'),
   installUpdate: () => ipcRenderer.invoke('fabinav:install-update'),
   openUninstallSettings: () => ipcRenderer.invoke('fabinav:open-uninstall'),
-  pickAndLoadExtension: () => ipcRenderer.invoke('fabinav:ext-pick-unpacked'),
-  removeNativeExtension: (nativeId, localPath) =>
-    ipcRenderer.invoke('fabinav:ext-remove', nativeId, localPath),
   onWindowState: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, state) => callback(state);

@@ -8,9 +8,8 @@ import {
   FabiNewTabCustomization,
   LocalBackupMeta
 } from '../types';
-export { INITIAL_EXTENSIONS } from './defaultExtensions';
 
-export const APP_VERSION = '1.18.0';
+export const APP_VERSION = '1.19.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -190,9 +189,7 @@ export const DEFAULT_SETTINGS: BrowserSettings = {
   spellCheck: true,
   translateOffer: true,
   translateTargetLang: 'es',
-  reduceMotion: false,
-  pinNewExtensions: true,
-  extensionsDevMode: false
+  reduceMotion: false
 };
 
 

@@ -15,7 +15,6 @@ import {
   HistoryEntry,
   TopSiteItem,
   GoogleUserProfile,
-  BrowserExtension,
   AutofillEntry
 } from './types';
 import {
@@ -26,7 +25,6 @@ import {
   INITIAL_SHIELD_STATE,
   INITIAL_NEWTAB_CUSTOMIZATION,
   INITIAL_BACKUP_META,
-  INITIAL_EXTENSIONS,
   APP_VERSION
 } from './constants/initialData';
 import { initGoogleAuth, signInWithGoogle, signOutGoogle, setAuthLanguage } from './services/googleAuth';
@@ -181,24 +179,8 @@ export default function App() {
   const [splitTabId, setSplitTabId] = useState<string | null>(null);
   const [closedTabs, setClosedTabs] = useState<ClosedTabRecord[]>([]);
 
-  // Settings, Theme, Extensions & Autofill
+  // Settings, Theme & Autofill
   const [settings, setSettings] = useState<BrowserSettings>(initialSession.loadedSettings);
-  const [extensions, setExtensions] = useState<BrowserExtension[]>(() => {
-    const stored = loadStored<BrowserExtension[]>('extensions', INITIAL_EXTENSIONS);
-    if (!Array.isArray(stored)) return INITIAL_EXTENSIONS;
-    const builtinMap = new Map(INITIAL_EXTENSIONS.map((e) => [e.id, e]));
-    return stored.map((item) => {
-      const builtin = builtinMap.get(item.id);
-      if (!builtin) return item;
-      return {
-        ...builtin,
-        enabled: typeof item.enabled === 'boolean' ? item.enabled : builtin.enabled,
-        pinned: typeof item.pinned === 'boolean' ? item.pinned : builtin.pinned,
-        customCss: item.customCss !== undefined ? item.customCss : builtin.customCss,
-        customJs: item.customJs !== undefined ? item.customJs : builtin.customJs
-      };
-    });
-  });
   const [autofillEntries, setAutofillEntries] = useState<AutofillEntry[]>(() =>
     loadStored('autofill_entries', [])
   );
@@ -406,7 +388,6 @@ export default function App() {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}history`, JSON.stringify(historyEntries.slice(0, 100)));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}downloads`, JSON.stringify(downloads.slice(0, 50)));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}settings`, JSON.stringify(settings));
-      localStorage.setItem(`${STORAGE_KEY_PREFIX}extensions`, JSON.stringify(extensions));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}autofill_entries`, JSON.stringify(autofillEntries));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}shields`, JSON.stringify(shieldState));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}newtab`, JSON.stringify(newTabCustomization));
@@ -423,7 +404,6 @@ export default function App() {
     historyEntries,
     downloads,
     settings,
-    extensions,
     autofillEntries,
     shieldState,
     newTabCustomization,
@@ -483,7 +463,6 @@ export default function App() {
   const resolveInternalTitle = (targetUrl: string): string => {
     const baseUrl = targetUrl.split('#')[0];
     if (baseUrl === 'fabinav://newtab') return 'Nueva pestaña';
-    if (baseUrl === 'fabinav://extensions') return 'Extensiones';
     if (baseUrl === 'fabinav://bookmarks') return 'Marcadores';
     if (baseUrl === 'fabinav://history') return 'Historial';
     if (baseUrl === 'fabinav://downloads') return 'Descargas';
@@ -1264,47 +1243,6 @@ export default function App() {
     showToast('Nueva sesión lista en FabiNav');
   };
 
-  // Extensions management handlers
-  const handleToggleExtension = (id: string) => {
-    setExtensions((prev) =>
-      prev.map((ext) => {
-        if (ext.id !== id) return ext;
-        const nextEnabled = !ext.enabled;
-        showToast(`${ext.name}: ${nextEnabled ? 'activada' : 'desactivada'}`);
-        return { ...ext, enabled: nextEnabled };
-      })
-    );
-  };
-
-  const handleUpdateExtension = (id: string, updates: Partial<BrowserExtension>) => {
-    setExtensions((prev) => prev.map((ext) => (ext.id === id ? { ...ext, ...updates } : ext)));
-  };
-
-  const handleAddExtension = (ext: Omit<BrowserExtension, 'id'>) => {
-    const created: BrowserExtension = {
-      ...ext,
-      id: `ext-custom-${Date.now()}`
-    };
-    setExtensions((prev) => [created, ...prev]);
-    showToast(`Extensión "${created.name}" instalada`);
-  };
-
-  const handleRemoveExtension = (id: string) => {
-    const target = extensions.find((ext) => ext.id === id);
-    if (target && (target.nativeElectronId || target.localPath) && window.fabinavDesktop?.removeNativeExtension) {
-      window.fabinavDesktop
-        .removeNativeExtension(target.nativeElectronId || target.id, target.localPath)
-        .catch(() => {});
-    }
-    setExtensions((prev) => prev.filter((ext) => ext.id !== id));
-    showToast('Extensión eliminada');
-  };
-
-  const handleResetExtensions = () => {
-    setExtensions(INITIAL_EXTENSIONS);
-    showToast('Extensiones restauradas');
-  };
-
   // Autofill management handlers
   const handleAddAutofill = (entry: Omit<AutofillEntry, 'id' | 'createdAt'>) => {
     setAutofillEntries((prev) => [
@@ -1809,13 +1747,6 @@ export default function App() {
       action: () => setIsTaskManagerOpen(true)
     },
     {
-      id: 'cmd-extensions',
-      title: 'Administrar extensiones',
-      subtitle: 'Activar estilos CSS, modo lectura o crear extensiones',
-      category: 'Herramientas',
-      action: () => handleNavigate(activeTab.id, 'fabinav://extensions')
-    },
-    {
       id: 'cmd-translate',
       title: 'Traducir página actual',
       subtitle: 'Traduce el contenido web externo al idioma elegido',
@@ -2075,7 +2006,6 @@ export default function App() {
           historyEntries={historyEntries}
           closedTabs={closedTabs}
           settings={settings}
-          extensions={extensions}
           omniboxRef={omniboxRef}
           onNavigate={(url) => handleNavigate(activeTab.id, url)}
           onGoBack={handleGoBack}
@@ -2083,8 +2013,6 @@ export default function App() {
           onReload={handleReload}
           onGoHome={handleGoHome}
           onUpdateSettings={handleUpdateSettings}
-          onToggleExtension={handleToggleExtension}
-          onUpdateExtension={handleUpdateExtension}
           onTranslatePage={handleTranslatePage}
           onResetZoom={() => {
             handleUpdateSettings({ zoomLevel: 100 });
@@ -2380,11 +2308,6 @@ export default function App() {
           googleUser={googleUser}
           onGoogleSignIn={handleGoogleSignIn}
           onGoogleSignOut={handleGoogleSignOut}
-          extensions={extensions}
-          onUpdateExtension={handleUpdateExtension}
-          onAddExtension={handleAddExtension}
-          onRemoveExtension={handleRemoveExtension}
-          onResetExtensions={handleResetExtensions}
           autofillEntries={autofillEntries}
           onAddAutofill={handleAddAutofill}
           onRemoveAutofill={handleRemoveAutofill}
