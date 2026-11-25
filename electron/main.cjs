@@ -186,14 +186,336 @@ async function createWindow() {
     }
   });
 
+  let currentShieldState = {
+    enabled: true,
+    blockTrackersAndAds: 'standard',
+    upgradeHttps: true,
+    strictTls: true,
+    blockScripts: false,
+    blockFingerprinting: 'standard',
+    blockCrossSiteCookies: true,
+    filterLists: ['core-trackers', 'cookie-notices', 'url-tracking'],
+    customFilterRules: [],
+    siteOverrides: {}
+  };
+
+  ipcMain.on('fabinav:sync-shields', (_event, nextState) => {
+    if (nextState && typeof nextState === 'object') {
+      currentShieldState = {
+        ...currentShieldState,
+        ...nextState,
+        siteOverrides:
+          nextState.siteOverrides && typeof nextState.siteOverrides === 'object'
+            ? nextState.siteOverrides
+            : {}
+      };
+    }
+  });
+
+  const ELECTRON_TRACKER_DOMAINS = [
+    'doubleclick.net',
+    'doubleclick.com',
+    'google-analytics.com',
+    'googletagmanager.com',
+    'googlesyndication.com',
+    'pagead2.googlesyndication.com',
+    'googleadservices.com',
+    'adservice.google.',
+    'ads.youtube.com',
+    'cloudflareinsights.com',
+    'adtng.com',
+    'tsyndicate.com',
+    'scorecardresearch.com',
+    'quantserve.com',
+    'criteo.com',
+    'criteo.net',
+    'taboola.com',
+    'outbrain.com',
+    'hotjar.com',
+    'mixpanel.com',
+    'segment.io',
+    'segment.com',
+    'amplitude.com',
+    'clarity.ms',
+    'newrelic.com',
+    'nr-data.net',
+    'omtrdc.net',
+    'demdex.net',
+    'pubmatic.com',
+    'rubiconproject.com',
+    'openx.net',
+    'adnxs.com',
+    'casalemedia.com',
+    'amazon-adsystem.com',
+    'adsystem.com',
+    'advertising.com',
+    'bat.bing.com',
+    'mc.yandex.ru',
+    'moatads.com',
+    'doubleverify.com',
+    'adform.net',
+    'adsrvr.org',
+    'bidswitch.net',
+    'bluekai.com',
+    'chartbeat.com',
+    'exoclick.com',
+    'indexww.com',
+    'krxd.net',
+    'mediamath.com',
+    'mgid.com',
+    'onesignal.com',
+    'optimizely.com',
+    'popads.net',
+    'propellerads.com',
+    'revcontent.com',
+    'sharethrough.com',
+    'analytics.tiktok.com',
+    'yieldmo.com',
+    'zemanta.com'
+  ];
+  const ELECTRON_SOCIAL_DOMAINS = [
+    'connect.facebook.net',
+    'facebook.com/tr',
+    'pixel.facebook.com',
+    'analytics.twitter.com',
+    'ads-twitter.com',
+    'snap.licdn.com',
+    'px.ads.linkedin.com',
+    'ct.pinterest.com'
+  ];
+  const ELECTRON_REGIONAL_DOMAINS = [
+    'adingo.jp',
+    'microad.jp',
+    'nend.net',
+    'geniee.jp',
+    'im-apps.net',
+    'smartadserver.com',
+    'teads.tv',
+    'seedtag.com',
+    'e-planning.net'
+  ];
+  const ELECTRON_TRACKING_PARAMS = [
+    'utm_source',
+    'utm_medium',
+    'utm_campaign',
+    'utm_term',
+    'utm_content',
+    'utm_id',
+    'fbclid',
+    'gclid',
+    'dclid',
+    'msclkid',
+    'yclid',
+    'mc_cid',
+    'mc_eid',
+    'igshid',
+    'igsh',
+    '_hsenc',
+    '_hsmi',
+    'twclid',
+    'ttclid',
+    'si'
+  ];
+
+  const extractDomain = (rawUrl) => {
+    try {
+      const u = new URL(rawUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+      return u.hostname.replace(/^www\./, '').toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+
+  const resolveElectronShield = (siteUrl) => {
+    const domain = extractDomain(siteUrl);
+    const ov = domain && currentShieldState.siteOverrides ? currentShieldState.siteOverrides[domain] : null;
+    if (!ov) return currentShieldState;
+    return {
+      ...currentShieldState,
+      ...ov
+    };
+  };
+
+  const isInternalHostUrl = (rawUrl) => {
+    if (!rawUrl) return true;
+    if (
+      rawUrl.startsWith('http://127.0.0.1') ||
+      rawUrl.startsWith('http://localhost') ||
+      rawUrl.startsWith('devtools://') ||
+      rawUrl.startsWith('chrome-extension://') ||
+      rawUrl.startsWith('data:') ||
+      rawUrl.startsWith('blob:')
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const isElectronTracker = (rawUrl, effShield) => {
+    const lower = rawUrl.toLowerCase();
+    const lists = Array.isArray(effShield.filterLists)
+      ? effShield.filterLists
+      : ['core-trackers', 'cookie-notices', 'url-tracking'];
+    const custom = Array.isArray(effShield.customFilterRules) ? effShield.customFilterRules : [];
+
+    if (lists.includes('core-trackers') && ELECTRON_TRACKER_DOMAINS.some((d) => lower.includes(d))) {
+      return true;
+    }
+    if (lists.includes('social-widgets') && ELECTRON_SOCIAL_DOMAINS.some((d) => lower.includes(d))) {
+      return true;
+    }
+    if (lists.includes('regional-es-ja') && ELECTRON_REGIONAL_DOMAINS.some((d) => lower.includes(d))) {
+      return true;
+    }
+    if (custom.some((rule) => rule && lower.includes(String(rule).toLowerCase()))) {
+      return true;
+    }
+    if (effShield.blockTrackersAndAds === 'aggressive') {
+      if (/(\/ads\/|adserver|analytics\.js|telemetry|tracking|pixel\.)/i.test(lower)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const configureWebSession = (targetSession) => {
     if (!targetSession) return;
+
+    targetSession.webRequest.onBeforeRequest((details, callback) => {
+      try {
+        const reqUrl = details.url || '';
+        if (isInternalHostUrl(reqUrl)) {
+          callback({});
+          return;
+        }
+
+        const siteContextUrl =
+          details.resourceType === 'mainFrame'
+            ? reqUrl
+            : details.referrer || details.initiator || reqUrl;
+        const effShield = resolveElectronShield(siteContextUrl);
+
+        if (!effShield.enabled) {
+          callback({});
+          return;
+        }
+
+        if (details.resourceType === 'mainFrame') {
+          let nextUrl = reqUrl;
+          const lists = Array.isArray(effShield.filterLists) ? effShield.filterLists : [];
+          if (effShield.upgradeHttps && nextUrl.startsWith('http://')) {
+            const host = extractDomain(nextUrl);
+            if (host && host !== 'localhost' && host !== '127.0.0.1') {
+              nextUrl = nextUrl.replace(/^http:\/\//i, 'https://');
+            }
+          }
+          if (lists.includes('url-tracking')) {
+            try {
+              const parsed = new URL(nextUrl);
+              let stripped = false;
+              for (const p of ELECTRON_TRACKING_PARAMS) {
+                if (parsed.searchParams.has(p)) {
+                  parsed.searchParams.delete(p);
+                  stripped = true;
+                }
+              }
+              if (stripped) nextUrl = parsed.toString();
+            } catch {
+              // ignore url parse errors
+            }
+          }
+          if (nextUrl !== reqUrl) {
+            callback({ redirectURL: nextUrl });
+            return;
+          }
+          callback({});
+          return;
+        }
+
+        const blockScript = effShield.blockScripts && details.resourceType === 'script';
+        const blockTracker =
+          effShield.blockTrackersAndAds !== 'disabled' && isElectronTracker(reqUrl, effShield);
+
+        if (blockScript || blockTracker) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            let pageOrigin = siteContextUrl;
+            try {
+              pageOrigin = new URL(siteContextUrl).origin;
+            } catch {
+              // keep raw
+            }
+            mainWindow.webContents.send('fabinav:shield-blocked', {
+              pageOrigin,
+              blockedUrl: reqUrl,
+              resourceType: details.resourceType || 'other'
+            });
+          }
+          callback({ cancel: true });
+          return;
+        }
+      } catch {
+        // fail open on unexpected webRequest error
+      }
+      callback({});
+    });
+
     targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
       details.requestHeaders['DNT'] = '1';
       if (cleanChromeUa) {
         details.requestHeaders['User-Agent'] = cleanChromeUa;
       }
+      try {
+        const reqUrl = details.url || '';
+        const siteUrl = details.referrer || details.initiator || reqUrl;
+        const effShield = resolveElectronShield(siteUrl);
+        if (
+          effShield.enabled &&
+          effShield.blockCrossSiteCookies &&
+          details.resourceType !== 'mainFrame' &&
+          !isInternalHostUrl(reqUrl) &&
+          !isAllowedOAuthPopup(reqUrl)
+        ) {
+          const reqHost = extractDomain(reqUrl);
+          const siteHost = extractDomain(siteUrl);
+          if (reqHost && siteHost && reqHost !== siteHost && !reqHost.endsWith(`.${siteHost}`)) {
+            delete details.requestHeaders['Cookie'];
+            delete details.requestHeaders['cookie'];
+          }
+        }
+      } catch {
+        // ignore header filter error
+      }
       callback({ requestHeaders: details.requestHeaders });
+    });
+
+    targetSession.webRequest.onHeadersReceived((details, callback) => {
+      try {
+        const reqUrl = details.url || '';
+        const siteUrl = details.referrer || details.initiator || reqUrl;
+        const effShield = resolveElectronShield(siteUrl);
+        if (
+          effShield.enabled &&
+          effShield.blockCrossSiteCookies &&
+          details.resourceType !== 'mainFrame' &&
+          !isInternalHostUrl(reqUrl) &&
+          !isAllowedOAuthPopup(reqUrl) &&
+          details.responseHeaders
+        ) {
+          const reqHost = extractDomain(reqUrl);
+          const siteHost = extractDomain(siteUrl);
+          if (reqHost && siteHost && reqHost !== siteHost && !reqHost.endsWith(`.${siteHost}`)) {
+            const headers = { ...details.responseHeaders };
+            delete headers['set-cookie'];
+            delete headers['Set-Cookie'];
+            callback({ responseHeaders: headers });
+            return;
+          }
+        }
+      } catch {
+        // ignore response header filter error
+      }
+      callback({});
     });
 
     if (typeof targetSession.setPermissionRequestHandler === 'function') {
@@ -283,7 +605,8 @@ ipcMain.handle('fabinav:show-desktop-notification', async (_event, payload) => {
     const notif = new Notification({
       title,
       body: fullBody,
-      icon: fs.existsSync(iconPath) ? iconPath : undefined
+      icon: fs.existsSync(iconPath) ? iconPath : undefined,
+      silent: !!(payload && payload.silent)
     });
     notif.on('click', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {

@@ -76,6 +76,7 @@ export interface WebTab {
   lastActiveAt?: number;
   isDiscarded?: boolean;
   tabMode?: TabMode;
+  favicon?: string;
 }
 
 export interface ClosedTabRecord {
@@ -210,6 +211,16 @@ export interface CommandItem {
   action: () => void;
 }
 
+export interface SiteShieldOverride {
+  enabled?: boolean;
+  blockTrackersAndAds?: 'standard' | 'aggressive' | 'disabled';
+  upgradeHttps?: boolean;
+  strictTls?: boolean;
+  blockScripts?: boolean;
+  blockFingerprinting?: 'standard' | 'strict' | 'disabled';
+  blockCrossSiteCookies?: boolean;
+}
+
 export interface FabiShieldState {
   enabled: boolean;
   blockTrackersAndAds: 'standard' | 'aggressive' | 'disabled';
@@ -221,6 +232,7 @@ export interface FabiShieldState {
   forgetOnCloseDomains?: string[];
   filterLists?: string[];
   customFilterRules?: string[];
+  siteOverrides?: Record<string, SiteShieldOverride>;
   httpsUpgradesCount: number;
   trackersBlockedCount: number;
   cookiesBlockedCount: number;
@@ -380,6 +392,7 @@ export interface FabiNavDesktopBridge {
     origin?: string;
     tabId?: string;
     url?: string;
+    silent?: boolean;
   }) => Promise<boolean>;
   respondNotificationPermission?: (requestId: string, granted: boolean) => void;
   onNotificationPermissionRequest?: (
@@ -387,6 +400,10 @@ export interface FabiNavDesktopBridge {
   ) => () => void;
   onNotificationClicked?: (
     callback: (payload: { id: string; tabId?: string; url?: string }) => void
+  ) => () => void;
+  syncShields?: (shieldState: FabiShieldState) => void;
+  onShieldBlocked?: (
+    callback: (ev: { pageOrigin: string; blockedUrl: string; resourceType: string }) => void
   ) => () => void;
 }
 

@@ -9,7 +9,7 @@ import {
   LocalBackupMeta
 } from '../types';
 
-export const APP_VERSION = '1.20.0';
+export const APP_VERSION = '1.21.0';
 
 export const FABI_WALLPAPERS: WallpaperItem[] = [
   {
@@ -90,6 +90,7 @@ export const INITIAL_SHIELD_STATE: FabiShieldState = {
   forgetOnCloseDomains: [],
   filterLists: ['core-trackers', 'cookie-notices', 'url-tracking'],
   customFilterRules: [],
+  siteOverrides: {},
   httpsUpgradesCount: 0,
   trackersBlockedCount: 0,
   cookiesBlockedCount: 0,

@@ -147,11 +147,14 @@ function setSearchCacheEntry(key: string, entry: SearchCacheEntry) {
 
 const TRACKER_DOMAINS = [
   'doubleclick.net',
+  'doubleclick.com',
   'google-analytics.com',
   'googletagmanager.com',
   'googlesyndication.com',
+  'pagead2.googlesyndication.com',
   'googleadservices.com',
   'adservice.google.',
+  'ads.youtube.com',
   'cloudflareinsights.com',
   'adtng.com',
   'tsyndicate.com',
@@ -177,14 +180,52 @@ const TRACKER_DOMAINS = [
   'adnxs.com',
   'casalemedia.com',
   'amazon-adsystem.com',
+  'adsystem.com',
+  'advertising.com',
   'bing.com/bat.js',
   'bat.bing.com',
   'sentry.io',
   'mc.yandex.ru',
+  'yandex.ru/metrika',
   'moatads.com',
   'doubleverify.com',
   'adform.net',
-  'adsrvr.org'
+  'adsrvr.org',
+  'bidswitch.net',
+  'bluekai.com',
+  'branch.io',
+  'chartbeat.com',
+  'contextweb.com',
+  'exoclick.com',
+  'fastclick.net',
+  'flashtalking.com',
+  'indexww.com',
+  'krxd.net',
+  'liadm.com',
+  'liveintent.com',
+  'mathtag.com',
+  'mediamath.com',
+  'mgid.com',
+  'onesignal.com',
+  'optimizely.com',
+  'parsely.com',
+  'popads.net',
+  'propellerads.com',
+  'revcontent.com',
+  'rlcdn.com',
+  'sharethrough.com',
+  'skimresources.com',
+  'sonobi.com',
+  'spotxchange.com',
+  'tapad.com',
+  'tidaltv.com',
+  'analytics.tiktok.com',
+  'tiktok.com/i18n/pixel',
+  'tremorhub.com',
+  'tribalfusion.com',
+  'turn.com',
+  'yieldmo.com',
+  'zemanta.com'
 ];
 
 const SOCIAL_TRACKER_DOMAINS = [
@@ -211,23 +252,41 @@ const REGIONAL_TRACKER_DOMAINS = [
   'e-planning.net'
 ];
 
+const URL_TRACKING_PARAMS = [
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'utm_id',
+  'utm_name',
+  'fbclid',
+  'gclid',
+  'dclid',
+  'msclkid',
+  'yclid',
+  'mc_cid',
+  'mc_eid',
+  'igshid',
+  'igsh',
+  '_hsenc',
+  '_hsmi',
+  'vero_id',
+  'oly_enc_id',
+  'oly_anon_id',
+  'rb_clickid',
+  'wickedid',
+  'twclid',
+  'ttclid',
+  's_kwcid',
+  'si'
+];
+
 function stripUrlTrackingParams(rawUrl: string): string {
   try {
     const u = new URL(rawUrl);
-    const trackingParams = [
-      'utm_source',
-      'utm_medium',
-      'utm_campaign',
-      'utm_term',
-      'utm_content',
-      'fbclid',
-      'gclid',
-      'yclid',
-      'mc_eid',
-      'igshid'
-    ];
     let changed = false;
-    for (const p of trackingParams) {
+    for (const p of URL_TRACKING_PARAMS) {
       if (u.searchParams.has(p)) {
         u.searchParams.delete(p);
         changed = true;
@@ -1760,7 +1819,12 @@ function sanitizeAndEnhanceHtml(
 
   const cookieBannerGuard =
     options.shields && options.filterLists.includes('cookie-notices')
-      ? `<style data-fabinav-annoyances="1">[id*="cookie-banner"],[class*="cookie-banner"],[id*="onetrust-banner"],.fc-consent-root,#CybotCookiebotDialog{display:none!important;}</style>`
+      ? `<style data-fabinav-annoyances="1">[id*="cookie-banner"],[class*="cookie-banner"],[id*="onetrust-banner"],.fc-consent-root,#CybotCookiebotDialog,#onetrust-consent-sdk,.qc-cmp2-container{display:none!important;}</style>`
+      : '';
+
+  const cosmeticAdGuard =
+    options.shields && options.blockTrackers !== 'disabled'
+      ? `<style data-fabinav-cosmetic="1">ins.adsbygoogle,.adsbygoogle,[data-ad-slot],[id^="google_ads_iframe"],[aria-label="advertisement"],.sponsored-post,.taboola-widget,.outbrain-widget{display:none!important;}</style>`
       : '';
 
   const compatShim = `
@@ -1953,8 +2017,8 @@ function sanitizeAndEnhanceHtml(
 })();
 </script>`;
 
-  // Insert <base href="..."> + Compatibility shim + Fingerprint guard + Cookie annoyances
-  const baseTag = `<base href="${escapeHtml(finalUrl)}">${compatShim}${cookieBannerGuard}${fingerprintGuard}`;
+  // Insert <base href="..."> + Compatibility shim + Cosmetic ad/cookie guards + Fingerprint guard
+  const baseTag = `<base href="${escapeHtml(finalUrl)}">${compatShim}${cookieBannerGuard}${cosmeticAdGuard}${fingerprintGuard}`;
   if (/<head[^>]*>/i.test(html)) {
     html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${baseTag}`);
   } else {
@@ -2044,10 +2108,20 @@ function sanitizeAndEnhanceHtml(
   } catch (e) {}
   var report = function () {
     try {
+      var favicon = '';
+      try {
+        var iconEl = document.querySelector('link[rel="icon"], link[rel="shortcut icon"], link[rel~="icon"], link[rel="apple-touch-icon"]');
+        if (iconEl && iconEl.getAttribute('href')) {
+          favicon = new URL(iconEl.getAttribute('href'), currentUrl).href;
+        } else if (currentUrl && (currentUrl.indexOf('http://') === 0 || currentUrl.indexOf('https://') === 0)) {
+          favicon = new URL('/favicon.ico', currentUrl).href;
+        }
+      } catch (e) {}
       window.parent.postMessage({
         type: 'fabinav:page-info',
         url: currentUrl,
         title: document.title || currentUrl,
+        favicon: favicon,
         blockedTrackers: ${trackersBlocked},
         blockedCookies: ${options.cookiesBlocked},
         blockedTrackerUrls: ${JSON.stringify(blockedTrackerUrls)},
@@ -2062,6 +2136,8 @@ function sanitizeAndEnhanceHtml(
   }
   window.addEventListener('load', report);
 
+  var stripTracking = ${options.shields && options.filterLists.includes('url-tracking') ? 'true' : 'false'};
+  var trackingKeys = ${JSON.stringify(URL_TRACKING_PARAMS)};
   document.addEventListener('click', function (ev) {
     var el = ev.target;
     while (el && el.tagName !== 'A') el = el.parentElement;
@@ -2069,7 +2145,13 @@ function sanitizeAndEnhanceHtml(
     var rawHref = el.getAttribute('href');
     if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:') || rawHref.startsWith('mailto:') || rawHref.startsWith('tel:')) return;
     try {
-      var resolved = new URL(rawHref, currentUrl).href;
+      var parsedUrl = new URL(rawHref, currentUrl);
+      if (stripTracking) {
+        for (var k = 0; k < trackingKeys.length; k++) {
+          parsedUrl.searchParams.delete(trackingKeys[k]);
+        }
+      }
+      var resolved = parsedUrl.href;
       if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
         ev.preventDefault();
         window.parent.postMessage({ type: 'fabinav:navigate', url: resolved }, '*');

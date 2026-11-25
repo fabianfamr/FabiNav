@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
 import {
   Plus,
   X,
@@ -15,7 +15,8 @@ import {
   RotateCcw,
   Search,
   Copy,
-  Columns
+  Columns,
+  Settings
 } from 'lucide-react';
 import { WebTab, ClosedTabRecord, AppLanguage } from '../types';
 import { t } from '../i18n/translations';
@@ -50,6 +51,99 @@ interface TabBarProps {
 }
 
 const EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
+const TAB_LAYOUT_SPRING = {
+  type: 'spring' as const,
+  stiffness: 460,
+  damping: 36,
+  mass: 0.75
+};
+
+export const TabFavicon: React.FC<{ tab: WebTab; isActive: boolean }> = ({ tab, isActive }) => {
+  const [fallbackStep, setFallbackStep] = useState<0 | 1 | 2>(0);
+
+  let host = '';
+  if (tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+    try {
+      host = new URL(tab.url).hostname;
+    } catch {
+      host = '';
+    }
+  }
+
+  const googleFavicon = host
+    ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
+    : '';
+
+  useEffect(() => {
+    setFallbackStep(0);
+  }, [tab.url, tab.favicon]);
+
+  if (tab.isLoading) {
+    return <RotateCw className="w-3.5 h-3.5 text-[var(--bn-accent)] animate-spin shrink-0" />;
+  }
+  if (tab.tabMode === 'private') {
+    return <Lock className="w-3.5 h-3.5 text-[var(--bn-private-text)] shrink-0" />;
+  }
+  if (tab.url === 'fabinav://newtab' || !tab.url) {
+    return (
+      <FabiNavFaviconMark
+        monochrome={!isActive}
+        className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+          isActive ? '' : 'text-[var(--bn-text-muted)]'
+        }`}
+      />
+    );
+  }
+  if (tab.url.startsWith('fabinav://settings')) {
+    return (
+      <Settings
+        className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+          isActive ? 'text-[var(--bn-text-strong)]' : 'text-[var(--bn-text-muted)]'
+        }`}
+      />
+    );
+  }
+  if (tab.url.startsWith('fabinav://search')) {
+    return <Search className="w-3.5 h-3.5 text-[var(--bn-accent)] shrink-0" />;
+  }
+  if (tab.url.startsWith('fabinav://shields')) {
+    return <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-accent)] shrink-0" />;
+  }
+
+  const imgSrc =
+    fallbackStep === 0
+      ? tab.favicon || googleFavicon
+      : fallbackStep === 1 && tab.favicon && googleFavicon && tab.favicon !== googleFavicon
+      ? googleFavicon
+      : '';
+
+  if (imgSrc) {
+    return (
+      <img
+        src={imgSrc}
+        alt=""
+        referrerPolicy="no-referrer"
+        onError={() => {
+          setFallbackStep((prev) => {
+            if (prev === 0 && tab.favicon && googleFavicon && tab.favicon !== googleFavicon) {
+              return 1;
+            }
+            return 2;
+          });
+        }}
+        className="w-3.5 h-3.5 rounded-[3px] object-contain shrink-0"
+      />
+    );
+  }
+
+  return (
+    <Globe
+      className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+        isActive ? 'text-[var(--bn-text-strong)]' : 'text-[var(--bn-text-muted)]'
+      }`}
+    />
+  );
+};
 
 export const TabBar: React.FC<TabBarProps> = ({
   tabs,
@@ -126,30 +220,9 @@ export const TabBar: React.FC<TabBarProps> = ({
   const hasTabsToRight = contextTabIndex >= 0 && contextTabIndex < tabs.length - 1;
   const hasOtherTabs = tabs.length > 1;
 
-  const renderFavicon = (tab: WebTab, isActive: boolean) => {
-    if (tab.isLoading) {
-      return <RotateCw className="w-3.5 h-3.5 text-[var(--bn-accent)] animate-spin" />;
-    }
-    if (tab.tabMode === 'private') {
-      return <Lock className="w-3.5 h-3.5 text-[var(--bn-private-text)]" />;
-    }
-    if (tab.url === 'fabinav://newtab' || !tab.url) {
-      return <FabiNavFaviconMark className="w-3.5 h-3.5 shrink-0" />;
-    }
-    if (tab.url.startsWith('fabinav://search')) {
-      return <Search className="w-3.5 h-3.5 text-[var(--bn-accent)]" />;
-    }
-    if (tab.url.startsWith('fabinav://shields')) {
-      return <ShieldCheck className="w-3.5 h-3.5 text-[var(--bn-accent)]" />;
-    }
-    return (
-      <Globe
-        className={`w-3.5 h-3.5 transition-colors ${
-          isActive ? 'text-[var(--bn-text-strong)]' : 'text-[var(--bn-text-muted)]'
-        }`}
-      />
-    );
-  };
+  const renderFavicon = (tab: WebTab, isActive: boolean) => (
+    <TabFavicon tab={tab} isActive={isActive} />
+  );
 
   const filteredOpenTabs = tabs.filter(
     (t) =>
@@ -169,131 +242,140 @@ export const TabBar: React.FC<TabBarProps> = ({
     >
       {/* Floating Rounded Tabs */}
       {!useVerticalTabs ? (
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 max-w-full py-1">
-          <AnimatePresence initial={false}>
-            {tabs.map((tab, index) => {
-              const isActive = tab.id === activeTabId;
-              const isSplit = tab.id === splitTabId;
-              const isNewTab = tab.url === 'fabinav://newtab' || !tab.url;
+        <LayoutGroup id="fabinav-tabs-layout">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 max-w-full py-1">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {tabs.map((tab, index) => {
+                const isActive = tab.id === activeTabId;
+                const isSplit = tab.id === splitTabId;
+                const isNewTab = tab.url === 'fabinav://newtab' || !tab.url;
 
-              return (
-                <motion.div
-                  key={tab.id}
-                  layout="position"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.92 }}
-                  transition={{ duration: 0.14, ease: EASE_OUT }}
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => onSelectTab(tab.id)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setContextMenu({
-                      tabId: tab.id,
-                      x: Math.max(8, Math.min(e.clientX, window.innerWidth - 280)),
-                      y: Math.max(8, Math.min(e.clientY + 4, window.innerHeight - 360))
-                    });
-                  }}
-                  onAuxClick={(e) => {
-                    if (e.button === 1 && (!tab.isPinned || tabs.length === 1)) {
+                return (
+                  <motion.div
+                    key={tab.id}
+                    layout
+                    initial={{ opacity: 0, x: -16, scale: 0.94 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: -12, scale: 0.92 }}
+                    transition={{
+                      layout: TAB_LAYOUT_SPRING,
+                      opacity: { duration: 0.14, ease: EASE_OUT },
+                      x: { duration: 0.18, ease: EASE_OUT },
+                      scale: { duration: 0.14, ease: EASE_OUT }
+                    }}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => onSelectTab(tab.id)}
+                    onContextMenu={(e) => {
                       e.preventDefault();
-                      onCloseTab(tab.id);
-                    }
-                  }}
-                  className={`group relative flex items-center h-[30px] px-2.5 text-xs cursor-pointer transition-colors fabi-transition-s shrink-0 rounded-[8px] fabi-no-drag ${
-                    isActive
-                      ? 'bg-[var(--bn-tab-active)] text-[var(--bn-text-strong)] font-medium shadow-xs'
-                      : isSplit
-                      ? 'bg-[var(--bn-surface-alt)]/75 text-[var(--bn-text-strong)]'
-                      : 'bg-transparent text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)]/65 hover:text-[var(--bn-text)]'
-                  } ${
-                    tab.isPinned
-                      ? 'min-w-[38px] max-w-[38px] justify-center px-1.5'
-                      : 'min-w-[135px] max-w-[230px] flex-1'
-                  } ${tab.isDiscarded && !isActive ? 'opacity-65' : ''}`}
-                  title={`${tab.title}${tab.isDiscarded ? ' (Suspendida · Ahorro de memoria)' : ''} (clic derecho para opciones)`}
-                >
-                  {/* Subtle divider between consecutive inactive tabs */}
-                  {!isActive && index > 0 && tabs[index - 1].id !== activeTabId && (
-                    <span className="absolute -left-[2px] top-2 bottom-2 w-[1px] bg-[var(--bn-border)] opacity-50 pointer-events-none" />
-                  )}
-
-                  <div className="flex items-center justify-center shrink-0 mr-2">
-                    {renderFavicon(tab, isActive)}
-                  </div>
-
-                  {!tab.isPinned && (
-                    <span className="truncate flex-1 text-[12px] leading-none">
-                      {isNewTab ? t(language, 'newTab') : tab.title || t(language, 'untitled')}
-                    </span>
-                  )}
-
-                  <div className="flex items-center gap-0.5 ml-1.5 shrink-0">
-                    {tab.isPinned && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTogglePinTab(tab.id);
-                        }}
-                        className="p-0.5 text-[var(--bn-accent)] rounded-full"
-                        title="Desanclar pestaña"
-                      >
-                        <Pin className="w-2.5 h-2.5" />
-                      </button>
+                      setContextMenu({
+                        tabId: tab.id,
+                        x: Math.max(8, Math.min(e.clientX, window.innerWidth - 280)),
+                        y: Math.max(8, Math.min(e.clientY + 4, window.innerHeight - 360))
+                      });
+                    }}
+                    onAuxClick={(e) => {
+                      if (e.button === 1 && (!tab.isPinned || tabs.length === 1)) {
+                        e.preventDefault();
+                        onCloseTab(tab.id);
+                      }
+                    }}
+                    className={`group relative flex items-center h-[30px] px-2.5 text-xs cursor-pointer transition-colors shrink-0 rounded-[8px] fabi-no-drag ${
+                      isActive
+                        ? 'bg-[var(--bn-tab-active)] text-[var(--bn-text-strong)] font-medium shadow-xs'
+                        : isSplit
+                        ? 'bg-[var(--bn-surface-alt)]/75 text-[var(--bn-text-strong)]'
+                        : 'bg-transparent text-[var(--bn-text-muted)] hover:bg-[var(--bn-hover)]/65 hover:text-[var(--bn-text)]'
+                    } ${
+                      tab.isPinned
+                        ? 'min-w-[38px] max-w-[38px] justify-center px-1.5'
+                        : 'min-w-[135px] max-w-[230px] flex-1'
+                    } ${tab.isDiscarded && !isActive ? 'opacity-65' : ''}`}
+                    title={`${tab.title}${tab.isDiscarded ? ' (Suspendida · Ahorro de memoria)' : ''} (clic derecho para opciones)`}
+                  >
+                    {/* Subtle divider between consecutive inactive tabs */}
+                    {!isActive && index > 0 && tabs[index - 1].id !== activeTabId && (
+                      <span className="absolute -left-[2px] top-2 bottom-2 w-[1px] bg-[var(--bn-border)] opacity-50 pointer-events-none" />
                     )}
 
-                    {tab.isMuted && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleMuteTab(tab.id);
-                        }}
-                        className="p-0.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] rounded-full"
-                        title="Activar sonido"
-                      >
-                        <VolumeX className="w-3 h-3" />
-                      </button>
+                    <div className="flex items-center justify-center shrink-0 mr-2">
+                      {renderFavicon(tab, isActive)}
+                    </div>
+
+                    {!tab.isPinned && (
+                      <span className="truncate flex-1 text-[12px] leading-none">
+                        {isNewTab ? t(language, 'newTab') : tab.title || t(language, 'untitled')}
+                      </span>
                     )}
 
-                    {(!tab.isPinned || tabs.length === 1) && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCloseTab(tab.id);
-                        }}
-                        title={
-                          tabs.length === 1
-                            ? 'Cerrar pestaña y salir del navegador (Ctrl+W)'
-                            : 'Cerrar pestaña (Ctrl+W)'
-                        }
-                        className={`p-0.5 rounded-full hover:bg-[var(--bn-hover)] active:scale-90 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all ${
-                          isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                        }`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+                    <div className="flex items-center gap-0.5 ml-1.5 shrink-0">
+                      {tab.isPinned && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTogglePinTab(tab.id);
+                          }}
+                          className="p-0.5 text-[var(--bn-accent)] rounded-full"
+                          title="Desanclar pestaña"
+                        >
+                          <Pin className="w-2.5 h-2.5" />
+                        </button>
+                      )}
 
-          {/* '+' New Tab button right next to tabs */}
-          <button
-            id="btn-new-tab"
-            type="button"
-            onClick={onNewTab}
-            title={`${t(language, 'newTab')} (Ctrl+T)`}
-            className="ml-0.5 h-7 w-7 flex items-center justify-center rounded-[8px] hover:bg-[var(--bn-hover)] active:scale-90 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all fabi-transition-s shrink-0 fabi-no-drag"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
+                      {tab.isMuted && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleMuteTab(tab.id);
+                          }}
+                          className="p-0.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] rounded-full"
+                          title="Activar sonido"
+                        >
+                          <VolumeX className="w-3 h-3" />
+                        </button>
+                      )}
+
+                      {(!tab.isPinned || tabs.length === 1) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCloseTab(tab.id);
+                          }}
+                          title={
+                            tabs.length === 1
+                              ? 'Cerrar pestaña y salir del navegador (Ctrl+W)'
+                              : 'Cerrar pestaña (Ctrl+W)'
+                          }
+                          className={`p-0.5 rounded-full hover:bg-[var(--bn-hover)] active:scale-90 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-all ${
+                            isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+
+            {/* '+' New Tab button right next to tabs */}
+            <motion.button
+              layout
+              transition={{ layout: TAB_LAYOUT_SPRING }}
+              id="btn-new-tab"
+              type="button"
+              onClick={onNewTab}
+              title={`${t(language, 'newTab')} (Ctrl+T)`}
+              className="ml-0.5 h-7 w-7 flex items-center justify-center rounded-[8px] hover:bg-[var(--bn-hover)] active:scale-90 text-[var(--bn-text-muted)] hover:text-[var(--bn-text-strong)] transition-colors shrink-0 fabi-no-drag"
+            >
+              <Plus className="w-4 h-4" />
+            </motion.button>
+          </div>
+        </LayoutGroup>
       ) : (
         <div className="flex-1 flex items-center h-8 px-2 text-xs text-[var(--bn-text-muted)]">
           <span className="truncate font-medium text-[var(--bn-text-strong)]">

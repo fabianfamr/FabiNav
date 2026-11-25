@@ -52,7 +52,8 @@ import {
   CacheStatusInfo,
   AutofillEntry,
   StartupMode,
-  MemorySaverLevel
+  MemorySaverLevel,
+  SiteShieldOverride
 } from '../types';
 import { APP_VERSION } from '../constants/initialData';
 import { FabiSwitch } from './FabiSwitch';
@@ -725,6 +726,59 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               />
             </div>
           </div>
+
+          {Object.keys(shieldState.siteOverrides || {}).length > 0 && (
+            <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl overflow-hidden">
+              <div className="p-4 border-b border-[var(--bn-border)] flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-[var(--bn-text-strong)]">
+                    Excepciones y ajustes por sitio ({Object.keys(shieldState.siteOverrides || {}).length})
+                  </div>
+                  <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
+                    Sitios con configuración personalizada desde el panel de Escudos
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onUpdateShieldState({ siteOverrides: {} })}
+                  className="px-3 py-1 rounded-full bg-[var(--bn-toolbar)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border)] text-[11px] text-[var(--bn-danger-text)] font-medium"
+                >
+                  Restablecer todos
+                </button>
+              </div>
+              <div className="divide-y divide-[var(--bn-border)] max-h-56 overflow-y-auto">
+                {(Object.entries(shieldState.siteOverrides || {}) as Array<[string, SiteShieldOverride]>).map(([siteDomain, ov]) => (
+                  <div
+                    key={siteDomain}
+                    className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium text-[var(--bn-text-strong)] truncate">
+                        {siteDomain}
+                      </div>
+                      <div className="text-[11px] text-[var(--bn-text-muted)] truncate">
+                        {ov.enabled === false ? 'Escudos desactivados' : 'Escudos activos'}
+                        {ov.blockTrackersAndAds ? ` · Rastreadores: ${ov.blockTrackersAndAds}` : ''}
+                        {ov.blockScripts ? ' · Scripts bloqueados' : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = { ...(shieldState.siteOverrides || {}) };
+                        delete next[siteDomain];
+                        onUpdateShieldState({ siteOverrides: next });
+                      }}
+                      className="p-1.5 text-[var(--bn-text-muted)] hover:text-[var(--bn-danger-text)] rounded-full shrink-0"
+                      title="Restablecer sitio a valores globales"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Brave-style Content Filter Lists & Custom Rules */}
           {(() => {
@@ -1985,24 +2039,24 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               ) && (
                 <section className="space-y-3">
                   <h2 className="text-[14px] font-semibold text-[var(--bn-text-strong)] px-1">
-                    Notificaciones de páginas
+                    Notificaciones en Windows
                   </h2>
 
                   <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-xl divide-y divide-[var(--bn-border)] text-xs overflow-hidden">
                     <div className="px-5 py-3.5 flex items-center justify-between gap-4">
                       <div>
                         <div className="font-medium text-[var(--bn-text-strong)]">
-                          Servicio de notificaciones del navegador
+                          Enviar notificaciones de páginas a Windows
                         </div>
                         <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                          Captura avisos de páginas web (mensajería, correo, avisos) y los muestra en FabiNav
+                          Permite que las páginas web muestren avisos directamente en el centro de notificaciones de Windows
                         </div>
                       </div>
                       <FabiSwitch
                         size="md"
                         checked={settings.notificationsEnabled !== false}
                         onChange={(v) => onUpdateSettings({ notificationsEnabled: v })}
-                        ariaLabel="Activar servicio de notificaciones del navegador"
+                        ariaLabel="Enviar notificaciones de páginas a Windows"
                       />
                     </div>
 
@@ -2029,35 +2083,18 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                       </select>
                     </div>
 
-                    <div className="px-5 py-3.5 flex items-center justify-between gap-4">
-                      <div>
-                        <div className="font-medium text-[var(--bn-text-strong)]">
-                          Reenviar alertas al sistema operativo
-                        </div>
-                        <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                          Muestra también las notificaciones autorizadas en Windows, macOS o Linux
-                        </div>
-                      </div>
-                      <FabiSwitch
-                        size="md"
-                        checked={settings.notificationDesktopRelay !== false}
-                        onChange={(v) => onUpdateSettings({ notificationDesktopRelay: v })}
-                        ariaLabel="Reenviar alertas al sistema operativo"
-                      />
-                    </div>
-
                     {!window.fabinavDesktop?.isElectron &&
                       typeof window !== 'undefined' &&
                       'Notification' in window && (
                         <div className="px-5 py-3.5 flex items-center justify-between gap-4 bg-[var(--bn-surface)]/40">
                           <div>
                             <div className="font-medium text-[var(--bn-text-strong)]">
-                              Permiso del navegador anfitrión
+                              Permiso del sistema / navegador anfitrión
                             </div>
                             <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
                               Estado actual:{' '}
                               {hostNotifStatus === 'granted'
-                                ? 'Autorizado'
+                                ? 'Autorizado para Windows'
                                 : hostNotifStatus === 'denied'
                                 ? 'Bloqueado en el navegador'
                                 : 'Pendiente de autorización'}
@@ -2076,7 +2113,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                               }}
                               className="px-3.5 py-1.5 rounded-full bg-[var(--bn-surface)] hover:bg-[var(--bn-hover)] border border-[var(--bn-border-strong)] text-[11px] font-medium text-[var(--bn-text-strong)] shrink-0 transition-colors"
                             >
-                              Autorizar avisos
+                              Autorizar en Windows
                             </button>
                           )}
                         </div>
@@ -2085,17 +2122,17 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                     <div className="px-5 py-3.5 flex items-center justify-between gap-4">
                       <div>
                         <div className="font-medium text-[var(--bn-text-strong)]">
-                          Sonido sutil al recibir alertas
+                          Sonido al recibir alertas
                         </div>
                         <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                          Reproduce un tono breve cuando llega una nueva notificación de página
+                          Reproduce un tono breve cuando Windows recibe una notificación web
                         </div>
                       </div>
                       <FabiSwitch
                         size="md"
                         checked={settings.notificationSound !== false}
                         onChange={(v) => onUpdateSettings({ notificationSound: v })}
-                        ariaLabel="Sonido sutil al recibir alertas"
+                        ariaLabel="Sonido al recibir alertas"
                       />
                     </div>
 
@@ -2105,7 +2142,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                           Modo No molestar
                         </div>
                         <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                          Guarda las notificaciones en la campana sin mostrar tarjetas emergentes ni sonido
+                          Pausa temporalmente el envío de notificaciones y sonidos hacia Windows
                         </div>
                       </div>
                       <FabiSwitch
@@ -2123,7 +2160,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                             Comprobar funcionamiento
                           </div>
                           <div className="text-[11px] text-[var(--bn-text-muted)] mt-0.5">
-                            Envía una notificación de prueba al centro de alertas y al escritorio
+                            Envía una notificación de prueba directamente al centro de notificaciones de Windows
                           </div>
                         </div>
                         <button
@@ -2131,7 +2168,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
                           onClick={onSendTestNotification}
                           className="px-4 py-1.5 rounded-full bg-[var(--bn-accent)] hover:bg-[var(--bn-accent-hover)] text-white text-[11px] font-medium shrink-0 transition-colors"
                         >
-                          Enviar notificación de prueba
+                          Probar en Windows
                         </button>
                       </div>
                     )}

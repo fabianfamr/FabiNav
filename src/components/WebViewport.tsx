@@ -16,12 +16,14 @@ import { Columns, Gauge, RotateCw } from 'lucide-react';
 import { FabiNewTabView } from './FabiNewTabView';
 import { FabiInternalsView } from './FabiInternalsView';
 import { FabiSearchView } from './FabiSearchView';
+import { resolveEffectiveShield } from '../utils/shields';
 
 const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
 export interface PageSecurityReport {
   title?: string;
   url?: string;
+  favicon?: string;
   blockedTrackers?: number;
   blockedCookies?: number;
   blockedTrackerUrls?: string[];
@@ -369,6 +371,9 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   const onRequestNotifPermissionRef = useRef(onRequestNotificationPermission);
   onRequestNotifPermissionRef.current = onRequestNotificationPermission;
 
+  const shieldStateRef = useRef(shieldState);
+  shieldStateRef.current = shieldState;
+
   // Reset relaxed retry flag when navigating to a different URL
   useEffect(() => {
     setRelaxedRetryUrl(null);
@@ -398,6 +403,12 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         onPageSecurityReport?.({ title, url: wv.getURL?.() || tab.url });
       }
     };
+    const onFaviconUpdated = (ev: Event) => {
+      const favicons = (ev as Event & { favicons?: string[] }).favicons;
+      if (Array.isArray(favicons) && favicons.length > 0 && favicons[0]) {
+        onPageSecurityReport?.({ favicon: favicons[0], url: wv.getURL?.() || tab.url });
+      }
+    };
     const onDidNavigate = (ev: Event) => {
       const nextUrl = (ev as Event & { url?: string }).url;
       if (nextUrl && /^https?:\/\//i.test(nextUrl) && nextUrl !== lastWebviewUrlRef.current) {
@@ -419,6 +430,52 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       try {
         wv.setAudioMuted?.(!!tab.isMuted);
         wv.setZoomFactor?.(settings.zoomLevel / 100);
+        const eff = resolveEffectiveShield(shieldStateRef.current, wv.getURL?.() || tab.url).effective;
+        const lists = eff.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking'];
+        if (eff.enabled) {
+          if (lists.includes('cookie-notices')) {
+            void wv.insertCSS?.(
+              '[id*="cookie-banner"],[class*="cookie-banner"],[id*="onetrust-banner"],.fc-consent-root,#CybotCookiebotDialog,#onetrust-consent-sdk,.qc-cmp2-container{display:none!important;}'
+            );
+          }
+          if (eff.blockTrackersAndAds !== 'disabled') {
+            void wv.insertCSS?.(
+              'ins.adsbygoogle,.adsbygoogle,[data-ad-slot],[id^="google_ads_iframe"],[aria-label="advertisement"],.sponsored-post,.taboola-widget,.outbrain-widget{display:none!important;}'
+            );
+          }
+          if (eff.blockFingerprinting !== 'disabled') {
+            const strictFp = eff.blockFingerprinting === 'strict';
+            void wv.executeJavaScript?.(`
+              (function () {
+                if (window.__fabinavFpInjected) return;
+                window.__fabinavFpInjected = true;
+                var strict = ${strictFp ? 'true' : 'false'};
+                try {
+                  Object.defineProperty(navigator, 'hardwareConcurrency', { get: function () { return 4; }, configurable: true });
+                  if ('deviceMemory' in navigator) {
+                    Object.defineProperty(navigator, 'deviceMemory', { get: function () { return strict ? 4 : 8; }, configurable: true });
+                  }
+                } catch (e) {}
+                try {
+                  var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                  HTMLCanvasElement.prototype.toDataURL = function () {
+                    try {
+                      var ctx = this.getContext('2d');
+                      if (ctx && this.width > 0 && this.height > 0 && this.width <= 512 && this.height <= 512) {
+                        var img = ctx.getImageData(0, 0, Math.min(4, this.width), Math.min(4, this.height));
+                        if (img && img.data && img.data.length > 3) {
+                          img.data[0] = (img.data[0] ^ (strict ? 3 : 1)) & 255;
+                          ctx.putImageData(img, 0, 0);
+                        }
+                      }
+                    } catch (e) {}
+                    return origToDataURL.apply(this, arguments);
+                  };
+                } catch (e) {}
+              })();
+            `);
+          }
+        }
         void wv.executeJavaScript?.(`
           (function () {
             if (window.__fabinavNotifHooked) return;
@@ -499,6 +556,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     wv.addEventListener('did-start-loading', onStartLoading);
     wv.addEventListener('did-stop-loading', onStopLoading);
     wv.addEventListener('page-title-updated', onTitleUpdated);
+    wv.addEventListener('page-favicon-updated', onFaviconUpdated);
     wv.addEventListener('did-navigate', onDidNavigate);
     wv.addEventListener('did-navigate-in-page', onDidNavigate);
     wv.addEventListener('did-fail-load', onDidFailLoad);
@@ -509,6 +567,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
       wv.removeEventListener('did-start-loading', onStartLoading);
       wv.removeEventListener('did-stop-loading', onStopLoading);
       wv.removeEventListener('page-title-updated', onTitleUpdated);
+      wv.removeEventListener('page-favicon-updated', onFaviconUpdated);
       wv.removeEventListener('did-navigate', onDidNavigate);
       wv.removeEventListener('did-navigate-in-page', onDidNavigate);
       wv.removeEventListener('did-fail-load', onDidFailLoad);
@@ -551,6 +610,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         type?: string;
         url?: string;
         title?: string;
+        favicon?: string;
         blockedTrackers?: number;
         blockedCookies?: number;
         blockedTrackerUrls?: string[];
@@ -619,6 +679,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
         onPageSecurityReport?.({
           title: payload.title,
           url: payload.url,
+          favicon: payload.favicon,
           blockedTrackers: payload.blockedTrackers,
           blockedCookies: payload.blockedCookies,
           blockedTrackerUrls: Array.isArray(payload.blockedTrackerUrls)
@@ -736,10 +797,15 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     settings.notificationPermissions
   ]);
 
+  const effectiveShield = useMemo(
+    () => resolveEffectiveShield(shieldState, tab.url).effective,
+    [shieldState, tab.url]
+  );
+
   const activeLists = (
-    shieldState.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
+    effectiveShield.filterLists || ['core-trackers', 'cookie-notices', 'url-tracking']
   ).join(',');
-  const activeCustomRules = (shieldState.customFilterRules || []).join(',');
+  const activeCustomRules = (effectiveShield.customFilterRules || []).join(',');
 
   const isRelaxedRetry = relaxedRetryUrl === tab.url;
 
@@ -747,13 +813,13 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
     !isElectron && !isNewTab && !isSearchPage && !isFabiInternal
       ? `/api/proxy?url=${encodeURIComponent(tab.url)}&partition=${
           tab.tabMode === 'private' ? 'private' : 'normal'
-        }&shields=${shieldState.enabled ? '1' : '0'}&blockTrackers=${
-          shieldState.blockTrackersAndAds
-        }&blockScripts=${shieldState.blockScripts ? '1' : '0'}&blockCookies=${
-          shieldState.blockCrossSiteCookies ? '1' : '0'
-        }&fingerprint=${shieldState.blockFingerprinting}&upgradeHttps=${
-          shieldState.upgradeHttps ? '1' : '0'
-        }&strictTls=${shieldState.strictTls ? '1' : '0'}${
+        }&shields=${effectiveShield.enabled ? '1' : '0'}&blockTrackers=${
+          effectiveShield.blockTrackersAndAds
+        }&blockScripts=${effectiveShield.blockScripts ? '1' : '0'}&blockCookies=${
+          effectiveShield.blockCrossSiteCookies ? '1' : '0'
+        }&fingerprint=${effectiveShield.blockFingerprinting}&upgradeHttps=${
+          effectiveShield.upgradeHttps ? '1' : '0'
+        }&strictTls=${effectiveShield.strictTls ? '1' : '0'}${
           isRelaxedRetry ? '&relaxedTls=1&refresh=1' : ''
         }&lists=${encodeURIComponent(activeLists)}&customRules=${encodeURIComponent(
           activeCustomRules

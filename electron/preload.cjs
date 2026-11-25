@@ -47,5 +47,12 @@ contextBridge.exposeInMainWorld('fabinavDesktop', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('fabinav:notification-clicked', listener);
     return () => ipcRenderer.removeListener('fabinav:notification-clicked', listener);
+  },
+  syncShields: (shieldState) => ipcRenderer.send('fabinav:sync-shields', shieldState),
+  onShieldBlocked: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('fabinav:shield-blocked', listener);
+    return () => ipcRenderer.removeListener('fabinav:shield-blocked', listener);
   }
 });

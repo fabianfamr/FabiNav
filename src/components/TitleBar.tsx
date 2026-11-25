@@ -64,12 +64,11 @@ import {
   BrowserSettings,
   GoogleUserProfile,
   TlsInspectionResult,
-  StoredCookieItem,
-  BrowserNotificationItem
+  StoredCookieItem
 } from '../types';
 import { t } from '../i18n/translations';
 import { FabiSwitch } from './FabiSwitch';
-import { NotificationBellButton } from './NotificationCenter';
+import { BraveStyleShieldEmblem } from './FabiShieldModal';
 
 interface TitleBarProps {
   currentTab?: WebTab;
@@ -118,14 +117,6 @@ interface TitleBarProps {
   isSplitActive: boolean;
   shieldCount: number;
   isShieldActive: boolean;
-  notifications: BrowserNotificationItem[];
-  onToggleDoNotDisturb: () => void;
-  onMarkAllNotificationsRead: () => void;
-  onClearNotifications: () => void;
-  onRemoveNotification: (id: string) => void;
-  onSelectNotification: (item: BrowserNotificationItem) => void;
-  onBlockNotificationOrigin: (origin: string) => void;
-  onSendTestNotification: () => void;
 }
 
 const INTERNAL_SUGGESTIONS = [
@@ -195,15 +186,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onCloseWindow,
   isSplitActive,
   shieldCount,
-  isShieldActive,
-  notifications,
-  onToggleDoNotDisturb,
-  onMarkAllNotificationsRead,
-  onClearNotifications,
-  onRemoveNotification,
-  onSelectNotification,
-  onBlockNotificationOrigin,
-  onSendTestNotification
+  isShieldActive
 }) => {
   const [inputUrl, setInputUrl] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -587,23 +570,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               className="relative w-7 h-7 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] transition-colors shrink-0"
             >
               {isShieldActive ? (
-                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true">
-                  <defs>
-                    <linearGradient id="fabiShieldGrad" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#FA7250" />
-                      <stop offset="100%" stopColor="#FB542B" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    fill="url(#fabiShieldGrad)"
-                    d="M12 2L4 5.2v5.9c0 5.1 3.4 9.7 8 10.9 4.6-1.2 8-5.8 8-10.9V5.2L12 2z"
-                  />
-                  <path
-                    fill="#ffffff"
-                    fillOpacity="0.95"
-                    d="M9.5 7.5h6v2h-3.8v1.8h3v2h-3v3.5h-2.2V7.5z"
-                  />
-                </svg>
+                <BraveStyleShieldEmblem active={true} className="w-[18px] h-[18px]" />
               ) : (
                 <ShieldOff className="w-4 h-4 text-[var(--bn-text-muted)]" />
               )}
@@ -831,19 +798,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         >
           <PanelRight className="w-4 h-4" />
         </button>
-
-        <NotificationBellButton
-          notifications={notifications}
-          doNotDisturb={!!settings.notificationDoNotDisturb}
-          onToggleDoNotDisturb={onToggleDoNotDisturb}
-          onMarkAllRead={onMarkAllNotificationsRead}
-          onClearAll={onClearNotifications}
-          onRemoveOne={onRemoveNotification}
-          onSelectNotification={onSelectNotification}
-          onBlockOrigin={onBlockNotificationOrigin}
-          onOpenSettings={() => onNavigate('fabinav://settings#notificaciones')}
-          onSendTestNotification={onSendTestNotification}
-        />
 
         <button
           type="button"

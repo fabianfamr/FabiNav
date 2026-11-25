@@ -233,6 +233,13 @@ const ES_MESSAGES = {
   trackersDetailTitle: 'Rastreadores y anuncios',
   trackersEmptyState: 'No se interceptaron rastreadores ni anuncios en la carga actual de este sitio.',
   trackersInternalNote: 'Las vistas internas de FabiNav se ejecutan localmente sin rastreadores externos.',
+  shieldsPanelTitle: 'Escudos',
+  shieldsDownTitle: 'Los escudos están desactivados en este sitio',
+  shieldsDownDesc: 'Este sitio puede rastrearte mientras navegas. Activa los escudos para reanudar el bloqueo.',
+  shieldsTurnOnSite: 'Activar escudos en este sitio',
+  shieldsResetSiteBtn: 'Restablecer configuración global',
+  shieldsSiteCustomized: 'Personalizado para este sitio',
+  shieldsUsingGlobal: 'Usando configuración global',
 
   // Settings
   settingsTitle: 'Configuración',
@@ -405,6 +412,13 @@ const EN_MESSAGES: Record<TranslationKey, string> = {
   trackersDetailTitle: 'Trackers & ads',
   trackersEmptyState: 'No trackers or ads were intercepted on the current page load.',
   trackersInternalNote: 'Internal FabiNav views run locally with zero external trackers.',
+  shieldsPanelTitle: 'Shields',
+  shieldsDownTitle: 'Shields are DOWN for this site',
+  shieldsDownDesc: 'This site may track you across the web. Turn Shields back UP to resume blocking.',
+  shieldsTurnOnSite: 'Turn Shields UP for this site',
+  shieldsResetSiteBtn: 'Reset to global defaults',
+  shieldsSiteCustomized: 'Custom site settings',
+  shieldsUsingGlobal: 'Using global defaults',
 
   // Settings
   settingsTitle: 'Settings',
@@ -575,6 +589,13 @@ const JA_MESSAGES: Record<TranslationKey, string> = {
   trackersDetailTitle: 'トラッカーと広告',
   trackersEmptyState: 'このページの読み込みではトラッカーや広告は検出されませんでした。',
   trackersInternalNote: 'FabiNav の内部ページは外部トラッカーなしでローカル実行されます。',
+  shieldsPanelTitle: 'シールド',
+  shieldsDownTitle: 'このサイトのシールドは無効です',
+  shieldsDownDesc: 'このサイトでトラッキングが行われる可能性があります。シールドを有効にして保護を再開してください。',
+  shieldsTurnOnSite: 'このサイトでシールドを有効にする',
+  shieldsResetSiteBtn: 'グローバル設定に戻す',
+  shieldsSiteCustomized: 'このサイト専用の設定',
+  shieldsUsingGlobal: 'グローバル設定を使用中',
 
   // Settings
   settingsTitle: '設定',

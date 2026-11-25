@@ -16,7 +16,6 @@ import {
   TopSiteItem,
   GoogleUserProfile,
   AutofillEntry,
-  BrowserNotificationItem,
   PendingNotificationPermission
 } from './types';
 import {
@@ -33,7 +32,7 @@ import { initGoogleAuth, signInWithGoogle, signOutGoogle, setAuthLanguage } from
 import { ActivityBar } from './components/ActivityBar';
 import { SidebarPanel } from './components/SidebarPanel';
 import { TitleBar } from './components/TitleBar';
-import { TabBar } from './components/TabBar';
+import { TabBar, TabFavicon } from './components/TabBar';
 import { BookmarksBar } from './components/BookmarksBar';
 import { WebViewport, PageSecurityReport } from './components/WebViewport';
 import { CommandPalette } from './components/CommandPalette';
@@ -44,17 +43,19 @@ import { QrCodeModal } from './components/QrCodeModal';
 import { TaskManagerModal } from './components/TaskManagerModal';
 import {
   NotificationPermissionPrompt,
-  NotificationAlertStack,
   playNotificationChime
 } from './components/NotificationCenter';
+import {
+  resolveEffectiveShield,
+  applySiteShieldUpdate,
+  resetSiteShieldOverride
+} from './utils/shields';
 import {
   Plus,
   X,
   Pin,
   VolumeX,
   Columns,
-  Lock,
-  Globe,
   Check,
   Compass,
   RotateCcw,
@@ -255,10 +256,6 @@ export default function App() {
   const [windowMode, setWindowMode] = useState<'maximized' | 'restored' | 'minimized' | 'closed'>('maximized');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<BrowserNotificationItem[]>(() =>
-    loadStored<BrowserNotificationItem[]>('notifications', [])
-  );
-  const [liveAlerts, setLiveAlerts] = useState<BrowserNotificationItem[]>([]);
   const [permissionQueue, setPermissionQueue] = useState<PendingNotificationPermission[]>([]);
   const pendingNotifPermission = permissionQueue[0] || null;
 
@@ -266,7 +263,6 @@ export default function App() {
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const reportedPageKeysRef = useRef<Set<string>>(new Set());
   const toastTimerRef = useRef<number | null>(null);
-  const alertTimersRef = useRef<Map<string, number>>(new Map());
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -383,22 +379,52 @@ export default function App() {
       }
     });
 
+    const unsubShieldBlocked = bridge.onShieldBlocked?.((ev) => {
+      if (!ev || !ev.blockedUrl) return;
+      let origin = ev.pageOrigin || '';
+      try {
+        origin = new URL(origin).origin;
+      } catch {
+        // keep raw
+      }
+      const matchedTab =
+        tabsRef.current.find((t) => origin && t.url.startsWith(origin)) || activeTabRef.current;
+      if (!matchedTab) return;
+
+      let addedNew = false;
+      setBlockedUrlsByTab((prev) => {
+        const current = prev[matchedTab.id] || [];
+        if (current.includes(ev.blockedUrl) || current.length >= 60) {
+          return prev;
+        }
+        addedNew = true;
+        return {
+          ...prev,
+          [matchedTab.id]: [...current, ev.blockedUrl]
+        };
+      });
+      if (addedNew) {
+        setShieldState((prev) => ({
+          ...prev,
+          trackersBlockedCount: prev.trackersBlockedCount + 1
+        }));
+      }
+    });
+
     return () => {
       unsubWin?.();
       unsubUpd?.();
       unsubOpenTab?.();
       unsubNotifPerm?.();
       unsubNotifClick?.();
+      unsubShieldBlocked?.();
     };
   }, [showToast]);
 
+  // Keep Electron main process webRequest Shields synchronized with renderer state
   useEffect(() => {
-    const timers = alertTimersRef.current;
-    return () => {
-      timers.forEach((timerId) => window.clearTimeout(timerId));
-      timers.clear();
-    };
-  }, []);
+    window.fabinavDesktop?.syncShields?.(shieldState);
+  }, [shieldState]);
 
   const handleMinimizeBrowserWindow = useCallback(() => {
     if (window.fabinavDesktop?.isElectron) {
@@ -480,10 +506,6 @@ export default function App() {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}backup_meta`, JSON.stringify(backupMeta));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}notes`, JSON.stringify(sessionNotes));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}window_title`, JSON.stringify(customWindowTitle));
-      localStorage.setItem(
-        `${STORAGE_KEY_PREFIX}notifications`,
-        JSON.stringify(notifications.slice(0, 50))
-      );
     } catch {
       // Ignore quota errors
     }
@@ -499,8 +521,7 @@ export default function App() {
     topSites,
     backupMeta,
     sessionNotes,
-    customWindowTitle,
-    notifications
+    customWindowTitle
   ]);
 
   // Apply FabiNav theme class & document title
@@ -590,15 +611,19 @@ export default function App() {
     ) {
       const isLocalHostTarget = /^localhost(:\d+)?(\/.*)?$/i.test(target);
       if ((target.includes('.') || isLocalHostTarget) && !target.includes(' ')) {
-        const useHttps = !isLocalHostTarget && shieldState.upgradeHttps && shieldState.enabled;
+        const eff = resolveEffectiveShield(shieldState, `https://${target}`).effective;
+        const useHttps = !isLocalHostTarget && eff.upgradeHttps && eff.enabled;
         target = `${useHttps ? 'https' : 'http'}://${target}`;
         if (useHttps) upgradedHttps = true;
       } else {
         target = `fabinav://search?q=${encodeURIComponent(target)}`;
       }
-    } else if (target.startsWith('http://') && shieldState.upgradeHttps && shieldState.enabled) {
-      target = target.replace('http://', 'https://');
-      upgradedHttps = true;
+    } else if (target.startsWith('http://')) {
+      const eff = resolveEffectiveShield(shieldState, target).effective;
+      if (eff.upgradeHttps && eff.enabled) {
+        target = target.replace('http://', 'https://');
+        upgradedHttps = true;
+      }
     }
 
     return { url: target, upgradedHttps };
@@ -633,14 +658,15 @@ export default function App() {
   };
 
   const handlePageSecurityReport = useCallback((tabId: string, report: PageSecurityReport) => {
-    if (report.title) {
+    if (report.title || report.favicon) {
       setTabs((prev) =>
         prev.map((t) =>
           t.id === tabId
             ? {
                 ...t,
                 title: report.title || t.title,
-                isLoading: false
+                favicon: report.favicon || t.favicon,
+                isLoading: report.title ? false : t.isLoading
               }
             : t
         )
@@ -1034,6 +1060,7 @@ export default function App() {
             url: finalUrl,
             displayUrl: finalUrl,
             title: parsedTitle,
+            favicon: undefined,
             isLoading: !isInternal,
             isBookmarked: bookmarks.some((b) => b.url === finalUrl),
             history: newHistory,
@@ -1082,6 +1109,7 @@ export default function App() {
               url: prevUrl,
               displayUrl: prevUrl,
               title: resolveInternalTitle(prevUrl),
+              favicon: undefined,
               isBookmarked: bookmarks.some((b) => b.url === prevUrl),
               historyIndex: newIndex,
               canGoBack: newIndex > 0,
@@ -1107,6 +1135,7 @@ export default function App() {
               url: nextUrl,
               displayUrl: nextUrl,
               title: resolveInternalTitle(nextUrl),
+              favicon: undefined,
               isBookmarked: bookmarks.some((b) => b.url === nextUrl),
               historyIndex: newIndex,
               canGoBack: true,
@@ -1364,7 +1393,7 @@ export default function App() {
     }
   };
 
-  // Browser Notification Service
+  // Windows Notification Service
   const normalizeNotificationOrigin = (rawUrl: string): string => {
     try {
       return new URL(rawUrl).origin;
@@ -1373,14 +1402,72 @@ export default function App() {
     }
   };
 
-  const dismissLiveAlert = useCallback((id: string) => {
-    const existingTimer = alertTimersRef.current.get(id);
-    if (existingTimer) {
-      window.clearTimeout(existingTimer);
-      alertTimersRef.current.delete(id);
-    }
-    setLiveAlerts((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const dispatchWindowsNotification = useCallback(
+    async (payload: {
+      id: string;
+      tabId: string;
+      origin: string;
+      title: string;
+      body: string;
+      icon?: string;
+      tag?: string;
+      url?: string;
+      silent: boolean;
+    }) => {
+      if (window.fabinavDesktop?.showDesktopNotification) {
+        await window.fabinavDesktop.showDesktopNotification({
+          id: payload.id,
+          title: payload.title,
+          body: payload.body,
+          origin: payload.origin,
+          url: payload.url,
+          tabId: payload.tabId,
+          silent: payload.silent
+        });
+        return true;
+      }
+
+      if (typeof window.Notification !== 'function') return false;
+
+      let hostPerm = window.Notification.permission;
+      if (hostPerm === 'default') {
+        try {
+          hostPerm = await window.Notification.requestPermission();
+        } catch {
+          hostPerm = 'denied';
+        }
+      }
+
+      if (hostPerm !== 'granted') return false;
+
+      let originHost = payload.origin;
+      try {
+        originHost = new URL(payload.origin).hostname.replace(/^www\./, '') || payload.origin;
+      } catch {
+        // keep raw
+      }
+
+      try {
+        const osNotif = new window.Notification(payload.title, {
+          body: payload.body ? `${originHost} — ${payload.body}` : originHost,
+          icon: payload.icon,
+          tag: payload.tag,
+          silent: payload.silent
+        });
+        osNotif.onclick = () => {
+          window.focus();
+          if (payload.tabId && tabsRef.current.some((t) => t.id === payload.tabId)) {
+            setActiveTabId(payload.tabId);
+          }
+          osNotif.close();
+        };
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
 
   const handlePageNotification = useCallback(
     (
@@ -1388,88 +1475,36 @@ export default function App() {
       notif: { origin: string; title: string; body: string; icon?: string; tag?: string; url?: string }
     ) => {
       const cur = settingsRef.current;
-      if (cur.notificationsEnabled === false) return;
+      if (cur.notificationsEnabled === false || cur.notificationDoNotDisturb) return;
 
       const origin = normalizeNotificationOrigin(notif.origin || notif.url || '');
       const sitePerm = cur.notificationPermissions?.[origin] || 'default';
       if (sitePerm === 'block') return;
       if (sitePerm === 'default' && cur.notificationDefaultPolicy === 'block') return;
 
-      const item: BrowserNotificationItem = {
-        id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      const id = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const title = (notif.title || 'Notificación').slice(0, 140);
+      const body = (notif.body || '').slice(0, 320);
+
+      appendLog('info', `Notificación enviada a Windows desde ${origin}: ${title}`, 'Notificaciones');
+
+      if (cur.notificationSound !== false) {
+        playNotificationChime();
+      }
+
+      void dispatchWindowsNotification({
+        id,
         tabId,
         origin,
-        title: (notif.title || 'Notificación').slice(0, 140),
-        body: (notif.body || '').slice(0, 320),
+        title,
+        body,
         icon: notif.icon,
         tag: notif.tag,
         url: notif.url || origin,
-        createdAt: Date.now(),
-        read: false
-      };
-
-      setNotifications((prev) => {
-        const filtered = notif.tag
-          ? prev.filter((n) => !(n.origin === origin && n.tag === notif.tag))
-          : prev;
-        return [item, ...filtered].slice(0, 50);
+        silent: cur.notificationSound === false
       });
-
-      appendLog('info', `Notificación de ${origin}: ${item.title}`, 'Notificaciones');
-
-      if (!cur.notificationDoNotDisturb) {
-        setLiveAlerts((prev) => {
-          const filtered = notif.tag
-            ? prev.filter((n) => !(n.origin === origin && n.tag === notif.tag))
-            : prev;
-          return [item, ...filtered].slice(0, 5);
-        });
-
-        const timerId = window.setTimeout(() => {
-          alertTimersRef.current.delete(item.id);
-          setLiveAlerts((prev) => prev.filter((n) => n.id !== item.id));
-        }, 6500);
-        alertTimersRef.current.set(item.id, timerId);
-
-        if (cur.notificationSound !== false) {
-          playNotificationChime();
-        }
-
-        if (cur.notificationDesktopRelay !== false) {
-          if (window.fabinavDesktop?.showDesktopNotification) {
-            window.fabinavDesktop.showDesktopNotification({
-              id: item.id,
-              title: item.title,
-              body: item.body,
-              origin: item.origin,
-              url: item.url,
-              tabId: item.tabId
-            });
-          } else if (
-            typeof window.Notification === 'function' &&
-            window.Notification.permission === 'granted'
-          ) {
-            try {
-              const osNotif = new window.Notification(item.title, {
-                body: item.body,
-                icon: item.icon,
-                tag: item.tag
-              });
-              osNotif.onclick = () => {
-                window.focus();
-                if (tabsRef.current.some((t) => t.id === item.tabId)) {
-                  setActiveTabId(item.tabId);
-                }
-                osNotif.close();
-              };
-            } catch {
-              // ignore host notification block
-            }
-          }
-        }
-      }
     },
-    []
+    [dispatchWindowsNotification]
   );
 
   const handleRequestNotificationPermission = useCallback(
@@ -1540,6 +1575,13 @@ export default function App() {
     if (current.source === 'webview') {
       window.fabinavDesktop?.respondNotificationPermission?.(current.id, granted);
     } else {
+      if (
+        granted &&
+        typeof window.Notification === 'function' &&
+        window.Notification.permission === 'default'
+      ) {
+        window.Notification.requestPermission().catch(() => {});
+      }
       window.dispatchEvent(
         new CustomEvent('fabinav:notif-permission-reply', {
           detail: {
@@ -1560,7 +1602,7 @@ export default function App() {
     }
     showToast(
       granted
-        ? `Notificaciones permitidas para ${host}`
+        ? `Notificaciones de Windows permitidas para ${host}`
         : `Notificaciones bloqueadas para ${host}`
     );
   };
@@ -1584,47 +1626,29 @@ export default function App() {
     setPermissionQueue((prev) => prev.slice(1));
   };
 
-  const handleSelectNotification = (item: BrowserNotificationItem) => {
-    setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
-    dismissLiveAlert(item.id);
-    if (tabs.some((t) => t.id === item.tabId)) {
-      handleSelectTab(item.tabId);
-    } else if (item.url && (item.url.startsWith('http://') || item.url.startsWith('https://'))) {
-      handleNewTab(item.url);
-    }
-  };
-
-  const handleBlockNotificationOrigin = (origin: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      notificationPermissions: {
-        ...(prev.notificationPermissions || {}),
-        [origin]: 'block'
-      }
-    }));
-    setLiveAlerts((prev) => prev.filter((item) => item.origin !== origin));
-    let host = origin;
-    try {
-      host = new URL(origin).hostname.replace(/^www\./, '') || origin;
-    } catch {
-      // keep raw
-    }
-    showToast(`Notificaciones silenciadas para ${host}`);
-  };
-
-  const handleSendTestNotification = () => {
+  const handleSendTestNotification = async () => {
     if (settings.notificationsEnabled === false) {
-      showToast('Activa primero el servicio de notificaciones');
+      showToast('Activa primero el envío de notificaciones a Windows');
       return;
     }
-    handlePageNotification(activeTab?.id || '', {
-      origin: 'https://fabinav.local',
-      title: 'Servicio de notificaciones activo',
-      body: 'Las alertas de páginas web aparecerán aquí y en tu escritorio cuando estén permitidas.',
-      url: activeTab?.url || 'fabinav://settings#notificaciones'
-    });
     if (settings.notificationDoNotDisturb) {
-      showToast('Modo No molestar activo: aviso guardado en la campana');
+      showToast('Desactiva el modo No molestar para enviar la prueba a Windows');
+      return;
+    }
+    if (settings.notificationSound !== false) {
+      playNotificationChime();
+    }
+    const ok = await dispatchWindowsNotification({
+      id: `test-${Date.now()}`,
+      tabId: activeTab?.id || '',
+      origin: 'https://fabinav.local',
+      title: 'FabiNav',
+      body: 'Las notificaciones web se enviarán directamente al centro de notificaciones de Windows.',
+      url: activeTab?.url || 'fabinav://settings#notificaciones',
+      silent: settings.notificationSound === false
+    });
+    if (!ok) {
+      showToast('Autoriza las notificaciones en tu navegador para enviarlas a Windows');
     }
   };
 
@@ -2455,23 +2479,7 @@ export default function App() {
               ? (blockedUrlsByTab[activeTab.id] || []).length
               : 0
           }
-          isShieldActive={shieldState.enabled}
-          notifications={notifications}
-          onToggleDoNotDisturb={() =>
-            handleUpdateSettings({
-              notificationDoNotDisturb: !settings.notificationDoNotDisturb
-            })
-          }
-          onMarkAllNotificationsRead={() =>
-            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-          }
-          onClearNotifications={() => setNotifications([])}
-          onRemoveNotification={(id) =>
-            setNotifications((prev) => prev.filter((n) => n.id !== id))
-          }
-          onSelectNotification={handleSelectNotification}
-          onBlockNotificationOrigin={handleBlockNotificationOrigin}
-          onSendTestNotification={handleSendTestNotification}
+          isShieldActive={resolveEffectiveShield(shieldState, activeTab.url).effective.enabled}
         />
 
         {settings.showBookmarksBar &&
@@ -2594,11 +2602,7 @@ export default function App() {
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      {tab.tabMode === 'private' ? (
-                        <Lock className="w-3.5 h-3.5 text-[#a78bfa] shrink-0" />
-                      ) : (
-                        <Globe className="w-3.5 h-3.5 shrink-0" />
-                      )}
+                      <TabFavicon tab={tab} isActive={isActive} />
                       <span className="truncate">{tab.title || 'Nueva pestaña'}</span>
                     </div>
 
@@ -2717,7 +2721,39 @@ export default function App() {
           language={settings.language || 'es'}
           blockedTrackerUrls={blockedUrlsByTab[activeTab.id] || []}
           shieldState={shieldState}
-          onUpdateShieldState={(updates) => setShieldState((prev) => ({ ...prev, ...updates }))}
+          onUpdateShieldState={(updates, siteUrl) => {
+            setShieldState((prev) => {
+              const next = siteUrl
+                ? applySiteShieldUpdate(prev, siteUrl, updates)
+                : { ...prev, ...updates };
+              window.fabinavDesktop?.syncShields?.(next);
+              return next;
+            });
+            if (siteUrl && (siteUrl.startsWith('http://') || siteUrl.startsWith('https://'))) {
+              setBlockedUrlsByTab((prev) => {
+                const copy = { ...prev };
+                delete copy[activeTab.id];
+                return copy;
+              });
+              window.setTimeout(() => handleReloadTab(activeTab.id), 40);
+            }
+          }}
+          onResetSiteOverride={(siteUrl) => {
+            setShieldState((prev) => {
+              const next = resetSiteShieldOverride(prev, siteUrl);
+              window.fabinavDesktop?.syncShields?.(next);
+              return next;
+            });
+            if (siteUrl.startsWith('http://') || siteUrl.startsWith('https://')) {
+              setBlockedUrlsByTab((prev) => {
+                const copy = { ...prev };
+                delete copy[activeTab.id];
+                return copy;
+              });
+              window.setTimeout(() => handleReloadTab(activeTab.id), 40);
+            }
+            showToast('Ajustes de escudos restablecidos para este sitio');
+          }}
           onNavigate={(url) => handleNavigate(activeTab.id, url)}
         />
       </div>
@@ -2878,18 +2914,11 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Notification Permission Prompt & Live Alert Stack */}
+      {/* Notification Permission Prompt */}
       <NotificationPermissionPrompt
         pending={pendingNotifPermission}
         onRespond={handleRespondNotificationPermission}
         onDismiss={handleDismissNotificationPermission}
-      />
-
-      <NotificationAlertStack
-        alerts={liveAlerts}
-        onDismiss={dismissLiveAlert}
-        onOpen={handleSelectNotification}
-        onSilenceOrigin={handleBlockNotificationOrigin}
       />
       </div>
     </div>
