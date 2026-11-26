@@ -16,7 +16,8 @@ import {
   TopSiteItem,
   GoogleUserProfile,
   AutofillEntry,
-  PendingNotificationPermission
+  PendingNotificationPermission,
+  ShieldSessionEvent
 } from './types';
 import {
   INITIAL_TABS,
@@ -239,6 +240,8 @@ export default function App() {
   const [bookmarksActivityTick, setBookmarksActivityTick] = useState(0);
   const [isShieldsModalOpen, setIsShieldsModalOpen] = useState(false);
   const [blockedUrlsByTab, setBlockedUrlsByTab] = useState<Record<string, string[]>>({});
+  const blockedUrlsByTabRef = useRef<Record<string, string[]>>({});
+  const [shieldSessionHistory, setShieldSessionHistory] = useState<ShieldSessionEvent[]>([]);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isElectronModalOpen, setIsElectronModalOpen] = useState(false);
@@ -391,24 +394,61 @@ export default function App() {
         tabsRef.current.find((t) => origin && t.url.startsWith(origin)) || activeTabRef.current;
       if (!matchedTab) return;
 
-      let addedNew = false;
-      setBlockedUrlsByTab((prev) => {
-        const current = prev[matchedTab.id] || [];
-        if (current.includes(ev.blockedUrl) || current.length >= 60) {
-          return prev;
-        }
-        addedNew = true;
-        return {
-          ...prev,
-          [matchedTab.id]: [...current, ev.blockedUrl]
-        };
-      });
-      if (addedNew) {
-        setShieldState((prev) => ({
-          ...prev,
-          trackersBlockedCount: prev.trackersBlockedCount + 1
-        }));
+      const existing = blockedUrlsByTabRef.current[matchedTab.id] || [];
+      if (existing.includes(ev.blockedUrl) || existing.length >= 60) {
+        return;
       }
+      const nextUrls = [...existing, ev.blockedUrl];
+      blockedUrlsByTabRef.current = {
+        ...blockedUrlsByTabRef.current,
+        [matchedTab.id]: nextUrls
+      };
+      setBlockedUrlsByTab(blockedUrlsByTabRef.current);
+      setShieldState((prev) => ({
+        ...prev,
+        trackersBlockedCount: prev.trackersBlockedCount + 1
+      }));
+
+      const targetRaw = ev.pageOrigin || matchedTab.url || '';
+      let domain = 'web';
+      try {
+        domain = new URL(targetRaw).hostname.replace(/^www\./, '') || 'web';
+      } catch {
+        domain = targetRaw.replace(/^https?:\/\//, '').split('/')[0] || 'web';
+      }
+      const now = Date.now();
+      const timeLabel = new Date(now).toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      setShieldSessionHistory((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.domain === domain && now - last.timestamp < 15000) {
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              timestamp: now,
+              timeLabel,
+              trackers: last.trackers + 1
+            }
+          ];
+        }
+        return [
+          ...prev.slice(-23),
+          {
+            id: `sh-${now}-${Math.random().toString(36).slice(2, 6)}`,
+            domain,
+            timestamp: now,
+            timeLabel,
+            trackers: 1,
+            cookies: 0,
+            httpsUpgrades: 0
+          }
+        ];
+      });
     });
 
     return () => {
@@ -653,6 +693,45 @@ export default function App() {
       }));
       if (upgradedHttps) {
         appendLog('info', `Conexión mejorada a HTTPS/TLS: ${finalUrl}`, 'Escudos');
+        let domain = 'web';
+        try {
+          domain = new URL(finalUrl).hostname.replace(/^www\./, '') || 'web';
+        } catch {
+          domain = finalUrl.replace(/^https?:\/\//, '').split('/')[0] || 'web';
+        }
+        const now = Date.now();
+        const timeLabel = new Date(now).toLocaleTimeString('es-ES', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        setShieldSessionHistory((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.domain === domain && now - last.timestamp < 15000) {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                timestamp: now,
+                timeLabel,
+                httpsUpgrades: last.httpsUpgrades + 1
+              }
+            ];
+          }
+          return [
+            ...prev.slice(-23),
+            {
+              id: `sh-${now}-${Math.random().toString(36).slice(2, 6)}`,
+              domain,
+              timestamp: now,
+              timeLabel,
+              trackers: 0,
+              cookies: 0,
+              httpsUpgrades: 1
+            }
+          ];
+        });
       }
     }
   };
@@ -675,10 +754,11 @@ export default function App() {
 
     if (Array.isArray(report.blockedTrackerUrls)) {
       const nextList = report.blockedTrackerUrls;
-      setBlockedUrlsByTab((prev) => ({
-        ...prev,
+      blockedUrlsByTabRef.current = {
+        ...blockedUrlsByTabRef.current,
         [tabId]: nextList
-      }));
+      };
+      setBlockedUrlsByTab(blockedUrlsByTabRef.current);
     }
 
     const dedupeKey = `${tabId}:${report.url || ''}`;
@@ -699,6 +779,48 @@ export default function App() {
         cookiesBlockedCount: prev.cookiesBlockedCount + cookies,
         httpsUpgradesCount: prev.httpsUpgradesCount + httpsUp
       }));
+      let domain = 'web';
+      const rawSite = report.url || '';
+      try {
+        domain = new URL(rawSite).hostname.replace(/^www\./, '') || 'web';
+      } catch {
+        domain = rawSite.replace(/^https?:\/\//, '').split('/')[0] || 'web';
+      }
+      const now = Date.now();
+      const timeLabel = new Date(now).toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      setShieldSessionHistory((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.domain === domain && now - last.timestamp < 15000) {
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              timestamp: now,
+              timeLabel,
+              trackers: last.trackers + trackers,
+              cookies: last.cookies + cookies,
+              httpsUpgrades: last.httpsUpgrades + httpsUp
+            }
+          ];
+        }
+        return [
+          ...prev.slice(-23),
+          {
+            id: `sh-${now}-${Math.random().toString(36).slice(2, 6)}`,
+            domain,
+            timestamp: now,
+            timeLabel,
+            trackers,
+            cookies,
+            httpsUpgrades: httpsUp
+          }
+        ];
+      });
       appendLog(
         'info',
         `Escudos en ${report.url || 'página'}: ${trackers} rastreadores y ${cookies} cookies bloqueadas.`,
@@ -2667,6 +2789,7 @@ export default function App() {
           splitTab={splitTab}
           settings={settings}
           shieldState={shieldState}
+          shieldSessionHistory={shieldSessionHistory}
           onUpdateShieldState={(updates) => setShieldState((prev) => ({ ...prev, ...updates }))}
           onUpdateSettings={handleUpdateSettings}
           customization={newTabCustomization}
@@ -2720,6 +2843,7 @@ export default function App() {
           currentUrl={activeTab.url}
           language={settings.language || 'es'}
           blockedTrackerUrls={blockedUrlsByTab[activeTab.id] || []}
+          sessionHistory={shieldSessionHistory}
           shieldState={shieldState}
           onUpdateShieldState={(updates, siteUrl) => {
             setShieldState((prev) => {
@@ -2730,11 +2854,10 @@ export default function App() {
               return next;
             });
             if (siteUrl && (siteUrl.startsWith('http://') || siteUrl.startsWith('https://'))) {
-              setBlockedUrlsByTab((prev) => {
-                const copy = { ...prev };
-                delete copy[activeTab.id];
-                return copy;
-              });
+              const copy = { ...blockedUrlsByTabRef.current };
+              delete copy[activeTab.id];
+              blockedUrlsByTabRef.current = copy;
+              setBlockedUrlsByTab(copy);
               window.setTimeout(() => handleReloadTab(activeTab.id), 40);
             }
           }}

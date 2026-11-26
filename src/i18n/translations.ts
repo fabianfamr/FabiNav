@@ -240,6 +240,13 @@ const ES_MESSAGES = {
   shieldsResetSiteBtn: 'Restablecer configuración global',
   shieldsSiteCustomized: 'Personalizado para este sitio',
   shieldsUsingGlobal: 'Usando configuración global',
+  shieldsSessionChartTitle: 'Historial reciente de la sesión',
+  shieldsSessionChartSubtitle: 'Rastreadores, cookies y mejoras HTTPS por dominio',
+  shieldsSessionChartEmpty:
+    'Aún no se han bloqueado rastreadores en esta sesión. Navega para ver la actividad en tiempo real.',
+  shieldsChartTrackers: 'Rastreadores',
+  shieldsChartCookies: 'Cookies',
+  shieldsChartHttps: 'HTTPS',
 
   // Settings
   settingsTitle: 'Configuración',
@@ -419,6 +426,13 @@ const EN_MESSAGES: Record<TranslationKey, string> = {
   shieldsResetSiteBtn: 'Reset to global defaults',
   shieldsSiteCustomized: 'Custom site settings',
   shieldsUsingGlobal: 'Using global defaults',
+  shieldsSessionChartTitle: 'Recent session history',
+  shieldsSessionChartSubtitle: 'Trackers, cookies & HTTPS upgrades by domain',
+  shieldsSessionChartEmpty:
+    'No trackers blocked in this session yet. Browse a site to see live blocking activity.',
+  shieldsChartTrackers: 'Trackers',
+  shieldsChartCookies: 'Cookies',
+  shieldsChartHttps: 'HTTPS',
 
   // Settings
   settingsTitle: 'Settings',
@@ -596,6 +610,13 @@ const JA_MESSAGES: Record<TranslationKey, string> = {
   shieldsResetSiteBtn: 'グローバル設定に戻す',
   shieldsSiteCustomized: 'このサイト専用の設定',
   shieldsUsingGlobal: 'グローバル設定を使用中',
+  shieldsSessionChartTitle: '最近のセッション履歴',
+  shieldsSessionChartSubtitle: 'ドメイン別のトラッカー・Cookie・HTTPS保護',
+  shieldsSessionChartEmpty:
+    'このセッションでブロックされたトラッカーはまだありません。サイトを開くとリアルタイムで表示されます。',
+  shieldsChartTrackers: 'トラッカー',
+  shieldsChartCookies: 'Cookie',
+  shieldsChartHttps: 'HTTPS',
 
   // Settings
   settingsTitle: '設定',

@@ -17,8 +17,9 @@ import {
   Eraser,
   RotateCcw
 } from 'lucide-react';
-import { AppLanguage, FabiShieldState, TlsInspectionResult } from '../types';
+import { AppLanguage, FabiShieldState, ShieldSessionEvent, TlsInspectionResult } from '../types';
 import { FabiSwitch } from './FabiSwitch';
+import { ShieldSessionChart } from './ShieldSessionChart';
 import { t } from '../i18n/translations';
 import { resolveEffectiveShield } from '../utils/shields';
 
@@ -28,6 +29,7 @@ interface FabiShieldModalProps {
   currentUrl: string;
   language?: AppLanguage;
   blockedTrackerUrls?: string[];
+  sessionHistory?: ShieldSessionEvent[];
   shieldState: FabiShieldState;
   onUpdateShieldState: (updates: Partial<FabiShieldState>, siteUrl?: string) => void;
   onResetSiteOverride?: (siteUrl: string) => void;
@@ -36,30 +38,53 @@ interface FabiShieldModalProps {
 
 const FABI_EASE_OUT: [number, number, number, number] = [0, 0, 0.58, 1];
 
-export const BraveStyleShieldEmblem: React.FC<{ active?: boolean; className?: string }> = ({
+export const FabiNavShieldIcon: React.FC<{ active?: boolean; className?: string }> = ({
   active = true,
   className = 'w-5 h-5'
-}) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-    <defs>
-      <linearGradient id="fabiBraveShieldGrad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor={active ? '#FA7250' : '#6b7280'} />
-        <stop offset="100%" stopColor={active ? '#FB542B' : '#4b5563'} />
-      </linearGradient>
-    </defs>
-    {/* Angular Brave-inspired outer shield */}
-    <path
-      fill="url(#fabiBraveShieldGrad)"
-      d="M12 1.75L3.6 4.9v6.25c0 5.38 3.58 10.16 8.4 11.35 4.82-1.19 8.4-5.97 8.4-11.35V4.9L12 1.75z"
-    />
-    {/* Crisp faceted inner crest */}
-    <path
-      fill="#ffffff"
-      fillOpacity="0.94"
-      d="M12 4.9L6.8 7.15l1.35 2.55 1.1-.45L8.7 13.1 12 16.95l3.3-3.85-.55-3.85 1.1.45 1.35-2.55L12 4.9zm0 2.15l2.7 1.18-.42 1.15-2.28-.68-2.28.68-.42-1.15L12 7.05zm-1.65 3.65L12 10.2l1.65.5-.38 2.1-1.27 1.52-1.27-1.52-.38-2.1z"
-    />
-  </svg>
-);
+}) => {
+  const gradBodyId = React.useId();
+  const gradBevelId = React.useId();
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id={gradBodyId} x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor={active ? '#fa7250' : '#71717a'} />
+          <stop offset="55%" stopColor={active ? '#fb542b' : '#52525b'} />
+          <stop offset="100%" stopColor={active ? '#ff1893' : '#3f3f46'} />
+        </linearGradient>
+        <linearGradient id={gradBevelId} x1="4" y1="3" x2="20" y2="18" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.34" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0.04" />
+        </linearGradient>
+      </defs>
+      {/* FabiNav sleek shield silhouette */}
+      <path
+        d="M12 1.85L4.1 4.75v6.2c0 5.18 3.4 9.88 7.9 11.2 4.5-1.32 7.9-6.02 7.9-11.2v-6.2L12 1.85z"
+        fill={`url(#${gradBodyId})`}
+      />
+      <path
+        d="M12 2.45L4.7 5.13v5.82c0 4.82 3.12 9.18 7.3 10.46 4.18-1.28 7.3-5.64 7.3-10.46V5.13L12 2.45z"
+        stroke={`url(#${gradBevelId})`}
+        strokeWidth="0.9"
+      />
+      {/* Aerodynamic slanted FabiNav 'F' monogram */}
+      <path
+        d="M8.45 16.55L10.35 7.2c.16-.75.72-1.2 1.5-1.2h4.9l-1.15 2h-3.35l-.52 2.4h3.2l-1.08 1.9h-2.5l-.9 4.25H8.45z"
+        fill="#ffffff"
+        fillOpacity="0.96"
+      />
+      {/* Subtle FabiNav orbital arc */}
+      <path
+        d="M6.4 13.75c2.75 2.45 8.85 1.35 11.8-2.6"
+        stroke="#ffffff"
+        strokeOpacity="0.72"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+};
 
 export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
   isOpen,
@@ -67,6 +92,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
   currentUrl,
   language = 'es',
   blockedTrackerUrls = [],
+  sessionHistory = [],
   shieldState,
   onUpdateShieldState,
   onResetSiteOverride,
@@ -159,7 +185,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.97 }}
           transition={{ duration: 0.16, ease: FABI_EASE_OUT }}
-          className="fixed top-20 right-4 sm:right-16 w-[372px] bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[var(--bn-text)] select-none text-xs rounded-2xl overflow-hidden origin-top-right"
+          className="fixed top-20 right-4 sm:right-16 w-[372px] max-h-[calc(100vh-6rem)] overflow-y-auto bg-[var(--bn-surface)] border border-[var(--bn-border-strong)] shadow-2xl z-50 text-[var(--bn-text)] select-none text-xs rounded-2xl origin-top-right"
         >
           <AnimatePresence mode="wait" initial={false}>
             {viewMode === 'trackers' ? (
@@ -228,7 +254,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                 {/* Brave-style Branded Top Strip */}
                 <div className="px-4 py-2.5 bg-[var(--bn-toolbar)] border-b border-[var(--bn-border)] flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <BraveStyleShieldEmblem active={effective.enabled} className="w-4 h-4 shrink-0" />
+                    <FabiNavShieldIcon active={effective.enabled} className="w-4 h-4 shrink-0" />
                     <span className="text-[12px] font-semibold text-[var(--bn-text-strong)] tracking-tight">
                       {t(language, 'shieldsPanelTitle')} · FabiNav
                     </span>
@@ -270,7 +296,7 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                       ) : isExternal ? (
                         <Globe className="w-4 h-4 text-[var(--bn-text-strong)]" />
                       ) : (
-                        <BraveStyleShieldEmblem active={effective.enabled} className="w-5 h-5" />
+                        <FabiNavShieldIcon active={effective.enabled} className="w-5 h-5" />
                       )}
                     </div>
                     <div className="min-w-0">
@@ -364,6 +390,11 @@ export const FabiShieldModal: React.FC<FabiShieldModalProps> = ({
                       </button>
                     </div>
                   )}
+                </div>
+
+                {/* Session Blocking History Chart (Recharts) */}
+                <div className="px-4 pb-3.5">
+                  <ShieldSessionChart events={sessionHistory} language={language} compact />
                 </div>
 
                 {effective.enabled && (

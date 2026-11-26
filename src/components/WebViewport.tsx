@@ -10,7 +10,8 @@ import {
   DownloadItem,
   TopSiteItem,
   GoogleUserProfile,
-  AutofillEntry
+  AutofillEntry,
+  ShieldSessionEvent
 } from '../types';
 import { Columns, Gauge, RotateCw } from 'lucide-react';
 import { FabiNewTabView } from './FabiNewTabView';
@@ -35,6 +36,7 @@ interface WebViewportProps {
   splitTab?: WebTab | null;
   settings: BrowserSettings;
   shieldState: FabiShieldState;
+  shieldSessionHistory?: ShieldSessionEvent[];
   onUpdateShieldState: (updates: Partial<FabiShieldState>) => void;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   customization: FabiNewTabCustomization;
@@ -88,6 +90,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   splitTab,
   settings,
   shieldState,
+  shieldSessionHistory = [],
   onUpdateShieldState,
   onUpdateSettings,
   customization,
@@ -131,6 +134,7 @@ export const WebViewport: React.FC<WebViewportProps> = ({
   const sharedProps = {
     settings,
     shieldState,
+    shieldSessionHistory,
     onUpdateShieldState,
     onUpdateSettings,
     customization,
@@ -221,6 +225,7 @@ interface SingleTabFrameProps {
   isPrimary?: boolean;
   settings: BrowserSettings;
   shieldState: FabiShieldState;
+  shieldSessionHistory?: ShieldSessionEvent[];
   onUpdateShieldState: (updates: Partial<FabiShieldState>) => void;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
   customization: FabiNewTabCustomization;
@@ -276,6 +281,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
   isPrimary = false,
   settings,
   shieldState,
+  shieldSessionHistory = [],
   onUpdateShieldState,
   onUpdateSettings,
   customization,
@@ -967,6 +973,7 @@ const SingleTabFrame: React.FC<SingleTabFrameProps> = ({
           onGoogleSignIn={onGoogleSignIn}
           onGoogleSignOut={onGoogleSignOut}
           shieldState={shieldState}
+          shieldSessionHistory={shieldSessionHistory}
           onUpdateShieldState={onUpdateShieldState}
           settings={settings}
           onUpdateSettings={onUpdateSettings}

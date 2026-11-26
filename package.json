@@ -1,7 +1,7 @@
 {
   "name": "fabinav",
   "private": true,
-  "version": "1.21.0",
+  "version": "1.21.1",
   "description": "FabiNav — Navegador web privado con búsqueda en vivo, escudos TLS y compilación automática para escritorio",
   "homepage": "https://github.com/fabianfamr/FabiNav",
   "repository": {
@@ -39,6 +39,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "recharts": "^3.11.1",
     "vite": "^6.2.3"
   },
   "devDependencies": {

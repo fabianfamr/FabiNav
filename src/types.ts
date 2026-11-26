@@ -239,6 +239,16 @@ export interface FabiShieldState {
   searchesCount: number;
 }
 
+export interface ShieldSessionEvent {
+  id: string;
+  domain: string;
+  timestamp: number;
+  timeLabel: string;
+  trackers: number;
+  cookies: number;
+  httpsUpgrades: number;
+}
+
 export interface TopSiteItem {
   id: string;
   title: string;

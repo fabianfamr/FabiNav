@@ -68,7 +68,7 @@ import {
 } from '../types';
 import { t } from '../i18n/translations';
 import { FabiSwitch } from './FabiSwitch';
-import { BraveStyleShieldEmblem } from './FabiShieldModal';
+import { FabiNavShieldIcon } from './FabiShieldModal';
 
 interface TitleBarProps {
   currentTab?: WebTab;
@@ -570,7 +570,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               className="relative w-7 h-7 rounded-full flex items-center justify-center hover:bg-[var(--bn-hover)] transition-colors shrink-0"
             >
               {isShieldActive ? (
-                <BraveStyleShieldEmblem active={true} className="w-[18px] h-[18px]" />
+                <FabiNavShieldIcon active={true} className="w-[18px] h-[18px]" />
               ) : (
                 <ShieldOff className="w-4 h-4 text-[var(--bn-text-muted)]" />
               )}

@@ -39,6 +39,8 @@ import {
   Bell
 } from 'lucide-react';
 import { FabiNavLogo } from './FabiNavLogo';
+import { FabiNavShieldIcon } from './FabiShieldModal';
+import { ShieldSessionChart } from './ShieldSessionChart';
 import {
   FabiShieldState,
   BrowserSettings,
@@ -53,7 +55,8 @@ import {
   AutofillEntry,
   StartupMode,
   MemorySaverLevel,
-  SiteShieldOverride
+  SiteShieldOverride,
+  ShieldSessionEvent
 } from '../types';
 import { APP_VERSION } from '../constants/initialData';
 import { FabiSwitch } from './FabiSwitch';
@@ -65,6 +68,7 @@ interface FabiInternalsViewProps {
   onGoogleSignIn?: () => void;
   onGoogleSignOut?: () => void;
   shieldState: FabiShieldState;
+  shieldSessionHistory?: ShieldSessionEvent[];
   onUpdateShieldState: (updates: Partial<FabiShieldState>) => void;
   settings: BrowserSettings;
   onUpdateSettings: (updates: Partial<BrowserSettings>) => void;
@@ -112,6 +116,7 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
   onGoogleSignIn,
   onGoogleSignOut,
   shieldState,
+  shieldSessionHistory = [],
   onUpdateShieldState,
   settings,
   onUpdateSettings,
@@ -597,8 +602,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-[var(--bn-border)]">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[var(--bn-accent-soft)] text-[var(--bn-accent)] flex items-center justify-center">
-                <ShieldCheck className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-xl bg-[var(--bn-accent-soft)] flex items-center justify-center">
+                <FabiNavShieldIcon active={shieldState.enabled} className="w-6 h-6" />
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-[var(--bn-text-strong)]">
@@ -648,6 +653,8 @@ export const FabiInternalsView: React.FC<FabiInternalsViewProps> = ({
               </div>
             </div>
           </div>
+
+          <ShieldSessionChart events={shieldSessionHistory} language={lang} />
 
           <div className="bg-[var(--bn-surface-alt)] border border-[var(--bn-border)] rounded-2xl overflow-hidden divide-y divide-[var(--bn-border)]">
             <div className="flex items-center justify-between p-4 gap-4">
